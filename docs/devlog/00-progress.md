@@ -7,20 +7,20 @@
 | 步骤 | 模块 | 状态 | 队友 | 开始 | 完成 | DevLog |
 |------|------|------|------|------|------|--------|
 | 0 | Agent 定义 + 接口定义 | ✅ | Lead | 2026-05-28 | 2026-05-28 | - |
-| 1 | 项目骨架 | ⏳ | core-dev | - | - | 01-scaffolding.md |
-| 2 | 接口定义 | ⏳ | core-dev | - | - | 02-interfaces.md |
-| 2b | 数据库 models | ⏳ | api-dev | - | - | 02b-database.md |
-| 3 | Page Semantic Layer | ⏳ | core-dev | - | - | 03-page-semantic.md |
-| 4 | LLM Client | ⏳ | core-dev | - | - | 04-llm-client.md |
-| 5 | Playwright 工具函数 | ⏳ | graph-dev | - | - | 05-tools.md |
-| 6 | Change Detector | ⏳ | core-dev | - | - | 06-change-detector.md |
-| 7 | 执行子图 | ⏳ | graph-dev | - | - | 07-execution-graph.md |
-| 8 | 规划子图 | ⏳ | graph-dev | - | - | 08-planning-graph.md |
-| 9 | 完整 Runtime | ⏳ | graph-dev | - | - | 09-runtime.md |
-| 10 | ExecutionLogger + ReportBuilder | ⏳ | core-dev | - | - | 10-logger-report.md |
-| 11 | FastAPI 后端 | ⏳ | api-dev | - | - | 11-fastapi.md |
-| 12 | WebSocket | ⏳ | api-dev | - | - | 12-websocket.md |
-| 13 | React 前端 | ⏳ | frontend-dev | - | - | 13-frontend.md |
+| 1 | 项目骨架 | ✅ | core-dev | 2026-05-28 | 2026-05-28 | 01-scaffolding.md |
+| 2 | 接口定义 | ✅ | Lead (pre-launch) | 2026-05-28 | 2026-05-28 | 02-interfaces.md |
+| 2b | 数据库 models | ✅ | api-dev | 2026-05-28 | 2026-05-28 | 02b-database.md |
+| 3 | Page Semantic Layer | ✅ | core-dev | 2026-05-28 | 2026-05-28 | 03-page-semantic.md |
+| 4 | LLM Client | ✅ | core-dev | 2026-05-28 | 2026-05-28 | 04-llm-client.md |
+| 5 | Playwright 工具函数 | ✅ | graph-dev | 2026-05-28 | 2026-05-28 | 05-tools.md |
+| 6 | Change Detector | ✅ | core-dev | 2026-05-28 | 2026-05-28 | 06-change-detector.md |
+| 7 | 执行子图 | ✅ | graph-dev | 2026-05-28 | 2026-05-28 | 07-execution-graph.md |
+| 8 | 规划子图 | ✅ | graph-dev | 2026-05-28 | 2026-05-28 | 08-planning-graph.md |
+| 9 | 完整 Runtime | ✅ | graph-dev | 2026-05-28 | 2026-05-28 | 09-runtime.md |
+| 10 | ExecutionLogger + ReportBuilder | ✅ | core-dev | 2026-05-28 | 2026-05-28 | 10-logger-report.md |
+| 11 | FastAPI 后端 | ✅ | api-dev | 2026-05-28 | 2026-05-28 | 11-fastapi.md |
+| 12 | WebSocket | ✅ | api-dev | 2026-05-28 | 2026-05-28 | 12-websocket.md |
+| 13 | React 前端 | ✅ | frontend-dev | 2026-05-28 | 2026-05-28 | 13-frontend.md |
 
 ## 队友分配
 
@@ -37,6 +37,9 @@
 |------|------|
 | 2026-05-28 前置 | Agent Teams 配置设计完成（14 个决策已记录到 CONTEXT.md） |
 | 2026-05-28 | Lead 完成 3 项前置：4 个 agent 定义 + core/interfaces.py + devlog 目录 |
+| 2026-05-28 | Phase 1 全部 13 步完成。14 commits, 41 Python files, 70 files changed, 8706 lines added |
+| 2026-05-28 | 115/116 tests passing (1 test isolation issue, passes in isolation) |
+| 2026-05-28 | 执行方式：Subagent-Driven Development (sequential dispatch with model selection) |
 
 ## 依赖关系
 
