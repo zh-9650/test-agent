@@ -1,0 +1,203 @@
+"""Tests for agents/ui/tools.py (TDD)
+
+Uses real Playwright with page.set_content() for reliable DOM-based tests.
+"""
+
+import pytest
+import pytest_asyncio
+from playwright.async_api import async_playwright
+
+# We will import after creating the module
+# from agents.ui.tools import (
+#     navigate, click, input_text, scroll, wait,
+#     set_current_page, update_element_map, ui_tools, tools_by_name
+# )
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+
+from agents.ui.tools import (
+    navigate, click, input_text, scroll, wait,
+    set_current_page, update_element_map, ui_tools, tools_by_name
+)
+
+
+@pytest_asyncio.fixture
+async def page():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page()
+        yield page
+        await browser.close()
+
+
+# ---------------------------------------------------------------------------
+# test_navigate
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_navigate(page):
+    set_current_page(page)
+    result = await navigate.ainvoke({"url": "data:text/html,<h1>Test</h1>"})
+    assert "已导航到" in result
+    assert "data:text/html" in result
+
+
+# ---------------------------------------------------------------------------
+# test_click_button
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_click_button(page):
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <button id="btn">点击我</button>
+    </body></html>
+    """)
+    result = await click.ainvoke({"target": "点击我"})
+    assert "已点击" in result
+
+
+# ---------------------------------------------------------------------------
+# test_click_by_id
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_click_by_id(page):
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <button id="btn">登录按钮</button>
+    </body></html>
+    """)
+    # Set element map to simulate page_semantic extraction
+    update_element_map([
+        {"id": "#1", "type": "button", "text": "登录按钮"},
+    ])
+    result = await click.ainvoke({"target": "#1"})
+    assert "已点击" in result
+
+
+# ---------------------------------------------------------------------------
+# test_input_text
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_input_text(page):
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <input type="text" id="user" placeholder="用户名">
+    </body></html>
+    """)
+    result = await input_text.ainvoke({"target": "用户名", "value": "test_user"})
+    assert "已输入" in result or "输入文本" in result
+
+
+# ---------------------------------------------------------------------------
+# test_input_text_by_id
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_input_text_by_id(page):
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <input type="text" id="user" placeholder="用户名">
+    </body></html>
+    """)
+    update_element_map([
+        {"id": "#1", "type": "input", "input_type": "text", "placeholder": "用户名"},
+    ])
+    result = await input_text.ainvoke({"target": "#1", "value": "test_user"})
+    assert "已输入" in result or "输入文本" in result
+
+
+# ---------------------------------------------------------------------------
+# test_scroll_down
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_scroll_down(page):
+    set_current_page(page)
+    await page.set_content("<html><body style='height:2000px;'></body></html>")
+    result = await scroll.ainvoke({"direction": "down", "amount": 300})
+    assert "已向下滚动" in result
+    assert "300" in result
+
+
+# ---------------------------------------------------------------------------
+# test_scroll_up
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_scroll_up(page):
+    set_current_page(page)
+    await page.set_content("<html><body style='height:2000px;'></body></html>")
+    result = await scroll.ainvoke({"direction": "up", "amount": 300})
+    assert "已向上滚动" in result
+    assert "300" in result
+
+
+# ---------------------------------------------------------------------------
+# test_wait
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_wait(page):
+    set_current_page(page)
+    result = await wait.ainvoke({"seconds": 0.1})
+    assert "已等待" in result
+    assert "0.1" in result
+
+
+# ---------------------------------------------------------------------------
+# test_click_missing_element
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_click_missing_element(page):
+    set_current_page(page)
+    await page.set_content("<html><body></body></html>")
+    result = await click.ainvoke({"target": "不存在的按钮"})
+    assert "找不到" in result or "错误" in result
+
+
+# ---------------------------------------------------------------------------
+# test_input_missing_element
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_input_missing_element(page):
+    set_current_page(page)
+    await page.set_content("<html><body></body></html>")
+    result = await input_text.ainvoke({"target": "不存在的输入框", "value": "test"})
+    assert "找不到" in result or "错误" in result
+
+
+# ---------------------------------------------------------------------------
+# test_tools_by_name_dict
+# ---------------------------------------------------------------------------
+
+def test_tools_by_name_dict():
+    assert "navigate" in tools_by_name
+    assert "click" in tools_by_name
+    assert "input_text" in tools_by_name
+    assert "scroll" in tools_by_name
+    assert "wait" in tools_by_name
+
+
+# ---------------------------------------------------------------------------
+# test_ui_tools_list
+# ---------------------------------------------------------------------------
+
+def test_ui_tools_list():
+    tool_names = [t.name for t in ui_tools]
+    assert "navigate" in tool_names
+    assert "click" in tool_names
+    assert "input_text" in tool_names
+    assert "scroll" in tool_names
+    assert "wait" in tool_names
+    assert len(ui_tools) == 5
