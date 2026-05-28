@@ -18,6 +18,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 - `.env`（项目骨架阶段创建）
 - `.gitignore`（项目骨架阶段创建）
 - `docs/devlog/01-scaffolding.md` 到 `docs/devlog/06-change-detector.md`
+- `docs/devlog/10-logger-report.md`
 
 **可以读任何文件**（理解上下文），但不要修改上面的列表以外的文件。
 
@@ -37,8 +38,9 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 | 3 | Page Semantic Layer | core/page_semantic.py — Playwright locator 提取 + 截图 |
 | 4 | LLM Client | core/llm_client.py — Anthropic SDK 封装，重试 + token 统计 |
 | 6 | Change Detector | core/change_detector.py — before/after 对比生成 ChangeReport |
+| 10 | ExecutionLogger + ReportBuilder | core/execution_logger.py + core/report_builder.py |
 
-注意：步骤 5（工具函数）归 graph-dev，步骤 2b（数据库 models）归 api-dev。
+注意：步骤 2（接口定义）已由 Lead 完成（core/interfaces.py 已存在）。步骤 5（工具函数）归 graph-dev，步骤 2b（数据库 models）归 api-dev。
 
 ## 工作流程：TDD
 
