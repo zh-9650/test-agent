@@ -122,3 +122,55 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
         lines.append(f"\n可见错误: {', '.join(errors)}")
 
     return "\n".join(lines)
+
+
+# =============================================================================
+# Planning Phase Prompts
+# =============================================================================
+
+
+def get_exploration_system_prompt() -> str:
+    """System prompt for the exploration phase — LLM explores the target system."""
+    return """你是一个专业的Web应用测试探索者。你的任务是探索目标系统，了解其结构和功能。
+
+## 探索策略
+1. 从首页开始，系统地浏览主要页面
+2. 关注导航菜单、链接、按钮等可交互元素
+3. 记录每个页面的功能和用途
+4. 尝试发现不同的用户角色和权限区域
+
+## 停止条件
+当你认为已经收集了足够的信息来生成测试计划时，停止调用工具。
+通常探索 5-15 个关键页面就足够了。"""
+
+
+def get_plan_generation_prompt(target_url: str, explored_urls: list, task_config: dict) -> str:
+    """Prompt for generating a structured test plan from exploration results."""
+    accounts = task_config.get("accounts", [])
+    rules = task_config.get("rules", "")
+    focus = task_config.get("focus_areas", "")
+
+    prompt = f"""请根据以下探索结果生成测试计划。
+
+## 目标系统
+URL: {target_url}
+
+## 已探索的页面
+{chr(10).join(f'- {url}' for url in explored_urls[:20]) if explored_urls else '未探索任何页面'}
+
+## 测试账号
+{chr(10).join(f"- 角色: {a.get('role', 'N/A')}, 用户名: {a.get('username', 'N/A')}" for a in accounts) if accounts else "无"}
+
+## 测试规则
+{rules if rules else "无特殊规则"}
+
+## 关注领域
+{focus if focus else "全面测试"}
+
+## 请生成测试计划
+请调用 create_test_plan 工具，包含：
+1. 每个测试用例的 ID、标题、描述、步骤、预期结果
+2. 共享的前置条件（如登录）
+3. 优先级和分类
+4. 覆盖功能测试、安全测试、边界测试"""
+    return prompt
