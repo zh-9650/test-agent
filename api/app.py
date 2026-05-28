@@ -24,10 +24,14 @@ from api.schemas import (
     TaskListResponse,
     TaskResponse,
 )
+from api.websocket import manager as websocket_manager, stream_runtime_updates, websocket_endpoint
 from database.connection import async_session, init_database
 from database.models import Report, Task, TaskStep
 
 app = FastAPI(title="AI Native Testing Platform", version="1.0")
+
+# Register WebSocket route
+app.add_api_websocket_route("/ws/tasks/{task_id}", websocket_endpoint)
 
 # CORS for frontend dev server
 app.add_middleware(
@@ -201,3 +205,26 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
             task.status = "running"
             task.started_at = datetime.now(timezone.utc)
             await session.commit()
+
+    # Import Runtime here to avoid circular imports at module level
+    from core.runtime import Runtime
+    runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, **(config or {})})
+    try:
+        async for update in runtime.run_stream():
+            await websocket_manager.send_message(str(task_db_id), update)
+    except Exception as e:
+        # If streaming fails, update task status to failed
+        async with async_session() as session:
+            task = await session.get(Task, task_db_id)
+            if task:
+                task.status = "failed"
+                task.completed_at = datetime.now(timezone.utc)
+                await session.commit()
+    else:
+        # Update status to completed if streaming succeeded
+        async with async_session() as session:
+            task = await session.get(Task, task_db_id)
+            if task:
+                task.status = "completed"
+                task.completed_at = datetime.now(timezone.utc)
+                await session.commit()
