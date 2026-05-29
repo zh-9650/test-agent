@@ -517,13 +517,17 @@ async def test_run_stream_yields_updates():
     rt._launch_browser = AsyncMock()
     rt._close_browser = AsyncMock()
 
-    # Mock planning graph
+    # Mock planning graph with astream (run_stream now uses astream)
     mock_planning_graph = MagicMock()
-    mock_planning_graph.ainvoke = AsyncMock(return_value={
-        "test_plan": [SAMPLE_TEST_CASE_1],
-        "setups": {"login_as_test": SAMPLE_SETUP},
-        "messages": [],
-    })
+
+    async def mock_astream(state):
+        yield ("generate_plan", {
+            "test_plan": [SAMPLE_TEST_CASE_1],
+            "setups": {"login_as_test": SAMPLE_SETUP},
+            "messages": [],
+        })
+
+    mock_planning_graph.astream = mock_astream
 
     # Mock _execute_test_case_stream to yield a test_case_complete update
     async def mock_execute_stream(index, test_case, test_plan, setups):
@@ -572,9 +576,14 @@ async def test_run_stream_error_handling():
     rt._launch_browser = AsyncMock()
     rt._close_browser = AsyncMock()
 
-    # Mock planning graph to raise exception
+    # Mock planning graph to raise exception via astream
     mock_planning_graph = MagicMock()
-    mock_planning_graph.ainvoke = AsyncMock(side_effect=RuntimeError("Planning failed"))
+
+    async def mock_astream_error(state):
+        raise RuntimeError("Planning failed")
+        yield  # make it an async generator (unreachable but required)
+
+    mock_planning_graph.astream = mock_astream_error
 
     with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph):
         updates = []

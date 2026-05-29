@@ -21,7 +21,7 @@ from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, Syst
 from langgraph.graph import END, START, StateGraph
 
 from core.change_detector import detect_changes
-from core.interfaces import AssertionResult, ChangeReport, TestCase, TestState
+from core.interfaces import AssertionResult, ChangeReport, StepResult, TestCase, TestState
 from core.llm_client import get_llm_client
 from core.page_semantic import extract_page_semantics, take_screenshot
 
@@ -225,6 +225,7 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "state_after": state_after,
         "current_step": current_step + 1,
+        "_last_tool_result": result_text,
     }
 
 
@@ -303,28 +304,58 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
 async def record_node(state: dict[str, Any]) -> dict[str, Any]:
     """Record the step result and manage context for next step.
 
-    - Builds StepResult from the step's data
-    - Context management: trim messages if > 10 to keep context manageable
-    - Returns RemoveMessage list for LangGraph's add_messages reducer
-    """
-    # Context management: trim messages if conversation grows too long
-    messages = list(state.get("messages", []))
-    messages_to_remove = []
+    Two paths reach this node:
+    1. After assert (normal step) → build StepResult and collect it
+    2. From decide with no tool_call (test case complete) → skip StepResult
 
+    Also does context management: trim messages if > 10 to keep context manageable.
+    """
+    # Determine if this is a normal step (path from assert) or completion (path from decide)
+    messages = list(state.get("messages", []))
+    last_ai_msg = None
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage):
+            last_ai_msg = msg
+            break
+
+    has_tool_call = (
+        last_ai_msg is not None
+        and hasattr(last_ai_msg, "tool_calls")
+        and last_ai_msg.tool_calls
+    )
+
+    # Build StepResult only on normal step path (has tool_call)
+    collected_steps = []
+    if has_tool_call:
+        tool_call = last_ai_msg.tool_calls[0]
+        step_result = StepResult(
+            step_index=state.get("current_step", 0) - 1,  # execute already incremented
+            action_type=tool_call.get("name", ""),
+            action_target=str(tool_call.get("args", {}).get("target", "")),
+            action_args=tool_call.get("args", {}),
+            result=state.get("_last_tool_result", ""),
+            screenshot_path=state.get("screenshot", ""),
+            change_report=state.get("_last_change_report"),
+            assertion=state.get("_last_assertion"),
+            thought=last_ai_msg.content if isinstance(last_ai_msg.content, str) else str(last_ai_msg.content),
+        )
+        collected_steps = [step_result]
+
+    # Context management: trim messages if conversation grows too long
+    messages_to_remove = []
     if len(messages) > 10:
-        # Keep system messages (first) and last 10 messages
-        # Remove middle messages (from index 1 to len-10)
         middle_messages = messages[1:-10]
         for m in middle_messages:
             if hasattr(m, "id") and m.id:
                 messages_to_remove.append(m)
 
+    result: dict[str, Any] = {}
+    if collected_steps:
+        result["_collected_steps"] = collected_steps
     if messages_to_remove:
-        return {
-            "messages": [RemoveMessage(id=m.id) for m in messages_to_remove],
-        }
+        result["messages"] = [RemoveMessage(id=m.id) for m in messages_to_remove]
 
-    return {}
+    return result
 
 
 # =============================================================================

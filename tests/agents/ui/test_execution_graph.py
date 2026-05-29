@@ -301,7 +301,8 @@ async def test_execute_node_mock():
     )
     state = make_sample_state(messages=[ai_msg], current_step=0)
 
-    mock_tool_fn = AsyncMock(return_value="已点击 #3")
+    mock_tool_fn = AsyncMock()
+    mock_tool_fn.ainvoke = AsyncMock(return_value="已点击 #3")
     mock_state_after = {
         "url": "http://example.com/home",
         "title": "主页",
@@ -320,6 +321,7 @@ async def test_execute_node_mock():
         mock_tool_fn.ainvoke.assert_called_once_with({"target": "#3"})
         assert result["state_after"] == mock_state_after
         assert result["current_step"] == 1
+        assert result["_last_tool_result"] == "已点击 #3"
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +340,8 @@ async def test_execute_node_error_handling():
     )
     state = make_sample_state(messages=[ai_msg], current_step=0)
 
-    mock_tool_fn = AsyncMock(side_effect=Exception("元素不存在"))
+    mock_tool_fn = AsyncMock()
+    mock_tool_fn.ainvoke = AsyncMock(side_effect=Exception("元素不存在"))
     mock_state_after = {
         "url": "http://example.com/login",
         "title": "登录页面",
@@ -357,6 +360,7 @@ async def test_execute_node_error_handling():
         # Should still return state_after and increment step
         assert result["state_after"] == mock_state_after
         assert result["current_step"] == 1
+        assert result["_last_tool_result"] == "执行失败: 元素不存在"
 
 
 # ---------------------------------------------------------------------------
@@ -495,28 +499,70 @@ async def test_assert_node_inconclusive_result():
 
 
 @pytest.mark.asyncio
-async def test_record_node_mock():
-    """Record node should handle state and trim messages when needed."""
+async def test_record_node_builds_step_result():
+    """Record node should build StepResult when reached via assert (has tool_call)."""
     from agents.ui.execution_graph import record_node
+    from core.interfaces import StepResult
 
-    # Build state with > 10 messages to trigger trimming
-    messages = [SystemMessage(content="系统提示")]
-    for i in range(12):
-        messages.append(AIMessage(content=f"AI思考 {i}", id=f"ai_{i}"))
-        messages.append(HumanMessage(content=f"步骤 {i}", id=f"hu_{i}"))
+    ai_msg = AIMessage(
+        content="点击登录按钮以验证登录功能",
+        tool_calls=[{"name": "click", "args": {"target": "#3"}, "id": "call_1"}],
+    )
+    tool_msg = ToolMessage(content="已点击 #3", tool_call_id="call_1")
+
+    change_report = ChangeReport(url_changed=True, url_before="http://example.com/login", url_after="http://example.com/home")
+    assertion = AssertionResult(status="pass", reasoning="验证通过")
 
     state = make_sample_state(
-        messages=messages,
-        current_step=5,
-        _last_change_report=ChangeReport(url_changed=True),
-        _last_assertion=AssertionResult(status="pass", reasoning="验证通过"),
+        messages=[ai_msg, tool_msg],
+        current_step=1,  # execute already incremented
+        _last_tool_result="已点击 #3",
+        _last_change_report=change_report,
+        _last_assertion=assertion,
+        screenshot="base64data",
     )
 
-    # The record node should not crash and should handle context management
     result = await record_node(state)
 
-    # result should exist (may contain RemoveMessage or empty dict)
-    assert result is not None
+    assert "_collected_steps" in result
+    assert len(result["_collected_steps"]) == 1
+    step = result["_collected_steps"][0]
+    assert isinstance(step, StepResult)
+    assert step.step_index == 0  # current_step - 1
+    assert step.action_type == "click"
+    assert step.action_target == "#3"
+    assert step.action_args == {"target": "#3"}
+    assert step.result == "已点击 #3"
+    assert step.screenshot_path == "base64data"
+    assert step.change_report == change_report
+    assert step.assertion == assertion
+    assert step.thought == "点击登录按钮以验证登录功能"
+
+
+# ---------------------------------------------------------------------------
+# test_record_node_no_step_result_on_completion
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_record_node_no_step_result_on_completion():
+    """Record node should NOT build StepResult when test case naturally completes (no tool_call)."""
+    from agents.ui.execution_graph import record_node
+
+    # Test case complete: AIMessage with no tool_calls
+    ai_msg = AIMessage(content="测试完成，所有步骤已验证。")
+
+    state = make_sample_state(
+        messages=[ai_msg],
+        current_step=4,
+        _last_tool_result="",
+        _last_change_report=ChangeReport(),
+        _last_assertion=AssertionResult(status="pass", reasoning="通过"),
+    )
+
+    result = await record_node(state)
+
+    assert "_collected_steps" not in result or len(result.get("_collected_steps", [])) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -525,23 +571,29 @@ async def test_record_node_mock():
 
 
 @pytest.mark.asyncio
-async def test_record_node_short_messages():
-    """Record node should not trim when messages < 10."""
+async def test_record_node_short_messages_with_step_result():
+    """Record node should build StepResult even with short messages (no trimming needed)."""
     from agents.ui.execution_graph import record_node
+    from core.interfaces import StepResult
 
-    messages = [
-        SystemMessage(content="系统提示"),
-        AIMessage(content="AI思考", id="ai_1"),
-        HumanMessage(content="步骤1", id="hu_1"),
-    ]
+    ai_msg = AIMessage(
+        content="输入用户名",
+        tool_calls=[{"name": "input_text", "args": {"target": "#1", "text": "test_c"}, "id": "call_2"}],
+    )
 
     state = make_sample_state(
-        messages=messages,
+        messages=[SystemMessage(content="系统提示"), ai_msg],
         current_step=1,
+        _last_tool_result="已在 #1 输入 test_c",
         _last_change_report=ChangeReport(url_changed=False),
-        _last_assertion=AssertionResult(status="pass", reasoning="通过"),
+        _last_assertion=AssertionResult(status="inconclusive", reasoning="无法判断"),
     )
 
     result = await record_node(state)
 
-    assert result is not None
+    # Should have StepResult but no RemoveMessage (messages too short for trimming)
+    assert "_collected_steps" in result
+    assert len(result["_collected_steps"]) == 1
+    assert result["_collected_steps"][0].action_type == "input_text"
+    # No message trimming since < 10 messages
+    assert "messages" not in result

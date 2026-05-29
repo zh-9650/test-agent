@@ -145,6 +145,14 @@ class TestState(MessagesState):
     state_before: dict[str, Any]
     state_after: dict[str, Any]
 
+    # 步骤收集（record_node 每步追加，operator.add reducer 自动累加）
+    _collected_steps: Annotated[list[StepResult], operator.add]
+
+    # 每步临时数据（被下一步覆盖，不进 reducer）
+    _last_tool_result: str  # execute_node 设置的工具执行结果文本
+    _last_change_report: Optional[ChangeReport]  # assert_node 设置的变化报告
+    _last_assertion: Optional[AssertionResult]  # assert_node 设置的断言结果
+
     # 任务元数据
     task_id: str
     task_config: dict[str, Any]  # 测试规则、账号信息、关注领域等
