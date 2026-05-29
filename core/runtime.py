@@ -148,11 +148,26 @@ class Runtime:
                                 "timestamp": _now_iso(),
                             }
                     elif node_name == "explore_execute":
+                        messages = state_update.get("messages", [])
+                        tool_name = "未知"
+                        result_text = "操作已执行，但无返回结果"
+                        if messages:
+                            msg = messages[-1]
+                            tool_name = getattr(msg, "name", "") or getattr(msg, "tool_name", "") or "未知"
+                            
+                            content = getattr(msg, "content", "")
+                            if content:
+                                result_text = content if isinstance(content, str) else str(content)
+                                
                         yield {
                             "type": "action_result",
                             "test_case_id": "",
                             "step_index": 0,
-                            "data": {"phase": "exploration"},
+                            "data": {
+                                "phase": "exploration",
+                                "tool_name": tool_name,
+                                "result": result_text,
+                            },
                             "timestamp": _now_iso(),
                         }
                     elif node_name == "explore_observe":
@@ -468,25 +483,32 @@ class Runtime:
                         # Get tool call info from the last AI message in accumulated state
                         tc_messages = final_state.get("messages", [])
                         last_ai = None
+                        tool_calls = []
+                        from core.llm_client import extract_tool_calls_from_message
                         for msg in reversed(tc_messages):
-                            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
-                                last_ai = msg
-                                break
+                            if getattr(msg, "type", "") == "ai" or type(msg).__name__ == "AIMessage":
+                                calls = extract_tool_calls_from_message(msg)
+                                if calls:
+                                    last_ai = msg
+                                    tool_calls = calls
+                                    break
 
                         tool_name = ""
                         tool_args: dict[str, Any] = {}
-                        if last_ai and last_ai.tool_calls:
-                            tool_name = last_ai.tool_calls[0]["name"]
-                            tool_args = last_ai.tool_calls[0]["args"]
+                        if last_ai and tool_calls:
+                            tool_name = tool_calls[0]["name"]
+                            tool_args = tool_calls[0]["args"]
 
+                        result_text = state_update.get("_last_tool_result", "")
+                        
                         yield {
                             "type": "action_result",
                             "test_case_id": test_case.id,
                             "step_index": state_update.get("current_step", 0),
                             "data": {
-                                "tool_name": tool_name,
+                                "tool_name": tool_name or "未知",
                                 "tool_args": tool_args,
-                                "result": state_update.get("_last_tool_result", ""),
+                                "result": result_text or "操作已执行，但无返回结果",
                             },
                             "timestamp": _now_iso(),
                         }

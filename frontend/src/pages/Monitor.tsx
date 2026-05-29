@@ -32,12 +32,21 @@ function formatMessageData(msg: WSMessage): string {
   const data = msg.data;
 
   switch (msg.type) {
-    case 'action_result':
-      return `操作: ${data.tool_name || '未知'} | 结果: ${data.result || '无'}`;
+    case 'action_result': {
+      const argsStr = data.tool_args && Object.keys(data.tool_args).length > 0 ? JSON.stringify(data.tool_args) : '';
+      return `操作: ${data.tool_name || '未知'}${argsStr ? ` (${argsStr})` : ''} | 结果: ${data.result || '无'}`;
+    }
     case 'assertion_result':
       return `断言: ${data.status === 'pass' ? '✅ 通过' : '❌ 失败'} | ${data.reasoning || ''}`;
-    case 'ai_thinking':
-      return data.thought || data.text || JSON.stringify(data);
+    case 'ai_thinking': {
+      let thought = data.thought || data.thinking || data.text;
+      if (Array.isArray(thought)) {
+        thought = thought.map((t: any) => t.thinking || t.text || JSON.stringify(t)).join('\n');
+      } else if (typeof thought === 'object' && thought !== null) {
+        thought = thought.thinking || thought.text || JSON.stringify(thought);
+      }
+      return typeof thought === 'string' ? thought : JSON.stringify(data);
+    }
     case 'page_update':
       return `页面更新: ${data.url || '未知 URL'}`;
     case 'test_case_complete':
@@ -208,7 +217,14 @@ export default function Monitor() {
                   </span>
                 </div>
                 <div style={{ fontSize: '0.85rem', color: '#333' }}>
-                  {formatMessageData(msg)}
+                  {(() => {
+                    try {
+                      const result = formatMessageData(msg);
+                      return typeof result === 'string' ? result : JSON.stringify(result);
+                    } catch {
+                      return JSON.stringify(msg.data);
+                    }
+                  })()}
                 </div>
               </div>
             ))}

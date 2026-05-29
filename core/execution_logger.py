@@ -85,6 +85,31 @@ async def log_step(task_id: str, test_case_id: str, step: StepResult) -> None:
         raise ValueError(f"Task with id '{task_id}' not found. Call log_task_created first.")
 
     async with async_session() as session:
+        # Save screenshot to disk if it's a base64 string
+        final_screenshot_path = step.screenshot_path
+        if step.screenshot_path and len(step.screenshot_path) > 1000:  # heuristic for base64
+            try:
+                import base64
+                import uuid
+                from pathlib import Path
+                
+                screenshots_dir = Path(__file__).resolve().parent.parent / "data" / "screenshots"
+                screenshots_dir.mkdir(parents=True, exist_ok=True)
+                
+                filename = f"task_{db_id}_tc_{test_case_id}_step_{step.step_index}_{uuid.uuid4().hex[:8]}.png"
+                filepath = screenshots_dir / filename
+                
+                # Strip data URL prefix if present (though take_screenshot returns raw base64)
+                b64_data = step.screenshot_path
+                if b64_data.startswith('data:image'):
+                    b64_data = b64_data.split(',')[1]
+                    
+                filepath.write_bytes(base64.b64decode(b64_data))
+                final_screenshot_path = filename  # Only store filename in DB
+            except Exception as e:
+                print(f"Failed to save screenshot to disk: {e}")
+                final_screenshot_path = "" # Avoid saving massive string to DB on failure
+
         task_step = TaskStep(
             task_id=db_id,
             test_case_id=test_case_id,
@@ -93,7 +118,7 @@ async def log_step(task_id: str, test_case_id: str, step: StepResult) -> None:
             action_target=step.action_target,
             action_args=step.action_args if step.action_args else None,
             result=step.result,
-            screenshot_path=step.screenshot_path,
+            screenshot_path=final_screenshot_path,
             change_report=step.change_report.model_dump() if step.change_report else None,
             assertion_result=step.assertion.model_dump() if step.assertion else None,
         )

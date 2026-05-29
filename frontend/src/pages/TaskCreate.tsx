@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createTask } from '../api/client';
 import type { CreateTaskRequest } from '../types';
+import DocumentUploader from '../components/DocumentUploader';
 
 interface Account {
   role: string;
@@ -16,6 +17,11 @@ export default function TaskCreate() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [rules, setRules] = useState('');
   const [focusAreas, setFocusAreas] = useState('');
+  const [prd, setPrd] = useState('');
+  const [swagger, setSwagger] = useState('');
+  const [techDoc, setTechDoc] = useState('');
+  const [prototypeUrl, setPrototypeUrl] = useState('');
+  const [changelog, setChangelog] = useState('');
   const [loading, setLoading] = useState(false);
 
   const addAccount = () => {
@@ -45,6 +51,11 @@ export default function TaskCreate() {
           accounts: accounts.length > 0 ? accounts : undefined,
           rules: rules.trim() || undefined,
           focus_areas: focusAreas.trim() || undefined,
+          prd: prd.trim() || undefined,
+          swagger: swagger.trim() || undefined,
+          tech_doc: techDoc.trim() || undefined,
+          prototype_url: prototypeUrl.trim() || undefined,
+          changelog: changelog.trim() || undefined,
         },
       };
       const task = await createTask(request);
@@ -178,6 +189,48 @@ export default function TaskCreate() {
             placeholder="可选：描述需要重点测试的功能模块..."
             rows={4}
             style={{ ...inputStyle, resize: 'vertical' }}
+          />
+        </div>
+
+        <div style={sectionStyle}>
+          <h3 style={{ marginTop: 0, marginBottom: '1rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>知识库注入 (非必填)</h3>
+          
+          <DocumentUploader
+            label="PRD / 需求文档"
+            value={prd}
+            onChange={setPrd}
+            placeholder="粘贴产品需求文档内容，用于指导 AI 探索业务流程..."
+          />
+
+          <DocumentUploader
+            label="接口文档 (Swagger / API Docs)"
+            value={swagger}
+            onChange={setSwagger}
+            placeholder="粘贴 Swagger JSON 文本或核心接口说明，用于指导 AI 生成深度的边界测试用例..."
+            allowUrlFetch={true}
+          />
+
+          <label style={labelStyle}>UI 交互原型 (Prototype URL)</label>
+          <input
+            type="url"
+            value={prototypeUrl}
+            onChange={(e) => setPrototypeUrl(e.target.value)}
+            placeholder="Figma / 蓝湖 等原型链接..."
+            style={inputStyle}
+          />
+
+          <DocumentUploader
+            label="技术实现逻辑 / 架构文档"
+            value={techDoc}
+            onChange={setTechDoc}
+            placeholder="简述底层实现逻辑、异步机制等，帮助 AI 理解潜在的代码痛点..."
+          />
+
+          <DocumentUploader
+            label="版本变更日志 (Changelog)"
+            value={changelog}
+            onChange={setChangelog}
+            placeholder="本次发版的更新内容，指导 AI 进行重点回归测试..."
           />
         </div>
 

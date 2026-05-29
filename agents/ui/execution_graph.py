@@ -46,7 +46,8 @@ def should_continue(state: dict[str, Any]) -> str:
         return "record_complete"
 
     last_message = messages[-1]
-    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+    from core.llm_client import extract_tool_calls_from_message
+    if extract_tool_calls_from_message(last_message):
         return "execute"
     return "record_complete"
 
@@ -79,7 +80,8 @@ def should_continue_or_stop(state: dict[str, Any]) -> str:
     # Find the most recent AIMessage to check if it had tool_calls
     for msg in reversed(messages):
         if isinstance(msg, AIMessage):
-            if hasattr(msg, "tool_calls") and msg.tool_calls:
+            from core.llm_client import extract_tool_calls_from_message
+            if extract_tool_calls_from_message(msg):
                 return "observe"
             else:
                 return "end"
@@ -151,7 +153,7 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
         current_test_case = test_plan[current_index]
 
         # Build prompts
-        system_prompt = get_execution_system_prompt(current_test_case)
+        system_prompt = get_execution_system_prompt(current_test_case, state.get("task_config"))
         step_prompt = get_step_prompt(state.get("current_step", 0), current_test_case)
 
         # Build messages for LLM
@@ -189,15 +191,19 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
 
     # Get the last AI message with tool calls
     last_ai_msg = None
+    tool_calls = []
+    from core.llm_client import extract_tool_calls_from_message
     for msg in reversed(messages):
-        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
-            last_ai_msg = msg
-            break
+        if isinstance(msg, AIMessage):
+            calls = extract_tool_calls_from_message(msg)
+            if calls:
+                last_ai_msg = msg
+                tool_calls = calls
+                break
 
-    if not last_ai_msg:
+    if not last_ai_msg or not tool_calls:
         return {}  # shouldn't happen if decide routed here
 
-    tool_calls = last_ai_msg.tool_calls
     tool_call = tool_calls[0]  # Phase 1: one tool call per step
     tool_name = tool_call["name"]
     tool_args = tool_call["args"]
@@ -250,11 +256,16 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
 
         # Find the tool_call from the last AIMessage
         messages = state.get("messages", [])
+        # Find the tool_call from the last AIMessage
+        messages = state.get("messages", [])
         tool_call = None
+        from core.llm_client import extract_tool_calls_from_message
         for msg in reversed(messages):
-            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
-                tool_call = msg.tool_calls[0]
-                break
+            if isinstance(msg, AIMessage):
+                calls = extract_tool_calls_from_message(msg)
+                if calls:
+                    tool_call = calls[0]
+                    break
 
         expected = current_test_case.expected if current_test_case else "无预期结果"
 
@@ -284,14 +295,36 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
         elif not isinstance(reasoning, str):
             reasoning = str(reasoning)
 
+        import re
         upper_reasoning = reasoning.upper()
-
-        if "PASS" in upper_reasoning or "通过" in reasoning:
-            status = "pass"
-        elif "FAIL" in upper_reasoning or "失败" in reasoning:
-            status = "fail"
+        
+        # Find the last occurrence of PASS/FAIL/INCONCLUSIVE:
+        matches = list(re.finditer(r'(PASS|FAIL|INCONCLUSIVE)\s*:\s*(.*)', upper_reasoning))
+        if matches:
+            last_match = matches[-1]
+            status_str = last_match.group(1)
+            
+            # Extract the actual Chinese/English reason from the original text
+            # by matching the same offset
+            start_idx = last_match.start(2)
+            short_reasoning = reasoning[start_idx:].strip()
+            
+            if status_str == "PASS":
+                status = "pass"
+            elif status_str == "FAIL":
+                status = "fail"
+            else:
+                status = "inconclusive"
+                
+            reasoning = short_reasoning
         else:
-            status = "inconclusive"
+            # Fallback
+            if "PASS" in upper_reasoning or "通过" in reasoning:
+                status = "pass"
+            elif "FAIL" in upper_reasoning or "失败" in reasoning:
+                status = "fail"
+            else:
+                status = "inconclusive"
 
         assertion = AssertionResult(status=status, reasoning=reasoning)
 
@@ -333,16 +366,14 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
             last_ai_msg = msg
             break
 
-    has_tool_call = (
-        last_ai_msg is not None
-        and hasattr(last_ai_msg, "tool_calls")
-        and last_ai_msg.tool_calls
-    )
+    from core.llm_client import extract_tool_calls_from_message
+    calls = extract_tool_calls_from_message(last_ai_msg) if last_ai_msg else []
+    has_tool_call = bool(calls)
 
     # Build StepResult only on normal step path (has tool_call)
     collected_steps = []
     if has_tool_call:
-        tool_call = last_ai_msg.tool_calls[0]
+        tool_call = calls[0]
         step_result = StepResult(
             step_index=state.get("current_step", 0) - 1,  # execute already incremented
             action_type=tool_call.get("name", ""),

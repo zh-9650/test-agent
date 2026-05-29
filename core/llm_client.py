@@ -10,7 +10,7 @@ and caches client instances by model_type.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AnyMessage
@@ -76,14 +76,15 @@ def get_llm_client(model_type: str = "default") -> ChatAnthropic:
     api_key = _get_required_env("ANTHROPIC_AUTH_TOKEN")
     base_url = _get_required_env("ANTHROPIC_BASE_URL")
 
-    # Instantiate ChatAnthropic with retry support.
+    # Instantiate ChatAnthropic with retry support and strict timeout.
     client = ChatAnthropic(
         model=model_name,
         api_key=api_key,
         base_url=base_url,
         max_tokens=4096,
         temperature=0,
-        max_retries=3,
+        max_retries=2,
+        timeout=30.0,
     )
 
     # Cache and return.
@@ -130,3 +131,25 @@ def count_tokens(messages: list[AnyMessage], model: str = "") -> int:
         total_tokens += tokens
 
     return total_tokens
+
+
+def extract_tool_calls_from_message(msg: AnyMessage) -> list[dict[str, Any]]:
+    """Extract tool calls from an AIMessage.
+    
+    Handles both standard msg.tool_calls and fallback parsing from msg.content
+    when the LLM provider/adapter embeds the tool call as JSON blocks inside the text.
+    """
+    if hasattr(msg, "tool_calls") and msg.tool_calls:
+        return msg.tool_calls
+
+    extracted = []
+    content = getattr(msg, "content", None)
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "tool_use":
+                extracted.append({
+                    "id": item.get("id", ""),
+                    "name": item.get("name", ""),
+                    "args": item.get("input", {}),
+                })
+    return extracted

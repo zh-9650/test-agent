@@ -11,8 +11,20 @@ from typing import Any
 from core.interfaces import TestCase
 
 
-def get_execution_system_prompt(test_case: TestCase) -> str:
+def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any] | None = None) -> str:
     """System prompt for the execution phase of a single test case."""
+    accounts_info = ""
+    memory_info = ""
+    if task_config:
+        if task_config.get("accounts"):
+            accounts = task_config.get("accounts", [])
+            accounts_info = "\n## 测试账号\n你可以使用以下提供的测试账号进行登录或测试：\n"
+            for a in accounts:
+                accounts_info += f"- 角色: {a.get('role', 'N/A')}, 账号: {a.get('username', 'N/A')}, 密码: {a.get('password', 'N/A')}\n"
+        
+        if task_config.get("memory_context"):
+            memory_info = task_config.get("memory_context", "")
+
     return f"""你是一个专业的Web应用测试工程师AI。你正在执行一个测试用例。
 
 ## 当前测试用例
@@ -20,7 +32,8 @@ def get_execution_system_prompt(test_case: TestCase) -> str:
 - 标题: {test_case.title}
 - 描述: {test_case.description}
 - 预期结果: {test_case.expected}
-
+{accounts_info}
+{memory_info}
 ## 你的工作方式
 1. 观察当前页面状态（页面元素、结构、状态）
 2. 根据测试步骤决定下一步操作
@@ -129,16 +142,26 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
 # =============================================================================
 
 
-def get_exploration_system_prompt(accounts: list | None = None) -> str:
+def get_exploration_system_prompt(accounts: list | None = None, task_config: dict[str, Any] | None = None) -> str:
     """System prompt for the exploration phase — LLM explores the target system."""
-    prompt = """你是一个专业的Web应用测试探索者。你的任务是探索目标系统，了解其结构和功能。
+    
+    prd_context = ""
+    if task_config:
+        prd = task_config.get("prd")
+        changelog = task_config.get("changelog")
+        if prd:
+            prd_context += f"\n## 产品需求文档 (PRD)\n{prd}\n(请带着上述业务目标，优先寻找核心流程的入口进行点击探索)\n"
+        if changelog:
+            prd_context += f"\n## 本次发版变更 (Changelog)\n{changelog}\n(请重点寻找并探索变更提及的功能区域)\n"
+            
+    prompt = f"""你是一个专业的Web应用测试探索者。你的任务是探索目标系统，了解其结构和功能。
 
 ## 探索策略
 1. 从首页开始，系统地浏览主要页面
-2. 关注导航菜单、链接、按钮等可交互元素
+2. 结合 PRD 和 Changelog 的业务目标，给页面上的按钮打分，优先点击核心业务链路上最重要的元素（DFS策略）
 3. 记录每个页面的功能和用途
 4. 尝试发现不同的用户角色和权限区域
-
+{prd_context}
 ## 严格禁止
 - **禁止使用 navigate 工具通过 URL 直接跳转页面**
 - 只能通过点击页面上的链接、按钮等交互元素来导航到其他页面
@@ -151,33 +174,58 @@ def get_exploration_system_prompt(accounts: list | None = None) -> str:
 """
     prompt += """
 ## 停止条件
-当你认为已经收集了足够的信息来生成测试计划时，停止调用工具。
-通常探索 5-15 个关键页面就足够了。"""
+请继续探索目标系统，尽最大努力去点击不同的按钮、导航菜单，探索至少 5 个不同的页面，发现系统的所有核心功能。
+如果你认为已经完全遍历了所有的核心功能页面并收集了足够的信息来生成测试计划，或者你陷入了死胡同无法继续，再选择不调用任何工具以结束探索。"""
     return prompt
 
 
-def get_plan_generation_prompt(target_url: str, explored_urls: list, task_config: dict) -> str:
-    """Prompt for generating a structured test plan from exploration results."""
-    accounts = task_config.get("accounts", [])
-    rules = task_config.get("rules", "")
-    focus = task_config.get("focus_areas", "")
+def get_plan_generation_prompt(target_url: str, explored_urls: list[str], task_config: dict[str, Any] | None = None) -> str:
+    """Prompt for generating the test plan.
+    
+    Includes target URL, explored paths, and constraints/focus areas from config.
+    """
+    config_context = ""
+    memory_info = ""
+    accounts = []
+    rules = ""
+    
+    if task_config:
+        accounts = task_config.get("accounts", [])
+        rules_list = task_config.get("rules", [])
+        focus_list = task_config.get("focus_areas", [])
+        
+        if rules_list:
+            config_context += "\n测试规则与约束:\n" + "\n".join(f"- {r}" for r in rules_list)
+            rules = "\n".join(rules_list)
+        if focus_list:
+            config_context += "\n测试重点区域:\n" + "\n".join(f"- {f}" for f in focus_list)
+            
+        if task_config.get("memory_context"):
+            memory_info = task_config.get("memory_context", "")
+            
+        if task_config.get("prd"):
+            config_context += "\n## 产品需求文档 (PRD):\n" + task_config.get("prd", "")
+        if task_config.get("swagger"):
+            config_context += "\n## 接口文档 (Swagger):\n" + task_config.get("swagger", "") + "\n(请结合Swagger提取边界值、必填项和越权场景生成高价值测试用例)"
+        if task_config.get("tech_doc"):
+            config_context += "\n## 技术实现文档:\n" + task_config.get("tech_doc", "")
+        if task_config.get("changelog"):
+            config_context += "\n## 变更日志 (Changelog):\n" + task_config.get("changelog", "") + "\n(请确保测试计划覆盖了这些重点变更模块)"
 
-    prompt = f"""请根据以下探索结果生成测试计划。
+    return f"""你需要为目标应用生成一份结构化的测试计划。
 
-## 目标系统
-URL: {target_url}
+目标应用 URL: {target_url}
 
-## 已探索的页面
-{chr(10).join(f'- {url}' for url in explored_urls[:20]) if explored_urls else '未探索任何页面'}
+探索阶段收集到的页面路径 (最多20个):
+{chr(10).join(explored_urls) if explored_urls else '无'}
+{config_context}
+{memory_info}
 
-## 测试账号
+## 任务要求测试账号
 {chr(10).join(f"- 角色: {a.get('role', 'N/A')}, 用户名: {a.get('username', 'N/A')}" for a in accounts) if accounts else "无"}
 
 ## 测试规则
 {rules if rules else "无特殊规则"}
-
-## 关注领域
-{focus if focus else "全面测试"}
 
 ## 请生成测试计划
 请调用 create_test_plan 工具，包含：

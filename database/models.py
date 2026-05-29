@@ -114,3 +114,27 @@ class Report(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     task: Mapped["Task"] = relationship("Task", back_populates="reports")
+
+
+class AgentMemory(Base):
+    """Represents a piece of memory/knowledge learned by the agent.
+
+    Attributes:
+        id: Auto-increment primary key.
+        scope_type: Memory scope type ('global' or 'domain').
+        scope_value: Scope target (e.g., '*' for global, '192.168.31.155' for domain).
+        memory_key: A short description/index for the memory.
+        memory_value: The detailed knowledge or rule text.
+        created_at: Timestamp when created.
+        updated_at: Timestamp when last updated.
+    """
+
+    __tablename__ = "agent_memory"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    scope_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    scope_value: Mapped[str] = mapped_column(Text, nullable=False)
+    memory_key: Mapped[str] = mapped_column(Text, nullable=False)
+    memory_value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

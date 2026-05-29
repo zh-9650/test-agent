@@ -62,7 +62,9 @@ def should_continue_exploring(state: dict[str, Any]) -> str:
     messages = state.get("messages", [])
     if messages:
         last_message = messages[-1]
-        if not (hasattr(last_message, "tool_calls") and last_message.tool_calls):
+        from core.llm_client import extract_tool_calls_from_message
+        tool_calls = extract_tool_calls_from_message(last_message)
+        if not tool_calls:
             return "generate"
 
     return "explore"
@@ -135,14 +137,15 @@ async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         llm = get_llm_client("default")  # qwen3.7-max for planning
-        llm_with_tools = llm.bind_tools(ui_tools)
+        exploration_tools = [t for t in ui_tools if t.name != "navigate"]
+        llm_with_tools = llm.bind_tools(exploration_tools)
 
         task_config = state.get("task_config", {})
         explored_urls = task_config.get("_explored_urls", [])
         accounts = task_config.get("accounts", [])
 
         # Build prompts
-        system_prompt = get_exploration_system_prompt(accounts)
+        system_prompt = get_exploration_system_prompt(accounts, task_config)
         page_summary = _format_page_info(state.get("page_info", {}))
 
         credentials_ctx = ""
@@ -183,18 +186,52 @@ async def explore_execute_node(state: dict[str, Any]) -> dict[str, Any]:
 
     # Get the last AI message with tool calls
     last_ai_msg = None
+    tool_calls = []
+    from core.llm_client import extract_tool_calls_from_message
     for msg in reversed(messages):
-        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
-            last_ai_msg = msg
-            break
+        if isinstance(msg, AIMessage):
+            calls = extract_tool_calls_from_message(msg)
+            if calls:
+                last_ai_msg = msg
+                tool_calls = calls
+                break
 
-    if not last_ai_msg:
+    if not last_ai_msg or not tool_calls:
         return {}  # shouldn't happen if decide routed here
 
-    tool_calls = last_ai_msg.tool_calls
     tool_call = tool_calls[0]  # Phase 1: one tool call per step
     tool_name = tool_call["name"]
     tool_args = tool_call["args"]
+
+    # --- Navigate Firewall ---
+    tool_call_id = tool_call.get("id", "")
+    if tool_name == "navigate":
+        target_url = tool_args.get("url", "")
+        task_config = state.get("task_config", {})
+        explored = task_config.get("_explored_urls", [])
+        page_info = state.get("page_info", {})
+        elements = page_info.get("interactive_elements", [])
+        base_url = task_config.get("target_url", "")
+        prd = task_config.get("prd", "")
+        
+        is_safe = False
+        if target_url == base_url or target_url in explored:
+            is_safe = True
+        elif prd and target_url in prd:
+            is_safe = True
+        else:
+            for el in elements:
+                if el.get("href") == target_url or el.get("url") == target_url:
+                    is_safe = True
+                    break
+                    
+        if not is_safe:
+            return {
+                "messages": [ToolMessage(
+                    content="Firewall 拦截: 严禁凭空伪造跳转路径！请优先使用 click 操作页面上现有的按钮或链接。", 
+                    tool_call_id=tool_call_id
+                )],
+            }
 
     # Execute the tool
     result_text = ""
@@ -205,9 +242,8 @@ async def explore_execute_node(state: dict[str, Any]) -> dict[str, Any]:
     except Exception as e:
         result_text = f"执行失败: {str(e)}"
 
-    tool_call_id = tool_call.get("id", "")
     return {
-        "messages": [ToolMessage(content=result_text, tool_call_id=tool_call_id)],
+        "messages": [ToolMessage(content=result_text, tool_call_id=tool_call_id, name=tool_name)],
     }
 
 

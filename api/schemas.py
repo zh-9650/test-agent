@@ -91,3 +91,20 @@ class MessageResponse(BaseModel):
 
     message: str
     task_id: Optional[str] = None
+
+
+class AgentMemoryItem(BaseModel):
+    id: Optional[int] = None
+    scope_type: str = Field(..., description="'global' or 'domain'")
+    scope_value: str = Field(..., description="'*' or domain URL")
+    memory_key: str
+    memory_value: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class MemoryListResponse(BaseModel):
+    memories: list[AgentMemoryItem]
+    total: int

@@ -159,6 +159,12 @@ export default function Report() {
           const lastStep = caseSteps[caseSteps.length - 1];
           const status = normalizeStatus(lastStep?.assertion_result?.status);
           const isExpanded = expanded.has(testCaseId);
+          
+          // Try to find the corresponding test case in the test plan to get semantic steps
+          let testCaseInfo: any = null;
+          if (task?.test_plan && Array.isArray(task.test_plan)) {
+            testCaseInfo = task.test_plan.find((tc: any) => tc.id === testCaseId);
+          }
 
           return (
             <div
@@ -185,7 +191,7 @@ export default function Report() {
                 }}
               >
                 <div>
-                  <strong>{testCaseId}</strong>
+                  <strong>{testCaseId} {testCaseInfo?.title ? `- ${testCaseInfo.title}` : ''}</strong>
                   <span style={{ marginLeft: '1rem', fontSize: '0.85rem', color: '#666' }}>
                     {caseSteps.length} 个步骤
                   </span>
@@ -195,7 +201,9 @@ export default function Report() {
 
               {isExpanded && (
                 <div style={{ padding: '1rem', backgroundColor: '#fafafa' }}>
-                  {caseSteps.map((step) => (
+                  {caseSteps.map((step) => {
+                    const semanticStep = testCaseInfo?.steps?.[step.step_index];
+                    return (
                     <div
                       key={step.id}
                       style={{
@@ -208,14 +216,16 @@ export default function Report() {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                         <strong>
-                          Step {step.step_index}: {step.action_type}
+                          Step {step.step_index + 1}: {semanticStep ? `${semanticStep} (${step.action_type})` : step.action_type}
                         </strong>
                         <span style={{ fontSize: '0.8rem', color: '#999' }}>
                           {new Date(step.created_at).toLocaleString()}
                         </span>
                       </div>
                       <div style={{ fontSize: '0.85rem', color: '#555', marginBottom: '0.5rem' }}>
-                        目标: {step.action_target}
+                        <strong>参数:</strong> {Object.keys(step.action_args || {}).length > 0 
+                          ? JSON.stringify(step.action_args) 
+                          : '无参数'}
                       </div>
                       {step.assertion_result && (
                         <div
@@ -254,7 +264,8 @@ export default function Report() {
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

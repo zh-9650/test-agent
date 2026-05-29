@@ -9,7 +9,7 @@ export function useWebSocket(taskId: string | number | undefined) {
   useEffect(() => {
     if (!taskId) return;
 
-    const ws = new WebSocket(`ws://localhost:8001/ws/tasks/${taskId}`);
+    let ws = new WebSocket(`ws://localhost:8001/ws/tasks/${taskId}`);
     wsRef.current = ws;
 
     ws.onopen = () => setConnected(true);
@@ -27,6 +27,9 @@ export function useWebSocket(taskId: string | number | undefined) {
 
     return () => {
       ws.close();
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
     };
   }, [taskId]);
 

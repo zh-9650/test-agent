@@ -74,7 +74,7 @@ Agent 输出的操作指令。在 tool calling 方案下，intent 就是 LLM 的
 - **Confidence Score 延后**：需要结构化输出才有意义，与 Phase 1 自然输出的决定矛盾，后续加。（2026-05-27）
 - **Test Strategy Layer 先用 prompt 实现**：Phase 1 在规划阶段的 prompt 中嵌入测试策略思维（风险分析、边界分析、业务流分析），不改架构。后续如果效果不好，可以把 prompt 中的各策略拆成独立模块（risk_analyzer、boundary_analyzer、flow_analyzer），各自调用 LLM 再汇总。（2026-05-27）
 - **页面业务语义理解延后到 Phase 2**：Phase 1 的页面语义层只提取元素+结构+状态，不做"这个页面在业务上是什么"的判断。Phase 2 Explorer Agent 时再加（observe 节点中多一次 LLM 调用判断业务含义）。（2026-05-27）
-- **Memory System 延后，数据先行**：Phase 1 不加 Memory 模块，但 task/task_step/report 表的设计已在为 Memory 做数据积累。后续加 Memory 时只需增加一个读取层，从历史数据中提炼知识供规划阶段参考。（2026-05-27）
+- **Memory System 延后，数据先行 → Phase 1.5 正式引入**：早期决定不加 Memory，但现在升级为 Phase 1.5。采用极简 KV 存储策略（PostgreSQL `agent_memory` 表），分 `global` 和 `domain` 两个作用域。采用粗粒度反思（在测试任务出报告时提炼经验），并在前端增加人工干预的“记忆管理”页面。（2026-05-29更新）
 - **Phase 1 前后端同步开发，过程中逐步验证**：不拆子阶段，后端和前端一起做。每完成一个模块就验证（建好 Page Semantic Layer 验证 observe，建好 tool calling 验证 decide+execute，建好断言验证完整循环）。（2026-05-27）
 - **执行子图拓扑：LLM 自主判断 + 双安全阀**：decide 节点判断是否完成——有 tool_calls 则继续执行，无 tool_calls 则用例结束。两道安全阀兜底：①连续 3 次操作失败 → 标记 failed 跳下一个用例；②单用例达到 15 步上限 → 标记 incomplete 跳下一个用例。两个数字放配置文件，不改代码可调。（2026-05-27）
 - **数据库统一用 PostgreSQL**：开发和生产都用 PostgreSQL，不用 SQLite。开发环境需本地安装 PostgreSQL。（2026-05-27）

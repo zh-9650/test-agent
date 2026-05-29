@@ -69,6 +69,11 @@ Phase 1 delivers the foundational runtime infrastructure plus a fully functional
 33. As a QA engineer, I want the report to include execution logs for each test case, so that I can debug failures
 34. As a QA engineer, I want the report to be available as an HTML file, so that I can share it with stakeholders without requiring access to the platform
 
+### Memory & Knowledge Base
+35. As a QA engineer, I want the AI to remember how to interact with complex UI elements across sessions, so that it doesn't repeat the same mistakes
+36. As a QA engineer, I want system-specific memories (e.g., login quirks) to be isolated by target URL, so that they don't pollute other test targets
+37. As a QA engineer, I want to view, edit, and delete the AI's learned memories in a frontend UI, so that I can correct its knowledge base manually
+
 ### Extensibility & Future Agents
 35. As a developer, I want to add an API Testing Agent in a future phase without modifying the UI Agent code, so that the system grows incrementally
 36. As a developer, I want all agents to share the same runtime, state management, logging, and reporting infrastructure, so that I don't duplicate code
@@ -86,6 +91,14 @@ Phase 1 delivers the foundational runtime infrastructure plus a fully functional
 ---
 
 ## Implementation Decisions
+
+### 15. Memory System (Phase 1.5)
+
+The system implements a dual-scoped Memory System using a Key-Value PostgreSQL table (`agent_memory`):
+- **Scope**: Memories are categorized as either `global` (shared UI patterns) or `domain` (isolated to a specific target URL).
+- **Reflection Timing**: Coarse-grained. At the end of a task (e.g., during report generation), a Reflection Node/Agent analyzes the logs and extracts reusable knowledge.
+- **Retrieval**: Before generating test plans and during execution (e.g., upon failures), the agent queries the KV store to inject relevant memories into the prompt.
+- **Human-in-the-loop**: The React frontend exposes a "Memory Management" page for humans to view, edit, and delete learned knowledge.
 
 ### 1. Architecture: Intent-Based Execution (Not Code Generation)
 
@@ -386,7 +399,15 @@ report:
   report_path: text
   summary: text                    # AI-generated summary
   created_at: timestamp
-```
+
+agent_memory:
+  id: bigint PK
+  scope_type: varchar              # 'global' or 'domain'
+  scope_value: text                # '*' or specific domain like '192.168.31.155'
+  memory_key: text                 # Short description of the memory
+  memory_value: text               # Detailed knowledge/reflection
+  created_at: timestamp
+  updated_at: timestamp
 
 ---
 
@@ -436,7 +457,7 @@ This is a greenfield project — no existing tests to reference. The testing app
 - **Docker deployment** — Phase 1 runs locally with `python main.py`.
 - **Performance testing** — Artillery.io integration. Deferred.
 - **Test case CSV import/export** — deferred.
-- **Historical learning** — learning from past test cases and bugs to improve future testing. Deferred.
+- **Historical learning** — learning from past test cases and bugs to improve future testing is now part of Phase 1.5 (Memory System).
 - **Database assertions** — SQL-based data validation. Deferred.
 - **Log analysis** — server-side error log analysis. Deferred.
 

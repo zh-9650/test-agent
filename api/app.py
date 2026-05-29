@@ -26,13 +26,18 @@ from api.schemas import (
     StepResponse,
     TaskListResponse,
     TaskResponse,
+    AgentMemoryItem,
+    MemoryListResponse
 )
 from api.websocket import manager as websocket_manager, stream_runtime_updates, websocket_endpoint
 from database.connection import async_session, init_database
-from database.models import Report, Task, TaskStep
+from database.models import Report, Task, TaskStep, AgentMemory
 from core.execution_logger import _task_id_map
+from api.utils import router as utils_router
 
 app = FastAPI(title="AI Native Testing Platform", version="1.0")
+
+app.include_router(utils_router)
 
 # Register WebSocket route
 app.add_api_websocket_route("/ws/tasks/{task_id}", websocket_endpoint)
@@ -200,12 +205,77 @@ async def delete_task(task_id: int) -> MessageResponse:
         return MessageResponse(message="Task deleted", task_id=str(task_id))
 
 
+# --- Memory Endpoints ---
+
+# GET /api/memory
+@app.get("/api/memory", response_model=MemoryListResponse)
+async def list_memories(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    scope_type: str | None = None
+) -> MemoryListResponse:
+    async with async_session() as session:
+        query = select(AgentMemory)
+        if scope_type:
+            query = query.where(AgentMemory.scope_type == scope_type)
+        
+        total_result = await session.execute(select(func.count(AgentMemory.id)))
+        total = total_result.scalar() or 0
+
+        result = await session.execute(query.order_by(AgentMemory.created_at.desc()).offset(skip).limit(limit))
+        memories = result.scalars().all()
+        return MemoryListResponse(memories=memories, total=total)  # type: ignore
+
+# POST /api/memory
+@app.post("/api/memory", response_model=AgentMemoryItem, status_code=201)
+async def create_memory(item: AgentMemoryItem) -> AgentMemory:
+    async with async_session() as session:
+        mem = AgentMemory(
+            scope_type=item.scope_type,
+            scope_value=item.scope_value,
+            memory_key=item.memory_key,
+            memory_value=item.memory_value
+        )
+        session.add(mem)
+        await session.commit()
+        await session.refresh(mem)
+        return mem
+
+# PUT /api/memory/{id}
+@app.put("/api/memory/{memory_id}", response_model=AgentMemoryItem)
+async def update_memory(memory_id: int, item: AgentMemoryItem) -> AgentMemory:
+    async with async_session() as session:
+        mem = await session.get(AgentMemory, memory_id)
+        if not mem:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        mem.scope_type = item.scope_type
+        mem.scope_value = item.scope_value
+        mem.memory_key = item.memory_key
+        mem.memory_value = item.memory_value
+        await session.commit()
+        await session.refresh(mem)
+        return mem
+
+# DELETE /api/memory/{id}
+@app.delete("/api/memory/{memory_id}", response_model=MessageResponse)
+async def delete_memory(memory_id: int) -> MessageResponse:
+    async with async_session() as session:
+        mem = await session.get(AgentMemory, memory_id)
+        if not mem:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        await session.delete(mem)
+        await session.commit()
+        return MessageResponse(message="Memory deleted")
+
+
 # --- Background task runner ---
 _running_tasks: dict[int, asyncio.Task] = {}
 
 # Flag to disable background tasks in tests
 _background_tasks_enabled: bool = True
 
+
+from core.memory_utils import retrieve_memories, reflect_on_task
 
 async def _run_test_session(task_db_id: int, target_url: str, config: dict | None) -> None:
     """Run the test session in the background using Runtime.
@@ -226,7 +296,8 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
     has_error = False
     try:
         from core.runtime import Runtime
-        runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, **(config or {})})
+        memory_context = await retrieve_memories(target_url)
+        runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, "memory_context": memory_context, **(config or {})})
 
         async for update in runtime.run_stream():
             # Detect error messages yielded by the runtime
@@ -252,3 +323,6 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
                     task.status = final_status
                 task.completed_at = datetime.now(timezone.utc)
                 await session.commit()
+                
+        # Trigger reflection post-task
+        await reflect_on_task(task_db_id)

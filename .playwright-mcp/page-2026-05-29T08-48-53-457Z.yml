@@ -1,0 +1,7 @@
+- generic [ref=e2]:
+  - navigation [ref=e3]:
+    - link "创建任务" [ref=e4] [cursor=pointer]:
+      - /url: /
+    - link "历史任务" [ref=e5] [cursor=pointer]:
+      - /url: /history
+  - generic [ref=e6]: 加载中...

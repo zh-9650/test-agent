@@ -18,3 +18,4 @@ httpx
 websockets
 python-multipart
 jinja2
+python-docx
