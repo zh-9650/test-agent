@@ -18,7 +18,7 @@ import os
 import time
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
 from core.interfaces import Setup, TestCase, TestState, create_test_plan
@@ -137,22 +137,33 @@ async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
         llm = get_llm_client("default")  # qwen3.7-max for planning
         llm_with_tools = llm.bind_tools(ui_tools)
 
-        # Build prompts
-        system_prompt = get_exploration_system_prompt()
-        page_summary = _format_page_info(state.get("page_info", {}))
-
         task_config = state.get("task_config", {})
         explored_urls = task_config.get("_explored_urls", [])
+        accounts = task_config.get("accounts", [])
+
+        # Build prompts
+        system_prompt = get_exploration_system_prompt(accounts)
+        page_summary = _format_page_info(state.get("page_info", {}))
+
+        credentials_ctx = ""
+        if accounts:
+            credentials_ctx = "\n### 可用的测试账号与凭据 (如果遇到登录页面，请使用这些账号进行输入并登录，以进入系统内部探索):\n" + "\n".join(
+                f"- 角色: {a.get('role', 'N/A')}, 用户名: {a.get('username', 'N/A')}, 密码: {a.get('password', 'N/A')}"
+                for a in accounts
+            )
 
         human_msg = f"""已探索 {len(explored_urls)} 个页面。
 已探索的URL: {chr(10).join(explored_urls[:20]) if explored_urls else '尚未探索'}
+{credentials_ctx}
 
 当前页面:
 {page_summary}
 
 请继续探索目标系统，或者如果你认为已经收集了足够的信息来生成测试计划，就不要调用任何工具。"""
 
-        messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_msg)]
+        messages = list(state.get("messages", []))
+        messages.insert(0, SystemMessage(content=system_prompt))
+        messages.append(HumanMessage(content=human_msg))
         response = await llm_with_tools.ainvoke(messages)
 
         return {"messages": [response]}
@@ -186,14 +197,18 @@ async def explore_execute_node(state: dict[str, Any]) -> dict[str, Any]:
     tool_args = tool_call["args"]
 
     # Execute the tool
+    result_text = ""
     try:
         if tool_name in tools_by_name:
             tool_fn = tools_by_name[tool_name]
-            await tool_fn.ainvoke(tool_args)
-    except Exception:
-        pass  # If tool execution fails, the next observe will capture the current state
+            result_text = await tool_fn.ainvoke(tool_args)
+    except Exception as e:
+        result_text = f"执行失败: {str(e)}"
 
-    return {}
+    tool_call_id = tool_call.get("id", "")
+    return {
+        "messages": [ToolMessage(content=result_text, tool_call_id=tool_call_id)],
+    }
 
 
 async def generate_plan_node(state: dict[str, Any]) -> dict[str, Any]:

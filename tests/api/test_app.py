@@ -8,9 +8,11 @@ session/connection lifecycle issues with pytest-asyncio.
 """
 
 import asyncio
+import importlib
 import os
 import pytest
 from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
 # Ensure DATABASE_URL points to test DB before importing app code
 os.environ["DATABASE_URL"] = "postgresql://postgres:123456@localhost:5432/smart_test_test"
@@ -119,6 +121,57 @@ def test_create_task():
     asyncio.get_event_loop().run_until_complete(_test())
 
 
+def test_create_task_registers_execution_logger_mapping():
+    """POST /api/tasks should register the DB task id for runtime logging."""
+    async def _test():
+        from core.execution_logger import _task_id_map
+
+        _task_id_map.clear()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post("/api/tasks", json={
+                "target_url": "http://example.com/logger-map",
+                "task_name": "Logger Map Test",
+            })
+
+        assert response.status_code == 201
+        task_id = response.json()["id"]
+        assert _task_id_map[str(task_id)] == task_id
+
+    asyncio.get_event_loop().run_until_complete(_test())
+
+
+def test_create_task_tracks_background_task():
+    """POST /api/tasks should retain the asyncio task so it can be stopped."""
+    async def _test():
+        api_app = importlib.import_module("api.app")
+
+        api_app._running_tasks.clear()
+        api_app._background_tasks_enabled = True
+
+        async def fake_runner(task_db_id, target_url, config):
+            await asyncio.sleep(60)
+
+        transport = ASGITransport(app=app)
+        try:
+            with patch("api.app._run_test_session", side_effect=fake_runner):
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.post("/api/tasks", json={
+                        "target_url": "http://example.com/background",
+                        "task_name": "Background Test",
+                    })
+        finally:
+            api_app._background_tasks_enabled = False
+
+        assert response.status_code == 201
+        task_id = response.json()["id"]
+        assert task_id in api_app._running_tasks
+        api_app._running_tasks[task_id].cancel()
+        api_app._running_tasks.pop(task_id, None)
+
+    asyncio.get_event_loop().run_until_complete(_test())
+
+
 def test_list_tasks():
     """GET /api/tasks should return a paginated list of tasks."""
     async def _test():
@@ -220,6 +273,37 @@ def test_stop_task_not_running():
 
             response = await client.post(f"/api/tasks/{task_id}/stop")
             assert response.status_code == 400
+
+    asyncio.get_event_loop().run_until_complete(_test())
+
+
+def test_stop_task_cancels_running_background_task():
+    """POST /api/tasks/{id}/stop cancels the retained asyncio task."""
+    async def _test():
+        api_app = importlib.import_module("api.app")
+
+        async with async_session() as session:
+            task = Task(
+                task_name="Running Stop Test",
+                target_url="http://example.com/running-stop",
+                status="running",
+            )
+            session.add(task)
+            await session.commit()
+            await session.refresh(task)
+            task_id = task.id
+
+        fake_task = MagicMock()
+        fake_task.done.return_value = False
+        api_app._running_tasks[task_id] = fake_task
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(f"/api/tasks/{task_id}/stop")
+
+        assert response.status_code == 200
+        fake_task.cancel.assert_called_once()
+        assert task_id not in api_app._running_tasks
 
     asyncio.get_event_loop().run_until_complete(_test())
 

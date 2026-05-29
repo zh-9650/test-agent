@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.messages import AIMessage
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -177,7 +178,8 @@ async def test_run_full_session_mock():
     with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
          patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
          patch("core.runtime.execute_setup", new_callable=AsyncMock, return_value=mock_setup_result_state), \
-         patch("core.runtime.set_current_page") as mock_set_page:
+         patch("core.runtime.set_current_page") as mock_set_page, \
+         patch.object(rt, "_save_report", new_callable=AsyncMock) as mock_save_report:
 
         results = await rt.run()
 
@@ -189,6 +191,8 @@ async def test_run_full_session_mock():
     assert results[1].status == "passed"
     rt._launch_browser.assert_called_once()
     rt._close_browser.assert_called_once()
+    mock_save_report.assert_called_once()
+    assert len(mock_save_report.call_args.args[0]) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +535,12 @@ async def test_run_stream_yields_updates():
 
     # Mock _execute_test_case_stream to yield a test_case_complete update
     async def mock_execute_stream(index, test_case, test_plan, setups):
+        rt._stream_results.append(TestResult(
+            test_case_id=test_case.id,
+            status="passed",
+            summary="通过: 登录成功测试",
+            duration_seconds=5.0,
+        ))
         yield {
             "type": "test_case_complete",
             "test_case_id": test_case.id,
@@ -540,14 +550,15 @@ async def test_run_stream_yields_updates():
         }
 
     with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
-         patch.object(rt, "_execute_test_case_stream", side_effect=mock_execute_stream):
+         patch.object(rt, "_execute_test_case_stream", side_effect=mock_execute_stream), \
+         patch.object(rt, "_save_report", new_callable=AsyncMock) as mock_save_report:
 
         updates = []
         async for update in rt.run_stream():
             updates.append(update)
 
-    # Should have: planning_complete + test_case_complete for TC-001
-    assert len(updates) >= 2
+    # Should have: planning_complete + test_case_complete + final complete
+    assert len(updates) >= 3
 
     # Check planning_complete message
     planning_update = updates[0]
@@ -560,6 +571,123 @@ async def test_run_stream_yields_updates():
     assert tc_update["type"] == "test_case_complete"
     assert tc_update["test_case_id"] == "TC-001"
     assert tc_update["data"]["status"] == "passed"
+
+    final_update = updates[2]
+    assert final_update["type"] == "session_complete"
+    assert final_update["data"]["phase"] == "final"
+    mock_save_report.assert_called_once()
+    assert mock_save_report.call_args.args[0][0].test_case_id == "TC-001"
+
+
+@pytest.mark.asyncio
+async def test_run_stream_accepts_langgraph_update_dicts():
+    """run_stream consumes LangGraph's real astream update shape."""
+    from core.runtime import Runtime
+
+    rt = Runtime(BASIC_TASK_CONFIG)
+    rt._launch_browser = AsyncMock()
+    rt._close_browser = AsyncMock()
+
+    mock_planning_graph = MagicMock()
+
+    async def mock_astream(state):
+        yield {"explore_observe": {"page_info": {"url": "http://example.com/login"}}}
+        yield {"explore_decide": {"messages": [AIMessage(content="继续探索页面")]}}
+        yield {"generate_plan": {
+            "test_plan": [SAMPLE_TEST_CASE_2],
+            "setups": {},
+            "messages": [],
+        }}
+
+    mock_planning_graph.astream = mock_astream
+
+    async def mock_execute_stream(index, test_case, test_plan, setups):
+        yield {
+            "type": "test_case_complete",
+            "test_case_id": test_case.id,
+            "step_index": 0,
+            "data": {"status": "passed", "summary": "通过", "duration": 1.0},
+            "timestamp": "2026-05-28T00:00:00+00:00",
+        }
+
+    with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
+         patch.object(rt, "_execute_test_case_stream", side_effect=mock_execute_stream):
+        updates = [update async for update in rt.run_stream()]
+
+    assert [update["type"] for update in updates] == [
+        "page_update",
+        "ai_thinking",
+        "session_complete",
+        "test_case_complete",
+        "session_complete",
+    ]
+    assert updates[2]["data"]["total_tests"] == 1
+    assert updates[-1]["data"]["phase"] == "final"
+
+
+@pytest.mark.asyncio
+async def test_execute_test_case_stream_accepts_langgraph_update_dicts():
+    """_execute_test_case_stream emits per-node messages from LangGraph update dicts."""
+    from core.runtime import Runtime
+
+    rt = Runtime(BASIC_TASK_CONFIG)
+
+    tool_message = AIMessage(
+        content="点击登录按钮",
+        tool_calls=[{"name": "click", "args": {"target": "#1"}, "id": "call-1"}],
+    )
+    step = StepResult(
+        step_index=0,
+        action_type="click",
+        action_target="#1",
+        result="已点击 #1",
+        assertion=AssertionResult(status="pass", reasoning="通过"),
+    )
+
+    mock_execution_graph = MagicMock()
+
+    async def mock_astream(state):
+        yield {"observe": {
+            "page_info": {"url": "http://example.com/login", "title": "Login"},
+            "screenshot": "base64-screen",
+        }}
+        yield {"decide": {"messages": [tool_message]}}
+        yield {"execute": {
+            "current_step": 1,
+            "_last_tool_result": "已点击 #1",
+            "state_after": {"url": "http://example.com/home"},
+        }}
+        yield {"assert": {
+            "_last_change_report": ChangeReport(url_changed=True),
+            "_last_assertion": AssertionResult(status="pass", reasoning="通过"),
+        }}
+        yield {"record": {"_collected_steps": [step]}}
+
+    mock_execution_graph.astream = mock_astream
+
+    with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
+         patch("core.runtime.log_step", new_callable=AsyncMock), \
+         patch("core.runtime.log_test_result", new_callable=AsyncMock):
+        updates = [
+            update
+            async for update in rt._execute_test_case_stream(
+                index=0,
+                test_case=SAMPLE_TEST_CASE_2,
+                test_plan=[SAMPLE_TEST_CASE_2],
+                setups={},
+            )
+        ]
+
+    assert [update["type"] for update in updates] == [
+        "page_update",
+        "ai_thinking",
+        "action_result",
+        "assertion_result",
+        "test_case_complete",
+    ]
+    assert updates[0]["data"]["screenshot"] == "base64-screen"
+    assert updates[2]["data"]["result"] == "已点击 #1"
+    assert updates[-1]["data"]["status"] == "passed"
 
 
 # ---------------------------------------------------------------------------

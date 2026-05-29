@@ -83,6 +83,20 @@ def teardown_module():
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
+def _cleanup_db():
+    """Clean up the test database tables before each test case to ensure isolation."""
+    from database.connection import create_sync_engine
+    from sqlalchemy import text
+    db_url = os.environ["DATABASE_URL"]
+    engine = create_sync_engine(db_url)
+    with engine.connect() as conn:
+        with conn.begin():
+            conn.execute(text("TRUNCATE TABLE report, task_step, task RESTART IDENTITY CASCADE;"))
+    engine.dispose()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_task_id_map():
     """Reset the internal task_id map before each test."""
     from core import execution_logger

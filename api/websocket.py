@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
-from sqlalchemy import select
 
 from database.connection import async_session
 from database.models import Task
@@ -87,19 +84,52 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
             # Keep connection alive, listen for client messages (e.g., stop)
             data = await websocket.receive_text()
             if data == "stop":
-                # Client requested stop
-                async with async_session() as session:
-                    # Find task by config->task_id
-                    result = await session.execute(select(Task))
-                    # ... handle stop
-                await websocket.send_json(
-                    create_ws_message("session_complete", data={"action": "stopped"})
-                )
+                await _handle_stop(websocket, task_id)
                 break
     except WebSocketDisconnect:
         manager.disconnect(websocket, task_id)
     except Exception:
         manager.disconnect(websocket, task_id)
+
+
+async def _handle_stop(websocket: WebSocket, task_id: str) -> None:
+    """Handle a stop request from a WebSocket client.
+
+    Mirrors the REST endpoint POST /api/tasks/{task_id}/stop:
+    1. Update task status to 'cancelled' in the database.
+    2. Cancel the background asyncio task if it is still running.
+    3. Notify the client via a session_complete message.
+    """
+    task_db_id = int(task_id)
+
+    # 1. Update DB status to cancelled
+    async with async_session() as session:
+        task = await session.get(Task, task_db_id)
+        if not task:
+            await websocket.send_json(
+                create_ws_message("error", data={"error": f"Task {task_id} not found"})
+            )
+            return
+        if task.status != "running":
+            await websocket.send_json(
+                create_ws_message("error", data={"error": f"Task is not running (status: {task.status})"})
+            )
+            return
+        task.status = "cancelled"
+        await session.commit()
+
+    # 2. Cancel the background asyncio task
+    from api.app import _running_tasks
+
+    background_task = _running_tasks.pop(task_db_id, None)
+    if background_task and not background_task.done():
+        background_task.cancel()
+
+    # 3. Notify client
+    await websocket.send_json(
+        create_ws_message("session_complete", data={"action": "stopped"})
+    )
+    manager.disconnect(websocket, task_id)
 
 
 async def stream_runtime_updates(runtime, task_id: str):

@@ -21,16 +21,33 @@ from langchain_core.messages import AIMessage, SystemMessage
 from playwright.async_api import async_playwright
 
 from core.interfaces import AssertionResult, ChangeReport, Setup, StepResult, TestCase, TestResult
-from core.execution_logger import log_step, log_test_result
+from core.execution_logger import _task_id_map, log_step, log_test_result
 from agents.ui.planning_graph import build_planning_graph
 from agents.ui.execution_graph import build_execution_graph
 from agents.ui.setup_manager import execute_setup
 from agents.ui.tools import set_current_page
+from core.report_builder import ReportBuilder
+from database.connection import async_session
+from database.models import Report
 
 
 def _now_iso() -> str:
     """Return current time as ISO format string."""
     return datetime.now(timezone.utc).isoformat()
+
+
+def _stream_items(update: Any) -> list[tuple[str, dict[str, Any]]]:
+    """Normalize LangGraph astream updates to (node_name, state_update) pairs."""
+    if isinstance(update, tuple) and len(update) == 2 and isinstance(update[0], str):
+        node_name, state_update = update
+        return [(node_name, state_update or {})]
+    if isinstance(update, dict):
+        return [
+            (node_name, state_update or {})
+            for node_name, state_update in update.items()
+            if isinstance(node_name, str)
+        ]
+    return []
 
 
 class Runtime:
@@ -51,6 +68,7 @@ class Runtime:
         self.page = None
         self._playwright = None
         self._checkpointer = None
+        self._stream_results: list[TestResult] = []
 
     async def run(self) -> list[TestResult]:
         """Execute the full test session.
@@ -66,6 +84,10 @@ class Runtime:
             # 2. Run planning subgraph
             test_plan, setups = await self._run_planning()
 
+            if self.task_id in _task_id_map:
+                from core.execution_logger import log_test_plan
+                await log_test_plan(self.task_id, test_plan)
+
             if not test_plan:
                 return results
 
@@ -78,6 +100,9 @@ class Runtime:
                     setups=setups,
                 )
                 results.append(result)
+
+            if results:
+                await self._save_report(results)
 
         except Exception as e:
             # Log error but don't crash — return partial results
@@ -99,6 +124,7 @@ class Runtime:
         """
         try:
             await self._launch_browser()
+            self._stream_results = []
 
             # Run planning with streaming exploration progress
             planning_graph = build_planning_graph()
@@ -107,34 +133,48 @@ class Runtime:
             test_plan: list[TestCase] = []
             setups: dict[str, Setup] = {}
 
-            async for node_name, state_update in planning_graph.astream(planning_state):
-                if node_name == "explore_decide":
-                    messages = state_update.get("messages", [])
-                    if messages:
-                        last_msg = messages[-1]
-                        content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+            async for stream_update in planning_graph.astream(planning_state):
+                for node_name, state_update in _stream_items(stream_update):
+                    if node_name == "explore_decide":
+                        messages = state_update.get("messages", [])
+                        if messages:
+                            last_msg = messages[-1]
+                            content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+                            yield {
+                                "type": "ai_thinking",
+                                "test_case_id": "",
+                                "step_index": 0,
+                                "data": {"phase": "exploration", "thought": content},
+                                "timestamp": _now_iso(),
+                            }
+                    elif node_name == "explore_execute":
                         yield {
-                            "type": "ai_thinking",
+                            "type": "action_result",
                             "test_case_id": "",
                             "step_index": 0,
-                            "data": {"phase": "exploration", "thought": content},
+                            "data": {"phase": "exploration"},
                             "timestamp": _now_iso(),
                         }
-                elif node_name == "explore_observe":
-                    page_info = state_update.get("page_info", {})
-                    yield {
-                        "type": "page_update",
-                        "test_case_id": "",
-                        "step_index": 0,
-                        "data": {
-                            "phase": "exploration",
-                            "url": page_info.get("url", ""),
-                        },
-                        "timestamp": _now_iso(),
-                    }
-                elif node_name == "generate_plan":
-                    test_plan = state_update.get("test_plan", [])
-                    setups = state_update.get("setups", {})
+                    elif node_name == "explore_observe":
+                        page_info = state_update.get("page_info", {})
+                        screenshot = state_update.get("screenshot", "")
+                        yield {
+                            "type": "page_update",
+                            "test_case_id": "",
+                            "step_index": 0,
+                            "data": {
+                                "phase": "exploration",
+                                "url": page_info.get("url", ""),
+                                "screenshot": screenshot,
+                            },
+                            "timestamp": _now_iso(),
+                        }
+                    elif node_name == "generate_plan":
+                        test_plan = state_update.get("test_plan", [])
+                        setups = state_update.get("setups", {})
+                        if self.task_id in _task_id_map:
+                            from core.execution_logger import log_test_plan
+                            await log_test_plan(self.task_id, test_plan)
 
             yield {
                 "type": "session_complete",
@@ -155,6 +195,22 @@ class Runtime:
                     setups=setups,
                 ):
                     yield update
+
+            report_path = ""
+            if self._stream_results:
+                report_path = await self._save_report(self._stream_results)
+
+            yield {
+                "type": "session_complete",
+                "test_case_id": "",
+                "step_index": 0,
+                "data": {
+                    "phase": "final",
+                    "total_tests": len(test_plan),
+                    "report_path": report_path,
+                },
+                "timestamp": _now_iso(),
+            }
 
         except Exception as e:
             yield {
@@ -365,93 +421,94 @@ class Runtime:
         final_state = dict(execution_state)
 
         try:
-            async for node_name, state_update in execution_graph.astream(execution_state):
-                # Accumulate state from each node
-                final_state.update(state_update)
+            async for stream_update in execution_graph.astream(execution_state):
+                for node_name, state_update in _stream_items(stream_update):
+                    # Accumulate state from each node
+                    final_state.update(state_update)
 
-                if node_name == "observe":
-                    page_info = state_update.get("page_info", {})
-                    yield {
-                        "type": "page_update",
-                        "test_case_id": test_case.id,
-                        "step_index": final_state.get("current_step", 0),
-                        "data": {
-                            "url": page_info.get("url", ""),
-                            "title": page_info.get("title", ""),
-                            "screenshot": state_update.get("screenshot", ""),
-                        },
-                        "timestamp": _now_iso(),
-                    }
-
-                elif node_name == "decide":
-                    messages = state_update.get("messages", [])
-                    if messages:
-                        last_msg = messages[-1]
-                        content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
-                        tool_calls = (
-                            last_msg.tool_calls
-                            if hasattr(last_msg, "tool_calls") and last_msg.tool_calls
-                            else []
-                        )
+                    if node_name == "observe":
+                        page_info = state_update.get("page_info", {})
                         yield {
-                            "type": "ai_thinking",
+                            "type": "page_update",
                             "test_case_id": test_case.id,
                             "step_index": final_state.get("current_step", 0),
                             "data": {
-                                "thought": content,
-                                "tool_calls": [
-                                    {"name": tc["name"], "args": tc["args"]}
-                                    for tc in tool_calls
-                                ],
+                                "url": page_info.get("url", ""),
+                                "title": page_info.get("title", ""),
+                                "screenshot": state_update.get("screenshot", ""),
                             },
                             "timestamp": _now_iso(),
                         }
 
-                elif node_name == "execute":
-                    # Get tool call info from the last AI message in accumulated state
-                    tc_messages = final_state.get("messages", [])
-                    last_ai = None
-                    for msg in reversed(tc_messages):
-                        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
-                            last_ai = msg
-                            break
+                    elif node_name == "decide":
+                        messages = state_update.get("messages", [])
+                        if messages:
+                            last_msg = messages[-1]
+                            content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+                            tool_calls = (
+                                last_msg.tool_calls
+                                if hasattr(last_msg, "tool_calls") and last_msg.tool_calls
+                                else []
+                            )
+                            yield {
+                                "type": "ai_thinking",
+                                "test_case_id": test_case.id,
+                                "step_index": final_state.get("current_step", 0),
+                                "data": {
+                                    "thought": content,
+                                    "tool_calls": [
+                                        {"name": tc["name"], "args": tc["args"]}
+                                        for tc in tool_calls
+                                    ],
+                                },
+                                "timestamp": _now_iso(),
+                            }
 
-                    tool_name = ""
-                    tool_args: dict[str, Any] = {}
-                    if last_ai and last_ai.tool_calls:
-                        tool_name = last_ai.tool_calls[0]["name"]
-                        tool_args = last_ai.tool_calls[0]["args"]
+                    elif node_name == "execute":
+                        # Get tool call info from the last AI message in accumulated state
+                        tc_messages = final_state.get("messages", [])
+                        last_ai = None
+                        for msg in reversed(tc_messages):
+                            if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+                                last_ai = msg
+                                break
 
-                    yield {
-                        "type": "action_result",
-                        "test_case_id": test_case.id,
-                        "step_index": state_update.get("current_step", 0),
-                        "data": {
-                            "tool_name": tool_name,
-                            "tool_args": tool_args,
-                            "result": state_update.get("_last_tool_result", ""),
-                        },
-                        "timestamp": _now_iso(),
-                    }
+                        tool_name = ""
+                        tool_args: dict[str, Any] = {}
+                        if last_ai and last_ai.tool_calls:
+                            tool_name = last_ai.tool_calls[0]["name"]
+                            tool_args = last_ai.tool_calls[0]["args"]
 
-                elif node_name == "assert":
-                    yield {
-                        "type": "assertion_result",
-                        "test_case_id": test_case.id,
-                        "step_index": final_state.get("current_step", 0),
-                        "data": {
-                            "change_report": state_update.get("_last_change_report"),
-                            "assertion": state_update.get("_last_assertion"),
-                        },
-                        "timestamp": _now_iso(),
-                    }
+                        yield {
+                            "type": "action_result",
+                            "test_case_id": test_case.id,
+                            "step_index": state_update.get("current_step", 0),
+                            "data": {
+                                "tool_name": tool_name,
+                                "tool_args": tool_args,
+                                "result": state_update.get("_last_tool_result", ""),
+                            },
+                            "timestamp": _now_iso(),
+                        }
 
-                elif node_name == "record":
-                    new_steps = state_update.get("_collected_steps", [])
-                    if new_steps:
-                        collected_steps.extend(new_steps)
-                        for step in new_steps:
-                            await log_step(self.task_id, test_case.id, step)
+                    elif node_name == "assert":
+                        yield {
+                            "type": "assertion_result",
+                            "test_case_id": test_case.id,
+                            "step_index": final_state.get("current_step", 0),
+                            "data": {
+                                "change_report": state_update.get("_last_change_report"),
+                                "assertion": state_update.get("_last_assertion"),
+                            },
+                            "timestamp": _now_iso(),
+                        }
+
+                    elif node_name == "record":
+                        new_steps = state_update.get("_collected_steps", [])
+                        if new_steps:
+                            collected_steps.extend(new_steps)
+                            for step in new_steps:
+                                await log_step(self.task_id, test_case.id, step)
 
         except Exception:
             # Browser crash — try to recover
@@ -485,6 +542,7 @@ class Runtime:
             duration_seconds=duration,
             setup_results=[],
         )
+        self._stream_results.append(result)
 
         await log_test_result(self.task_id, result)
 
@@ -515,3 +573,30 @@ class Runtime:
             "consecutive_failures": int(os.getenv("MAX_CONSECUTIVE_FAILURES", "3")),
             "_collected_steps": [],
         }
+
+    async def _save_report(self, results: list[TestResult]) -> str:
+        """Build the HTML report and persist a report row when a DB task exists."""
+        builder = ReportBuilder(task_id=self.task_id)
+        for result in results:
+            builder.add_result(result)
+
+        report_path = os.path.join("data", "reports", self.task_id, "report.html")
+        saved_path = builder.save(report_path)
+
+        db_task_id = _task_id_map.get(self.task_id)
+        if db_task_id is None:
+            try:
+                db_task_id = int(self.task_id)
+            except ValueError:
+                return saved_path
+
+        summary = f"共 {len(results)} 个用例，{sum(1 for r in results if r.status == 'passed')} 个通过。"
+        try:
+            async with async_session() as session:
+                session.add(Report(task_id=db_task_id, report_path=saved_path, summary=summary))
+                await session.commit()
+        except Exception:
+            # Report file is still useful even when DB persistence is unavailable.
+            return saved_path
+
+        return saved_path

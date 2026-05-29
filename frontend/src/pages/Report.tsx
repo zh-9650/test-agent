@@ -7,6 +7,37 @@ interface GroupedSteps {
   [testCaseId: string]: TaskStep[];
 }
 
+/**
+ * Normalize assertion status from backend format to frontend format.
+ * Backend stores: 'pass' / 'fail'
+ * Frontend expects: 'passed' / 'failed'
+ */
+function normalizeStatus(status: string | undefined): string {
+  if (!status) return 'unknown';
+  const lower = status.toLowerCase();
+  if (lower === 'pass' || lower === 'passed') return 'passed';
+  if (lower === 'fail' || lower === 'failed') return 'failed';
+  return lower;
+}
+
+/**
+ * Convert a screenshot path to a displayable URL.
+ * - If it's a base64 data URL, return as-is for direct <img> use.
+ * - If it's a file path, extract the filename and return an HTTP URL
+ *   pointing to the backend's static file endpoint.
+ */
+function getScreenshotUrl(screenshotPath: string): { url: string; isBase64: boolean } {
+  if (!screenshotPath) return { url: '', isBase64: false };
+  // Base64 data URL
+  if (screenshotPath.startsWith('data:')) {
+    return { url: screenshotPath, isBase64: true };
+  }
+  // File path — extract filename and use backend static endpoint
+  const parts = screenshotPath.replace(/\\/g, '/').split('/');
+  const filename = parts[parts.length - 1];
+  return { url: `/static/screenshots/${filename}`, isBase64: false };
+}
+
 export default function Report() {
   const { taskId } = useParams<{ taskId: string }>();
   const numericTaskId = taskId ? parseInt(taskId, 10) : 0;
@@ -126,7 +157,7 @@ export default function Report() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {Object.entries(grouped).map(([testCaseId, caseSteps]) => {
           const lastStep = caseSteps[caseSteps.length - 1];
-          const status = lastStep?.assertion_result?.status || 'unknown';
+          const status = normalizeStatus(lastStep?.assertion_result?.status);
           const isExpanded = expanded.has(testCaseId);
 
           return (
@@ -191,7 +222,7 @@ export default function Report() {
                           style={{
                             padding: '0.5rem',
                             backgroundColor:
-                              step.assertion_result.status === 'passed' ? '#f6ffed' : '#fff2f0',
+                              normalizeStatus(step.assertion_result.status) === 'passed' ? '#f6ffed' : '#fff2f0',
                             borderRadius: '4px',
                             fontSize: '0.85rem',
                           }}
@@ -201,9 +232,25 @@ export default function Report() {
                       )}
                       {step.screenshot_path && (
                         <div style={{ marginTop: '0.5rem' }}>
-                          <a href={step.screenshot_path} target="_blank" rel="noopener noreferrer">
-                            查看截图
-                          </a>
+                          {(() => {
+                            const { url, isBase64 } = getScreenshotUrl(step.screenshot_path);
+                            if (!url) return null;
+                            if (isBase64) {
+                              return (
+                                <img
+                                  src={url}
+                                  alt="截图"
+                                  style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', cursor: 'pointer' }}
+                                  onClick={() => window.open(url, '_blank')}
+                                />
+                              );
+                            }
+                            return (
+                              <a href={url} target="_blank" rel="noopener noreferrer">
+                                查看截图
+                              </a>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>

@@ -42,7 +42,7 @@ def create_async_engine_instance(database_url: str | None = None) -> AsyncSessio
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     elif not url.startswith("postgresql+asyncpg://"):
         raise ValueError("DATABASE_URL must start with postgresql://")
-    return create_async_engine(url, echo=False, future=True)
+    return create_async_engine(url, echo=False, future=True, pool_pre_ping=True)
 
 
 def create_sync_engine(database_url: str | None = None):

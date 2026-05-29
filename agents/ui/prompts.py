@@ -129,19 +129,26 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
 # =============================================================================
 
 
-def get_exploration_system_prompt() -> str:
+def get_exploration_system_prompt(accounts: list | None = None) -> str:
     """System prompt for the exploration phase — LLM explores the target system."""
-    return """你是一个专业的Web应用测试探索者。你的任务是探索目标系统，了解其结构和功能。
+    prompt = """你是一个专业的Web应用测试探索者。你的任务是探索目标系统，了解其结构和功能。
 
 ## 探索策略
 1. 从首页开始，系统地浏览主要页面
 2. 关注导航菜单、链接、按钮等可交互元素
 3. 记录每个页面的功能和用途
 4. 尝试发现不同的用户角色和权限区域
-
+"""
+    if accounts:
+        prompt += """
+## 优先后台探索规则
+如果系统当前显示登录页面，请**优先使用下方提供的测试凭据进行输入和登录**，以便进入后台深度探索和摸排后台系统内部的核心业务菜单与功能结构！
+"""
+    prompt += """
 ## 停止条件
 当你认为已经收集了足够的信息来生成测试计划时，停止调用工具。
 通常探索 5-15 个关键页面就足够了。"""
+    return prompt
 
 
 def get_plan_generation_prompt(target_url: str, explored_urls: list, task_config: dict) -> str:

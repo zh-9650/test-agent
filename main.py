@@ -48,7 +48,7 @@ def main() -> None:
             env = os.environ.copy()
             env["PORT"] = str(FRONTEND_PORT)
             frontend_proc = subprocess.Popen(
-                ["npm", "run", "dev", "--", "--port", str(FRONTEND_PORT)],
+                ["npm.cmd", "run", "dev", "--", "--port", str(FRONTEND_PORT), "--host", "127.0.0.1"],
                 cwd=frontend_dir,
                 env=env,
             )

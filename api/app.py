@@ -10,9 +10,12 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +30,7 @@ from api.schemas import (
 from api.websocket import manager as websocket_manager, stream_runtime_updates, websocket_endpoint
 from database.connection import async_session, init_database
 from database.models import Report, Task, TaskStep
+from core.execution_logger import _task_id_map
 
 app = FastAPI(title="AI Native Testing Platform", version="1.0")
 
@@ -36,11 +40,16 @@ app.add_api_websocket_route("/ws/tasks/{task_id}", websocket_endpoint)
 # CORS for frontend dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Static files for screenshots — mounted at /static/screenshots
+SCREENSHOTS_DIR = Path(__file__).resolve().parent.parent / "data" / "screenshots"
+SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="screenshots")
 
 
 @app.on_event("startup")
@@ -63,10 +72,13 @@ async def create_task(request: CreateTaskRequest) -> Task:
         session.add(task)
         await session.commit()
         await session.refresh(task)
+        _task_id_map[str(task.id)] = task.id
 
         # Start the test in background (can be disabled in tests)
         if _background_tasks_enabled:
-            asyncio.create_task(_run_test_session(task.id, task.target_url, task.config))
+            background_task = asyncio.create_task(_run_test_session(task.id, task.target_url, task.config))
+            _running_tasks[task.id] = background_task
+            background_task.add_done_callback(lambda _task, task_id=task.id: _running_tasks.pop(task_id, None))
 
         return task
 
@@ -166,6 +178,9 @@ async def stop_task(task_id: int) -> MessageResponse:
 
         task.status = "cancelled"
         await session.commit()
+        background_task = _running_tasks.pop(task_id, None)
+        if background_task and not background_task.done():
+            background_task.cancel()
         return MessageResponse(message="Task stopped", task_id=str(task_id))
 
 
@@ -200,6 +215,7 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
     sets the task status accordingly.
     """
     # Update status to running
+    _task_id_map[str(task_db_id)] = task_db_id
     async with async_session() as session:
         task = await session.get(Task, task_db_id)
         if task:
@@ -218,7 +234,13 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
                 if "error" in update["data"]:
                     has_error = True
             await websocket_manager.send_message(str(task_db_id), update)
-    except Exception:
+    except asyncio.CancelledError:
+        has_error = False
+        raise
+    except Exception as e:
+        import traceback
+        print(f"[_run_test_session] Caught exception in background task: {e}")
+        traceback.print_exc()
         has_error = True
     finally:
         # ALWAYS update final status, even if unexpected exception
@@ -226,6 +248,7 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
         async with async_session() as session:
             task = await session.get(Task, task_db_id)
             if task:
-                task.status = final_status
+                if task.status != "cancelled":
+                    task.status = final_status
                 task.completed_at = datetime.now(timezone.utc)
                 await session.commit()

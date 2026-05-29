@@ -111,6 +111,18 @@ Password: 123456
 
 ## Skill 使用
 
-有需要时可自行使用可用 skill，推荐：
+**你拥有所有 skill 的使用权限**，推荐：
 - `superpowers:test-driven-development` — TDD 工作流
 - `superpowers:verification-before-completion` — 完成前验证
+- `superpowers:systematic-debugging` — 系统性调试
+- `superpowers:subagent-driven-development` — 子代理驱动开发
+- `superpowers:writing-plans` — 编写计划
+- `superpowers:brainstorming` — 头脑风暴
+- `superpowers:executing-plans` — 执行计划
+- `superpowers:dispatching-parallel-agents` — 并行代理调度
+- `superpowers:receiving-code-review` — 接收代码审查
+- `superpowers:requesting-code-review` — 请求代码审查
+- `superpowers:using-git-worktrees` — 使用 git worktrees
+- `superpowers:finishing-a-development-branch` — 完成开发分支
+
+**任何 skill 都可以使用，无需限制。**

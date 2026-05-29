@@ -268,6 +268,22 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
 
         # Parse assertion result from LLM response
         reasoning = response.content if hasattr(response, "content") else str(response)
+        if isinstance(reasoning, list):
+            text_parts = []
+            for item in reasoning:
+                if isinstance(item, str):
+                    text_parts.append(item)
+                elif isinstance(item, dict):
+                    if item.get("type") == "thinking":
+                        text_parts.append(item.get("thinking", ""))
+                    elif item.get("type") == "text":
+                        text_parts.append(item.get("text", ""))
+                    elif "text" in item:
+                        text_parts.append(item["text"])
+            reasoning = "\n".join(text_parts).strip()
+        elif not isinstance(reasoning, str):
+            reasoning = str(reasoning)
+
         upper_reasoning = reasoning.upper()
 
         if "PASS" in upper_reasoning or "通过" in reasoning:
@@ -287,7 +303,6 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
             consecutive_failures = 0  # reset on pass or inconclusive
 
         return {
-            "messages": [response],
             "_last_change_report": change_report,
             "_last_assertion": assertion,
             "consecutive_failures": consecutive_failures,

@@ -24,13 +24,39 @@ const typeColors: Record<string, string> = {
   session_complete: '#ff4d4f',
 };
 
+function formatMessageData(msg: WSMessage): string {
+  if (!msg.data || typeof msg.data !== 'object') {
+    return String(msg.data ?? '');
+  }
+
+  const data = msg.data;
+
+  switch (msg.type) {
+    case 'action_result':
+      return `操作: ${data.tool_name || '未知'} | 结果: ${data.result || '无'}`;
+    case 'assertion_result':
+      return `断言: ${data.status === 'pass' ? '✅ 通过' : '❌ 失败'} | ${data.reasoning || ''}`;
+    case 'ai_thinking':
+      return data.thought || data.text || JSON.stringify(data);
+    case 'page_update':
+      return `页面更新: ${data.url || '未知 URL'}`;
+    case 'test_case_complete':
+      return `用例 ${data.test_case_id || ''}: ${data.status || '完成'}`;
+    case 'session_complete':
+      return `会话完成: ${data.phase || ''}`;
+    default:
+      return JSON.stringify(data, null, 2);
+  }
+}
+
 export default function Monitor() {
   const { taskId } = useParams<{ taskId: string }>();
   const numericTaskId = taskId ? parseInt(taskId, 10) : undefined;
-  const { messages, connected } = useWebSocket(numericTaskId);
+  const { messages, connected, sendStop } = useWebSocket(numericTaskId);
   const [task, setTask] = useState<Task | null>(null);
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [isComplete, setIsComplete] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,7 +73,7 @@ export default function Monitor() {
     if (latest.type === 'page_update' && latest.data && typeof latest.data.screenshot === 'string') {
       setScreenshot(latest.data.screenshot as string);
     }
-    if (latest.type === 'session_complete') {
+    if (latest.type === 'session_complete' && latest.data?.phase !== 'planning_complete') {
       setIsComplete(true);
     }
   }, [messages]);
@@ -105,6 +131,26 @@ export default function Monitor() {
               {task?.passed_tests || 0}/{task?.total_tests || 0} 完成
             </div>
           </div>
+          {task?.status === 'running' && !isComplete && (
+            <button
+              onClick={() => {
+                setIsStopping(true);
+                sendStop();
+              }}
+              disabled={isStopping}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: isStopping ? '#ccc' : '#ff4d4f',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: isStopping ? 'not-allowed' : 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              {isStopping ? '停止中...' : '停止任务'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -162,9 +208,7 @@ export default function Monitor() {
                   </span>
                 </div>
                 <div style={{ fontSize: '0.85rem', color: '#333' }}>
-                  {msg.data && typeof msg.data === 'object'
-                    ? JSON.stringify(msg.data, null, 2)
-                    : String(msg.data ?? '')}
+                  {formatMessageData(msg)}
                 </div>
               </div>
             ))}
