@@ -195,8 +195,9 @@ _background_tasks_enabled: bool = True
 async def _run_test_session(task_db_id: int, target_url: str, config: dict | None) -> None:
     """Run the test session in the background using Runtime.
 
-    This function is intentionally a no-op in the API module.
-    The real test execution is handled by the Runtime class in core/runtime.py.
+    Executes the full test pipeline (plan → execute → report) via Runtime.run_stream()
+    and streams updates over WebSocket. Detects errors yielded by the runtime and
+    sets the task status accordingly.
     """
     # Update status to running
     async with async_session() as session:
@@ -206,25 +207,25 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
             task.started_at = datetime.now(timezone.utc)
             await session.commit()
 
-    # Import Runtime here to avoid circular imports at module level
-    from core.runtime import Runtime
-    runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, **(config or {})})
+    has_error = False
     try:
+        from core.runtime import Runtime
+        runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, **(config or {})})
+
         async for update in runtime.run_stream():
+            # Detect error messages yielded by the runtime
+            if isinstance(update, dict) and isinstance(update.get("data"), dict):
+                if "error" in update["data"]:
+                    has_error = True
             await websocket_manager.send_message(str(task_db_id), update)
-    except Exception as e:
-        # If streaming fails, update task status to failed
+    except Exception:
+        has_error = True
+    finally:
+        # ALWAYS update final status, even if unexpected exception
+        final_status = "failed" if has_error else "completed"
         async with async_session() as session:
             task = await session.get(Task, task_db_id)
             if task:
-                task.status = "failed"
-                task.completed_at = datetime.now(timezone.utc)
-                await session.commit()
-    else:
-        # Update status to completed if streaming succeeded
-        async with async_session() as session:
-            task = await session.get(Task, task_db_id)
-            if task:
-                task.status = "completed"
+                task.status = final_status
                 task.completed_at = datetime.now(timezone.utc)
                 await session.commit()

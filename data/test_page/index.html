@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Login Page</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
+        .login-box { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 320px; }
+        h2 { text-align: center; margin-bottom: 24px; }
+        label { display: block; margin-bottom: 4px; font-size: 14px; }
+        input { width: 100%; padding: 10px; margin-bottom: 16px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #45a049; }
+        .error { color: red; font-size: 14px; margin-bottom: 12px; display: none; }
+        .welcome { text-align: center; display: none; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <div id="loginForm">
+            <h2>Login</h2>
+            <div class="error" id="errorMsg">Invalid username or password</div>
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="Enter username">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="Enter password">
+            <button onclick="doLogin()">Login</button>
+        </div>
+        <div class="welcome" id="welcomePage">
+            <h2>Welcome!</h2>
+            <p id="welcomeUser"></p>
+            <button onclick="doLogout()">Logout</button>
+        </div>
+    </div>
+    <script>
+        function doLogin() {
+            var user = document.getElementById('username').value;
+            var pass = document.getElementById('password').value;
+            if (user === 'test_c' && pass === '123456') {
+                document.getElementById('loginForm').style.display = 'none';
+                document.getElementById('welcomePage').style.display = 'block';
+                document.getElementById('welcomeUser').textContent = 'Hello, ' + user;
+            } else {
+                document.getElementById('errorMsg').style.display = 'block';
+            }
+        }
+        function doLogout() {
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('welcomePage').style.display = 'none';
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('errorMsg').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
