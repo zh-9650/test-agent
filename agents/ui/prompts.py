@@ -138,6 +138,11 @@ def get_exploration_system_prompt(accounts: list | None = None) -> str:
 2. 关注导航菜单、链接、按钮等可交互元素
 3. 记录每个页面的功能和用途
 4. 尝试发现不同的用户角色和权限区域
+
+## 严格禁止
+- **禁止使用 navigate 工具通过 URL 直接跳转页面**
+- 只能通过点击页面上的链接、按钮等交互元素来导航到其他页面
+- 这样可以确保探索过程模拟真实用户的操作路径
 """
     if accounts:
         prompt += """
