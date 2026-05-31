@@ -28,7 +28,6 @@ from agents.ui.setup_manager import execute_setup
 from agents.ui.tools import cleanup_task_context, set_current_page, set_current_task
 from core.report_builder import ReportBuilder
 from core.skills.session_summary import generate_case_summary
-from core.skills.scenario_extractor import extract_scenarios
 from core.skills.coverage_tracker import CoverageTracker
 from database.connection import async_session
 from database.models import Report, Task
@@ -138,18 +137,9 @@ class Runtime:
             await self._launch_browser()
             self._stream_results = []
 
-            # Extract business scenarios from PRD (if provided)
-            task_prd = self.task_config.get("prd", "")
-            task_changelog = self.task_config.get("changelog", "")
-            task_focus = self.task_config.get("focus_areas", "")
-            if task_prd or task_changelog:
-                scenarios = await extract_scenarios(
-                    task_prd, 
-                    task_changelog, 
-                    task_focus, 
-                    system_model=self.task_config.get("_system_model")
-                )
-                self.task_config["_scenarios"] = scenarios
+            # V1.2: Scenario Extractor is now part of the planning_graph, executed AFTER exploration
+            # so it has access to the actual System Map.
+
 
             # Run planning with streaming exploration progress
             planning_graph = build_planning_graph()

@@ -74,6 +74,18 @@ def should_continue_exploring(state: dict[str, Any]) -> str:
 # Node Implementations
 # =============================================================================
 
+async def extract_goals_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Extract exploration goals from the System Model before starting exploration."""
+    task_config = dict(state.get("task_config", {}))
+    system_model = task_config.get("_system_model")
+    
+    if system_model:
+        from core.skills.goal_extractor import extract_goals
+        goals = await extract_goals(system_model)
+        task_config["_goals"] = goals
+        print(f"[PlanningGraph] Extracted {len(goals)} exploration goals from System Model.")
+    
+    return {"task_config": task_config}
 
 async def explore_observe_node(state: dict[str, Any]) -> dict[str, Any]:
     """Observe the current page during exploration.
@@ -81,6 +93,7 @@ async def explore_observe_node(state: dict[str, Any]) -> dict[str, Any]:
     - Extracts page semantics and screenshot
     - Updates element map for tool resolution
     - Tracks explored URLs in task_config
+    - Records page info in exploration history for System Map
     """
     try:
         page = get_current_page()
@@ -98,16 +111,23 @@ async def explore_observe_node(state: dict[str, Any]) -> dict[str, Any]:
         current_url = page_info.get("url", "")
         if current_url and current_url not in explored_urls:
             explored_urls.append(current_url)
+            
+        history = list(task_config.get("_exploration_history", []))
+        history.append(page_info)
+        
+        # We must return a new dict for task_config to trigger update
+        new_task_config = dict(task_config)
+        new_task_config["_explored_urls"] = explored_urls
+        new_task_config["_exploration_history"] = history
 
-        task_config["_explored_urls"] = explored_urls
         # Preserve start time if already set, otherwise set it now
-        if "_explore_start_time" not in task_config:
-            task_config["_explore_start_time"] = time.time()
+        if "_explore_start_time" not in new_task_config:
+            new_task_config["_explore_start_time"] = time.time()
 
         return {
             "page_info": page_info,
             "screenshot": screenshot,
-            "task_config": task_config,
+            "task_config": new_task_config,
         }
     except Exception as e:
         # Never crash: return error state
@@ -156,14 +176,20 @@ async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
                 for a in accounts
             )
 
+        goals = task_config.get("_goals", [])
+        goals_ctx = ""
+        if goals:
+            goals_ctx = "\n### 你的探索目标 (Goals):\n请在探索时重点寻找以下入口：\n" + "\n".join([f"- {g}" for g in goals]) + "\n(当所有目标都被找到，或确认无法找到时，请停止探索)"
+
         human_msg = f"""已探索 {len(explored_urls)} 个页面。
 已探索的URL: {chr(10).join(explored_urls[:20]) if explored_urls else '尚未探索'}
 {credentials_ctx}
+{goals_ctx}
 
 当前页面:
 {page_summary}
 
-请继续探索目标系统，或者如果你认为已经收集了足够的信息来生成测试计划，就不要调用任何工具。"""
+请继续探索目标系统寻找上述目标，或者如果你认为已经完成目标并收集了足够的信息，就不要调用任何工具。"""
 
         messages = list(state.get("messages", []))
         messages.insert(0, SystemMessage(content=system_prompt))
@@ -248,6 +274,45 @@ async def explore_execute_node(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def generate_system_map_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Generate System Map from exploration history."""
+    task_config = dict(state.get("task_config", {}))
+    history = task_config.get("_exploration_history", [])
+    
+    if history:
+        from core.skills.system_mapper import generate_system_map
+        system_map = await generate_system_map(history)
+        task_config["_system_map"] = system_map
+        print(f"[PlanningGraph] Generated System Map with {len(system_map.get('pages', []))} pages.")
+        
+    return {"task_config": task_config}
+
+async def extract_scenarios_node(state: dict[str, Any]) -> dict[str, Any]:
+    """Extract scenarios using System Model + System Map."""
+    task_config = dict(state.get("task_config", {}))
+    prd = task_config.get("prd", "")
+    changelog = task_config.get("changelog", "")
+    focus_areas = task_config.get("focus_areas", "")
+    system_model = task_config.get("_system_model", {})
+    system_map = task_config.get("_system_map", {})
+    
+    if prd or changelog:
+        from core.skills.scenario_extractor import extract_scenarios
+        # Merge system map into the model to provide UI context
+        context_model = dict(system_model) if system_model else {}
+        context_model["_actual_system_map"] = system_map
+        
+        scenarios = await extract_scenarios(
+            prd=prd,
+            changelog=changelog,
+            focus_areas=focus_areas,
+            system_model=context_model
+        )
+        task_config["_scenarios"] = scenarios
+        print(f"[PlanningGraph] Extracted {len(scenarios)} scenarios.")
+        
+    return {"task_config": task_config}
+
 async def generate_plan_node(state: dict[str, Any]) -> dict[str, Any]:
     """Generate structured test plan using create_test_plan tool.
 
@@ -326,31 +391,37 @@ async def generate_plan_node(state: dict[str, Any]) -> dict[str, Any]:
 def build_planning_graph() -> StateGraph:
     """Build the planning subgraph for test plan generation.
 
-    Nodes: explore_observe, explore_decide, explore_execute, generate_plan
+    Nodes: extract_goals, explore_observe, explore_decide, explore_execute, generate_system_map, extract_scenarios, generate_plan
     Conditional edges:
-    - explore_decide → explore_execute (has tool_call) or generate_plan (no tool_call / safety valves)
+    - explore_decide → explore_execute (has tool_call) or generate_system_map (no tool_call / safety valves)
     - explore_execute → explore_observe (loop back)
     """
     graph = StateGraph(TestState)
 
     # Add nodes
+    graph.add_node("extract_goals", extract_goals_node)
     graph.add_node("explore_observe", explore_observe_node)
     graph.add_node("explore_decide", explore_decide_node)
     graph.add_node("explore_execute", explore_execute_node)
+    graph.add_node("generate_system_map", generate_system_map_node)
+    graph.add_node("extract_scenarios", extract_scenarios_node)
     graph.add_node("generate_plan", generate_plan_node)
 
     # Edges
-    graph.add_edge(START, "explore_observe")
+    graph.add_edge(START, "extract_goals")
+    graph.add_edge("extract_goals", "explore_observe")
     graph.add_edge("explore_observe", "explore_decide")
     graph.add_conditional_edges(
         "explore_decide",
         should_continue_exploring,
         {
             "explore": "explore_execute",
-            "generate": "generate_plan",
+            "generate": "generate_system_map",
         },
     )
     graph.add_edge("explore_execute", "explore_observe")
+    graph.add_edge("generate_system_map", "extract_scenarios")
+    graph.add_edge("extract_scenarios", "generate_plan")
     graph.add_edge("generate_plan", END)
 
     return graph.compile()
