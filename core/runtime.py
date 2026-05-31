@@ -143,7 +143,12 @@ class Runtime:
             task_changelog = self.task_config.get("changelog", "")
             task_focus = self.task_config.get("focus_areas", "")
             if task_prd or task_changelog:
-                scenarios = await extract_scenarios(task_prd, task_changelog, task_focus)
+                scenarios = await extract_scenarios(
+                    task_prd, 
+                    task_changelog, 
+                    task_focus, 
+                    system_model=self.task_config.get("_system_model")
+                )
                 self.task_config["_scenarios"] = scenarios
 
             # Run planning with streaming exploration progress
@@ -367,7 +372,12 @@ class Runtime:
         task_changelog = self.task_config.get("changelog", "")
         task_focus = self.task_config.get("focus_areas", "")
         if task_prd or task_changelog:
-            scenarios = await extract_scenarios(task_prd, task_changelog, task_focus)
+            scenarios = await extract_scenarios(
+                task_prd, 
+                task_changelog, 
+                task_focus,
+                system_model=self.task_config.get("_system_model")
+            )
             self.task_config["_scenarios"] = scenarios
 
         planning_graph = build_planning_graph()

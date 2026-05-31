@@ -22,12 +22,13 @@
 | 12 | WebSocket | ✅ | api-dev | 2026-05-28 | 2026-05-28 | 12-websocket.md |
 | 13 | React 前端 | ✅ | frontend-dev | 2026-05-28 | 2026-05-28 | 13-frontend.md |
 | 14 | Phase 1.5 修复与测试 | ✅ | Lead | 2026-05-30 | 2026-05-30 | 14-phase15-fixes.md |
+| 15 | [Phase 2] V1: System Modeling Agent | ✅ | core-dev | 2026-05-31 | 2026-05-31 | 15-phase2-v1-system-modeler.md |
 
 ## 队友分配
 
 | 队友 | 模型 | 负责文件 | 任务 |
 |------|------|---------|------|
-| core-dev | kimi-k2.6 (sonnet) | core/ | 步骤 1, 2, 3, 4, 6, 10 |
+| core-dev | kimi-k2.6 (sonnet) | core/ | 步骤 1, 2, 3, 4, 6, 10, 15 |
 | graph-dev | glm-5.1 (opus) | agents/ | 步骤 5, 7, 8, 9 |
 | api-dev | kimi-k2.6 (sonnet) | api/ + database/ + main.py | 步骤 2b, 11, 12 |
 | frontend-dev | deepseek-v4-flash (haiku) | frontend/ | 步骤 13 |
@@ -44,7 +45,7 @@
 | 2026-05-28 | 执行方式：Subagent-Driven Development (sequential dispatch with model selection) |
 | 2026-05-29 | **核心架构升级 (Scheme 2)**：页面语义提取（Page Semantic Layer）从原生的 Playwright CSS Locator 彻底替换为 `browser-use` 库的 Accessibility Tree 提取方案，同时使用 CDP (Chrome DevTools Protocol) 桥接实现了与 Playwright 框架的无缝兼容。提升了复杂DOM的交互准确率（如解决登录框提取失败的问题），并完美保留了 Playwright 原有的 trace 与录屏功能。 |
 | 2026-05-30 | **Phase 1.5 修复**：修复 Risk Analyzer 字段名不一致、Scenario Extractor 集成、SessionSummary 列表响应处理、环境变量覆盖、ReportBuilder AI Summary 等 8 个问题。端到端测试验证通过。 |
-
+| 2026-05-31 | **Phase 2 - V1 重构**：引入 `System Modeling Agent`，强行解析 PRD 提炼系统的状态流转与业务链路，并作为上下文注入 Scenario Extractor，彻底解决了生成脱离实际的“幽灵用例”问题。 |
 ## 依赖关系
 
 ```

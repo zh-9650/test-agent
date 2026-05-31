@@ -10,8 +10,9 @@ async def extract_scenarios(
     prd: str,
     changelog: str = "",
     focus_areas: str = "",
+    system_model: dict = None,
 ) -> list[dict]:
-    """从 PRD 文本提取业务场景列表，用于 Goal-Driven 探索。"""
+    """从 PRD 提取业务场景列表，用于 Goal-Driven 探索。"""
     if not prd and not changelog:
         return []
     
@@ -22,6 +23,8 @@ async def extract_scenarios(
         context += f"## 变更日志\n{changelog[:1000]}\n\n"
     if focus_areas:
         context += f"## 重点区域\n{focus_areas}\n\n"
+    if system_model:
+        context += f"## 提炼出的系统模型认知 (高优先级参考)\n{json.dumps(system_model, ensure_ascii=False, indent=2)}\n\n"
     
     prompt = f"""你是一个测试分析师。请从以下产品文档中提取核心业务场景列表。
 每个场景代表一个用户可以完成的端到端业务流程。
@@ -41,8 +44,20 @@ async def extract_scenarios(
     try:
         llm = get_llm_client("haiku")
         response = await llm.ainvoke([HumanMessage(content=prompt)])
-        text = response.content if isinstance(response.content, str) else str(response.content)
-        
+        text = ""
+        if isinstance(response.content, str):
+            text = response.content
+        elif isinstance(response.content, list):
+            # Extract text block from multi-part message
+            for block in response.content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "")
+                    break
+            if not text:
+                text = str(response.content)
+        else:
+            text = str(response.content)
+            
         # Extract JSON block
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0]

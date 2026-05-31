@@ -328,8 +328,23 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
                 
             _hitl_callbacks[str(task_db_id)] = hitl_callback
             
+            from core.skills.system_modeler import generate_system_model
+            
             memory_context = await retrieve_memories(target_url)
             enriched_config = await parse_and_fetch_links(config or {})
+            
+            system_model = await generate_system_model(
+                prd_content=enriched_config.get("prd", ""),
+                api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
+                changelog_content=enriched_config.get("changelog", "")
+            )
+            enriched_config["_system_model"] = system_model.model_dump()
+            
+            async with async_session() as session:
+                task = await session.get(Task, task_db_id)
+                if task:
+                    task.config = enriched_config
+                    await session.commit()
             
             runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, "memory_context": memory_context, **enriched_config})
             
