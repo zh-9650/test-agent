@@ -47,7 +47,7 @@ Required before development:
 
 ```bash
 # Create .env with:
-ANTHROPIC_AUTH_TOKEN=sk-sp-D.HLDPR.Bceb.MEUCIQDZuqlaQtuRGK8jWnOyyn4mWtnyLtYpZVBFZhdeBeWgfQIgHpdGiX/er6z3TnVfhyhOE+HFRJwSzeKTSH2Zf5yQV78=
+ANTHROPIC_AUTH_TOKEN=<your-api-key-here>
 ANTHROPIC_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic
 ANTHROPIC_MODEL=qwen3.7-max
 ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4-flash
@@ -106,3 +106,37 @@ smart-test-agent/
 - **Safety valves over hard limits** — configurable thresholds, not fixed numbers
 - **Continuous validation** — verify each module as it's built, not at the end
 - **Prompts in Chinese** — all LLM prompts written in Chinese for best model performance
+
+## ⚠️ Development Workflow Rules (MUST FOLLOW)
+
+### Rule 1: Design-First Problem Solving
+When encountering ANY problem during development (bug, unclear requirement, architecture decision):
+1. **FIRST** read `CONTEXT.md` for confirmed design decisions and roadmap
+2. **THEN** read `docs/PRD.md` for product requirements and implementation decisions
+3. **ONLY THEN** write code — guided by what the design documents say
+4. **DO NOT** over-engineer beyond what the design specifies
+5. **DO NOT** skip steps or leave features half-implemented
+
+This prevents two failure modes: (a) making changes that contradict the design, and (b) not making changes at all when the design clearly calls for them.
+
+### Rule 2: Mandatory End-to-End Testing
+After completing any feature or fix:
+1. **Backend verification**: Start the server, call API endpoints, confirm data flows correctly
+2. **Frontend verification**: Open the browser, submit a real task, observe WebSocket streaming
+3. **Use real test data**: Test against `http://192.168.31.155/login?redirect=/ai-talk/index` with credentials `test_c / 123456`
+4. **Never skip testing** — "it should work" is not acceptable. Run it and prove it works.
+
+### Rule 3: Rich Input Support
+The platform's inputs are NOT limited to URL + credentials. The full input set includes:
+- **Target URL** (required)
+- **Test accounts** (role, username, password)
+- **PRD / Requirements documents** (text or uploaded PDF)
+- **Swagger / API documentation** (text or URL to fetch)
+- **UI Prototype URL** (Figma, 蓝湖, etc.)
+- **Technical architecture docs**
+- **Changelog / release notes**
+- **Test rules & constraints** (what NOT to test)
+- **Focus areas** (what to prioritize)
+
+All inputs flow through `task_config` and MUST be utilized by the planning and execution prompts. Features that ignore these inputs are considered incomplete.
+

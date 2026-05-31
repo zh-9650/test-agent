@@ -68,3 +68,11 @@ data/reports/*
 # OS
 .DS_Store
 Thumbs.db
+
+# Debug artifacts (keep root clean)
+debug_run*.log
+safe_log.txt
+found.txt
+summary*.txt
+tail.txt
+*.db

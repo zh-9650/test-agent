@@ -92,13 +92,16 @@ Phase 1 delivers the foundational runtime infrastructure plus a fully functional
 
 ## Implementation Decisions
 
-### 15. Memory System (Phase 1.5)
+### Recent Architectural Enhancements (Phase 1.5+)
 
-The system implements a dual-scoped Memory System using a Key-Value PostgreSQL table (`agent_memory`):
-- **Scope**: Memories are categorized as either `global` (shared UI patterns) or `domain` (isolated to a specific target URL).
-- **Reflection Timing**: Coarse-grained. At the end of a task (e.g., during report generation), a Reflection Node/Agent analyzes the logs and extracts reusable knowledge.
-- **Retrieval**: Before generating test plans and during execution (e.g., upon failures), the agent queries the KV store to inject relevant memories into the prompt.
-- **Human-in-the-loop**: The React frontend exposes a "Memory Management" page for humans to view, edit, and delete learned knowledge.
+The system has evolved significantly beyond the baseline MVP. The following key architectures are now live in production:
+
+- **PostgreSQL Persistence**: The entire database layer (Task, TaskStep, Report, AgentMemory) has been upgraded from SQLite to PostgreSQL via async SQLAlchemy.
+- **Hierarchical Assertion**: To prevent LLM hallucinations and save tokens, assertions are now evaluated via a "Rule-First" circuit breaker (`assert_node` in `execution_graph.py`). Obvious outcomes (e.g., JS exceptions, network errors, intermediate unchanged steps) are judged purely by code; the LLM only intervenes for semantic layout changes.
+- **Session Memory (Cross-Case Context)**: Solves the "amnesia" problem between test cases. The system now compresses the results of completed cases into a short summary and injects it into the `SystemMessage` of subsequent cases (`session_summary.py`), allowing the agent to remember state transitions across the session.
+- **Goal-Driven Scenario Extraction**: Instead of blind Page-Driven exploration, the system parses incoming PRD/requirements documents (`scenario_extractor.py`) to extract core business workflows. These workflows are injected directly into the exploration prompt, providing the agent with explicit business targets.
+- **Domain-Isolated Memory System**: Dual-scoped Key-Value store (`agent_memory` table) that strictly enforces URL domain isolation to prevent cross-site memory pollution during planning and execution.
+- **Premium Reporting UI**: HTML test reports are now generated with a modern "Sleek Dark Mode & Glassmorphism" aesthetic, providing high-quality visuals alongside automated page/scenario coverage tracking.
 
 ### 1. Architecture: Intent-Based Execution (Not Code Generation)
 

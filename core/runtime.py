@@ -25,10 +25,13 @@ from core.execution_logger import _task_id_map, log_step, log_test_result
 from agents.ui.planning_graph import build_planning_graph
 from agents.ui.execution_graph import build_execution_graph
 from agents.ui.setup_manager import execute_setup
-from agents.ui.tools import set_current_page
+from agents.ui.tools import cleanup_task_context, set_current_page, set_current_task
 from core.report_builder import ReportBuilder
+from core.skills.session_summary import generate_case_summary
+from core.skills.scenario_extractor import extract_scenarios
+from core.skills.coverage_tracker import CoverageTracker
 from database.connection import async_session
-from database.models import Report
+from database.models import Report, Task
 
 
 def _now_iso() -> str:
@@ -60,7 +63,7 @@ class Runtime:
     """
 
     def __init__(self, task_config: dict[str, Any]):
-        self.task_id = task_config.get("task_id", str(uuid.uuid4()))
+        self.task_id = str(task_config.get("task_id", uuid.uuid4()))
         self.task_config = task_config
         self.target_url = task_config["target_url"]
         self.browser = None
@@ -69,6 +72,8 @@ class Runtime:
         self._playwright = None
         self._checkpointer = None
         self._stream_results: list[TestResult] = []
+        self._case_summaries: list[dict] = []
+        self.coverage_tracker = None
 
     async def run(self) -> list[TestResult]:
         """Execute the full test session.
@@ -77,12 +82,18 @@ class Runtime:
             List of TestResult for all test cases.
         """
         results: list[TestResult] = []
+        set_current_task(self.task_id)
         try:
             # 1. Launch browser
             await self._launch_browser()
 
             # 2. Run planning subgraph
             test_plan, setups = await self._run_planning()
+
+            # Initialize coverage tracker after planning has collected _explored_urls
+            explored_urls = self.task_config.get("_explored_urls", [])
+            scenarios = self.task_config.get("_scenarios", [])
+            self.coverage_tracker = CoverageTracker(explored_urls, scenarios)
 
             if self.task_id in _task_id_map:
                 from core.execution_logger import log_test_plan
@@ -122,9 +133,18 @@ class Runtime:
         - page_update / ai_thinking / action_result / assertion_result (per step)
         - test_case_complete
         """
+        set_current_task(self.task_id)
         try:
             await self._launch_browser()
             self._stream_results = []
+
+            # Extract business scenarios from PRD (if provided)
+            task_prd = self.task_config.get("prd", "")
+            task_changelog = self.task_config.get("changelog", "")
+            task_focus = self.task_config.get("focus_areas", "")
+            if task_prd or task_changelog:
+                scenarios = await extract_scenarios(task_prd, task_changelog, task_focus)
+                self.task_config["_scenarios"] = scenarios
 
             # Run planning with streaming exploration progress
             planning_graph = build_planning_graph()
@@ -187,6 +207,13 @@ class Runtime:
                     elif node_name == "generate_plan":
                         test_plan = state_update.get("test_plan", [])
                         setups = state_update.get("setups", {})
+                        
+                        # Initialize coverage tracker
+                        cfg = state_update.get("task_config", {})
+                        explored_urls = cfg.get("_explored_urls", [])
+                        scenarios = cfg.get("_scenarios", [])
+                        self.coverage_tracker = CoverageTracker(explored_urls, scenarios)
+                        
                         if self.task_id in _task_id_map:
                             from core.execution_logger import log_test_plan
                             await log_test_plan(self.task_id, test_plan)
@@ -215,6 +242,12 @@ class Runtime:
             if self._stream_results:
                 report_path = await self._save_report(self._stream_results)
 
+            final_report = {
+                "task_id": self.task_id,
+                "status": "completed",
+                "test_plan": [{**tc.model_dump(), "status": getattr(tc, "status", "pending")} for tc in test_plan],
+                "report_path": report_path,
+            }
             yield {
                 "type": "session_complete",
                 "test_case_id": "",
@@ -222,7 +255,7 @@ class Runtime:
                 "data": {
                     "phase": "final",
                     "total_tests": len(test_plan),
-                    "report_path": report_path,
+                    "report_data": final_report,
                 },
                 "timestamp": _now_iso(),
             }
@@ -239,45 +272,71 @@ class Runtime:
             await self._close_browser()
 
     async def _launch_browser(self):
-        """Launch Playwright browser with trace and video recording."""
-        self._playwright = await async_playwright().start()
-        self.browser = await self._playwright.chromium.launch(headless=True)
+        """Launch Playwright browser with trace and video recording.
+        Now uses BrowserSession to provide DomService accessibility tree.
+        """
+        from browser_use import BrowserSession, BrowserProfile
 
         # Create data directory for this task
         data_dir = os.path.join("data", "sessions", self.task_id)
         os.makedirs(data_dir, exist_ok=True)
 
-        self.context = await self.browser.new_context(
+        profile = BrowserProfile(
             record_video_dir=os.path.join(data_dir, "videos"),
-            viewport={"width": 1280, "height": 720},
         )
+        print("DEBUG: Creating BrowserSession")
+        self.browser_session = BrowserSession(headless=True, browser_profile=profile)
+        print("DEBUG: Starting BrowserSession")
+        await self.browser_session.start()
+
+        print("DEBUG: Starting Playwright")
+        self._playwright = await async_playwright().start()
+        print("DEBUG: Connecting to CDP")
+        self.browser = await self._playwright.chromium.connect_over_cdp(self.browser_session.cdp_url)
+
+        self.context = self.browser.contexts[0]
 
         # Enable tracing
+        print("DEBUG: Starting tracing")
         await self.context.tracing.start(
             screenshots=True,
             snapshots=True,
             sources=True,
         )
 
-        self.page = await self.context.new_page()
-        set_current_page(self.page)
+        print("DEBUG: Getting page")
+        self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
+        # Attach the browser_session to the page object so page_semantic.py can use it
+        self.page._browser_session = self.browser_session
+        set_current_task(self.task_id)
+        set_current_page(self.page, task_id=self.task_id)
 
+        print("DEBUG: Navigating to target URL...")
         # Navigate to target URL
-        await self.page.goto(self.target_url, wait_until="networkidle", timeout=30000)
+        await self.page.goto(self.target_url, wait_until="load", timeout=30000)
+        print("DEBUG: Navigation complete.")
 
     async def _close_browser(self):
         """Save trace and close browser."""
         try:
-            if self.context:
+            if getattr(self, "context", None):
                 trace_path = os.path.join("data", "sessions", self.task_id, "trace.zip")
                 await self.context.tracing.stop(path=trace_path)
-                await self.context.close()
-            if self.browser:
+        except Exception:
+            pass
+        try:
+            if getattr(self, "browser_session", None):
+                await self.browser_session.close()
+        except Exception:
+            pass
+        try:
+            if getattr(self, "browser", None):
                 await self.browser.close()
-            if self._playwright:
+            if getattr(self, "_playwright", None):
                 await self._playwright.stop()
         except Exception:
-            pass  # best effort cleanup
+            pass
+        cleanup_task_context(self.task_id)
 
     def _build_initial_state(self) -> dict[str, Any]:
         """Build the initial state dict for a LangGraph subgraph invocation."""
@@ -303,6 +362,14 @@ class Runtime:
 
     async def _run_planning(self) -> tuple[list[TestCase], dict[str, Setup]]:
         """Run the planning subgraph to generate test plan and setups."""
+        # Extract business scenarios from PRD (if provided)
+        task_prd = self.task_config.get("prd", "")
+        task_changelog = self.task_config.get("changelog", "")
+        task_focus = self.task_config.get("focus_areas", "")
+        if task_prd or task_changelog:
+            scenarios = await extract_scenarios(task_prd, task_changelog, task_focus)
+            self.task_config["_scenarios"] = scenarios
+
         planning_graph = build_planning_graph()
         result = await planning_graph.ainvoke(self._build_initial_state())
         return result.get("test_plan", []), result.get("setups", {})
@@ -316,6 +383,20 @@ class Runtime:
     ) -> TestResult:
         """Execute a single test case."""
         start_time = time.time()
+
+        # Reset browser state to prevent cross-test contamination
+        try:
+            if getattr(self, "context", None):
+                await self.context.clear_cookies()
+            if getattr(self, "page", None):
+                try:
+                    await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
+                    await self.page.goto("about:blank")
+                except Exception:
+                    pass
+                await self.page.goto(self.target_url, wait_until="load", timeout=30000)
+        except Exception as e:
+            print(f"[Runtime] Failed to reset browser state: {e}")
 
         # Execute setups if needed
         setup_results: list[Any] = []
@@ -331,9 +412,15 @@ class Runtime:
 
         # Build execution state
         execution_state = self._build_initial_state()
+        previous_context = ""
+        if self._case_summaries:
+            summaries_text = "\n".join(
+                f"- {s['case_id']}: {s.get('summary', '')}" for s in self._case_summaries
+            )
+            previous_context = f"\n\n前面已完成的测试用例摘要:\n{summaries_text}"
         execution_state["messages"] = [
             SystemMessage(
-                content=f"开始执行测试用例: {test_case.id} - {test_case.title}"
+                content=f"开始执行测试用例: {test_case.id} - {test_case.title}{previous_context}"
             ),
         ]
         execution_state["test_plan"] = test_plan
@@ -364,10 +451,14 @@ class Runtime:
             s.assertion and s.assertion.status == "fail" for s in steps if hasattr(s, "assertion")
         ):
             status = "failed"
-        else:
+        elif any(
+            s.assertion and s.assertion.status == "pass" for s in steps if hasattr(s, "assertion")
+        ):
             status = "passed"
+        else:
+            status = "incomplete"
 
-        return TestResult(
+        test_result = TestResult(
             test_case_id=test_case.id,
             status=status,
             steps=steps,
@@ -375,6 +466,33 @@ class Runtime:
             duration_seconds=duration,
             setup_results=[],
         )
+
+        # Generate session summary for cross-case context
+        try:
+            urls = set()
+            for s in steps:
+                if s.change_report:
+                    if s.change_report.url_before: urls.add(s.change_report.url_before)
+                    if s.change_report.url_after: urls.add(s.change_report.url_after)
+            page_urls = list(urls)
+
+            if getattr(self, "coverage_tracker", None):
+                self.coverage_tracker.auto_match_scenario(test_case.title)
+                for u in page_urls:
+                    self.coverage_tracker.mark_url_covered(u)
+
+            summary = await generate_case_summary(
+                test_case_id=test_case.id,
+                test_case_title=test_case.title,
+                status=status,
+                steps=steps,
+                page_urls=page_urls,
+            )
+            self._case_summaries.append(summary)
+        except Exception:
+            pass
+
+        return test_result
 
     async def _execute_test_case_stream(
         self,
@@ -394,6 +512,20 @@ class Runtime:
         Finally emits test_case_complete.
         """
         start_time = time.time()
+
+        # Reset browser state to prevent cross-test contamination
+        try:
+            if getattr(self, "context", None):
+                await self.context.clear_cookies()
+            if getattr(self, "page", None):
+                try:
+                    await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
+                    await self.page.goto("about:blank")
+                except Exception:
+                    pass
+                await self.page.goto(self.target_url, wait_until="load", timeout=30000)
+        except Exception as e:
+            print(f"[Runtime] Failed to reset browser state: {e}")
 
         # Execute setups if needed
         for precondition_id in test_case.preconditions:
@@ -421,9 +553,15 @@ class Runtime:
 
         # Build execution state
         execution_state = self._build_initial_state()
+        previous_context = ""
+        if self._case_summaries:
+            summaries_text = "\n".join(
+                f"- {s['case_id']}: {s.get('summary', '')}" for s in self._case_summaries
+            )
+            previous_context = f"\n\n前面已完成的测试用例摘要:\n{summaries_text}"
         execution_state["messages"] = [
             SystemMessage(
-                content=f"开始执行测试用例: {test_case.id} - {test_case.title}"
+                content=f"开始执行测试用例: {test_case.id} - {test_case.title}{previous_context}"
             ),
         ]
         execution_state["test_plan"] = test_plan
@@ -437,6 +575,7 @@ class Runtime:
 
         try:
             async for stream_update in execution_graph.astream(execution_state):
+                print(f"[DEBUG_STREAM] {stream_update.keys() if isinstance(stream_update, dict) else type(stream_update)}")
                 for node_name, state_update in _stream_items(stream_update):
                     # Accumulate state from each node
                     final_state.update(state_update)
@@ -460,11 +599,9 @@ class Runtime:
                         if messages:
                             last_msg = messages[-1]
                             content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
-                            tool_calls = (
-                                last_msg.tool_calls
-                                if hasattr(last_msg, "tool_calls") and last_msg.tool_calls
-                                else []
-                            )
+                            from core.llm_client import extract_tool_calls_from_message
+                            tool_calls = extract_tool_calls_from_message(last_msg)
+                            final_state["_last_tool_calls"] = tool_calls
                             yield {
                                 "type": "ai_thinking",
                                 "test_case_id": test_case.id,
@@ -472,7 +609,7 @@ class Runtime:
                                 "data": {
                                     "thought": content,
                                     "tool_calls": [
-                                        {"name": tc["name"], "args": tc["args"]}
+                                        {"name": tc.get("name", ""), "args": tc.get("args", {})}
                                         for tc in tool_calls
                                     ],
                                 },
@@ -480,25 +617,9 @@ class Runtime:
                             }
 
                     elif node_name == "execute":
-                        # Get tool call info from the last AI message in accumulated state
-                        tc_messages = final_state.get("messages", [])
-                        last_ai = None
-                        tool_calls = []
-                        from core.llm_client import extract_tool_calls_from_message
-                        for msg in reversed(tc_messages):
-                            if getattr(msg, "type", "") == "ai" or type(msg).__name__ == "AIMessage":
-                                calls = extract_tool_calls_from_message(msg)
-                                if calls:
-                                    last_ai = msg
-                                    tool_calls = calls
-                                    break
-
-                        tool_name = ""
-                        tool_args: dict[str, Any] = {}
-                        if last_ai and tool_calls:
-                            tool_name = tool_calls[0]["name"]
-                            tool_args = tool_calls[0]["args"]
-
+                        tool_calls = final_state.get("_last_tool_calls", [])
+                        tool_name = tool_calls[0].get("name", "") if tool_calls else ""
+                        tool_args = tool_calls[0].get("args", {}) if tool_calls else {}
                         result_text = state_update.get("_last_tool_result", "")
                         
                         yield {
@@ -519,8 +640,8 @@ class Runtime:
                             "test_case_id": test_case.id,
                             "step_index": final_state.get("current_step", 0),
                             "data": {
-                                "change_report": state_update.get("_last_change_report"),
-                                "assertion": state_update.get("_last_assertion"),
+                                "change_report": state_update.get("_last_change_report").model_dump() if state_update.get("_last_change_report") else None,
+                                "assertion": state_update.get("_last_assertion").model_dump() if state_update.get("_last_assertion") else None,
                             },
                             "timestamp": _now_iso(),
                         }
@@ -532,8 +653,11 @@ class Runtime:
                             for step in new_steps:
                                 await log_step(self.task_id, test_case.id, step)
 
-        except Exception:
+        except Exception as e:
             # Browser crash — try to recover
+            import traceback
+            traceback.print_exc()
+            print(f"[DEBUG] _execute_test_case_stream crashed with: {e}")
             final_state = await self._handle_browser_crash(test_case, execution_state)
             collected_steps = final_state.get("_collected_steps", [])
 
@@ -553,8 +677,14 @@ class Runtime:
             if hasattr(s, "assertion")
         ):
             status = "failed"
-        else:
+        elif any(
+            s.assertion and s.assertion.status == "pass"
+            for s in collected_steps
+            if hasattr(s, "assertion")
+        ):
             status = "passed"
+        else:
+            status = "incomplete"
 
         result = TestResult(
             test_case_id=test_case.id,
@@ -565,6 +695,31 @@ class Runtime:
             setup_results=[],
         )
         self._stream_results.append(result)
+
+        # Generate session summary for cross-case context
+        try:
+            urls = set()
+            for s in collected_steps:
+                if s.change_report:
+                    if s.change_report.url_before: urls.add(s.change_report.url_before)
+                    if s.change_report.url_after: urls.add(s.change_report.url_after)
+            page_urls = list(urls)
+
+            if getattr(self, "coverage_tracker", None):
+                self.coverage_tracker.auto_match_scenario(test_case.title)
+                for u in page_urls:
+                    self.coverage_tracker.mark_url_covered(u)
+
+            summary = await generate_case_summary(
+                test_case_id=test_case.id,
+                test_case_title=test_case.title,
+                status=status,
+                steps=collected_steps,
+                page_urls=page_urls,
+            )
+            self._case_summaries.append(summary)
+        except Exception:
+            pass
 
         await log_test_result(self.task_id, result)
 
@@ -602,8 +757,19 @@ class Runtime:
         for result in results:
             builder.add_result(result)
 
+        if getattr(self, "coverage_tracker", None):
+            builder.set_coverage(self.coverage_tracker.get_coverage_report())
+
+        # Generate AI summary
+        ai_summary = ""
+        try:
+            ai_summary = await builder.generate_summary(results)
+        except Exception as e:
+            print(f"[ReportBuilder] AI summary generation failed: {e}")
+            ai_summary = f"共 {len(results)} 个用例，{sum(1 for r in results if r.status == 'passed')} 个通过，{sum(1 for r in results if r.status == 'failed')} 个失败。"
+
         report_path = os.path.join("data", "reports", self.task_id, "report.html")
-        saved_path = builder.save(report_path)
+        saved_path = builder.save(report_path, ai_summary=ai_summary)
 
         db_task_id = _task_id_map.get(self.task_id)
         if db_task_id is None:
@@ -615,6 +781,12 @@ class Runtime:
         summary = f"共 {len(results)} 个用例，{sum(1 for r in results if r.status == 'passed')} 个通过。"
         try:
             async with async_session() as session:
+                # Update task statistics
+                task = await session.get(Task, db_task_id)
+                if task:
+                    task.total_tests = len(results)
+                    task.passed_tests = sum(1 for r in results if r.status == "passed")
+                    task.failed_tests = sum(1 for r in results if r.status == "failed")
                 session.add(Report(task_id=db_task_id, report_path=saved_path, summary=summary))
                 await session.commit()
         except Exception:

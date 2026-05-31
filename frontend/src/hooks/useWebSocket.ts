@@ -9,7 +9,9 @@ export function useWebSocket(taskId: string | number | undefined) {
   useEffect(() => {
     if (!taskId) return;
 
-    let ws = new WebSocket(`ws://localhost:8001/ws/tasks/${taskId}`);
+    // Connect to WebSocket using hardcoded 8000 or derive from window.location
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let ws = new WebSocket(`${wsProtocol}//localhost:8000/ws/tasks/${taskId}`);
     wsRef.current = ws;
 
     ws.onopen = () => setConnected(true);

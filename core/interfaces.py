@@ -144,6 +144,7 @@ class TestState(MessagesState):
     # 变化检测（execute 前快照 → execute 后快照）
     state_before: dict[str, Any]
     state_after: dict[str, Any]
+    screenshot_after: str  # 执行操作后的 base64 截图
 
     # 步骤收集（record_node 每步追加，operator.add reducer 自动累加）
     _collected_steps: Annotated[list[StepResult], operator.add]
@@ -289,12 +290,21 @@ class ReportBuilder:
         """添加一个测试用例的结果。"""
         ...
 
-    def build_html(self) -> str:
-        """生成 HTML 报告内容。"""
+    def build_html(self, ai_summary: str = "") -> str:
+        """生成 HTML 报告内容。
+
+        Args:
+            ai_summary: LLM 生成的测试总结文本，嵌入到报告头部。
+        """
         ...
 
-    def save(self, output_path: str) -> str:
-        """保存报告到文件系统，返回相对路径。"""
+    def save(self, output_path: str, ai_summary: str = "") -> str:
+        """保存报告到文件系统，返回相对路径。
+
+        Args:
+            output_path: 报告输出路径。
+            ai_summary: LLM 生成的测试总结文本。
+        """
         ...
 
     async def generate_summary(self, results: list[TestResult]) -> str:

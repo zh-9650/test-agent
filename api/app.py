@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -204,6 +205,20 @@ async def delete_task(task_id: int) -> MessageResponse:
         await session.commit()
         return MessageResponse(message="Task deleted", task_id=str(task_id))
 
+class ResumeRequest(BaseModel):
+    message: str
+
+@app.post("/api/tasks/{task_id}/resume", response_model=MessageResponse)
+async def resume_task(task_id: int, req: ResumeRequest) -> MessageResponse:
+    from agents.ui.tools import _hitl_events, _hitl_responses
+    task_id_str = str(task_id)
+    if task_id_str not in _hitl_events:
+        raise HTTPException(status_code=400, detail="Task is not waiting for human intervention")
+    
+    _hitl_responses[task_id_str] = req.message
+    _hitl_events[task_id_str].set()
+    return MessageResponse(message="Task resumed")
+
 
 # --- Memory Endpoints ---
 
@@ -270,6 +285,7 @@ async def delete_memory(memory_id: int) -> MessageResponse:
 
 # --- Background task runner ---
 _running_tasks: dict[int, asyncio.Task] = {}
+_task_execution_lock = asyncio.Lock()
 
 # Flag to disable background tasks in tests
 _background_tasks_enabled: bool = True
@@ -284,45 +300,69 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
     and streams updates over WebSocket. Detects errors yielded by the runtime and
     sets the task status accordingly.
     """
-    # Update status to running
-    _task_id_map[str(task_db_id)] = task_db_id
-    async with async_session() as session:
-        task = await session.get(Task, task_db_id)
-        if task:
-            task.status = "running"
-            task.started_at = datetime.now(timezone.utc)
-            await session.commit()
-
-    has_error = False
-    try:
-        from core.runtime import Runtime
-        memory_context = await retrieve_memories(target_url)
-        runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, "memory_context": memory_context, **(config or {})})
-
-        async for update in runtime.run_stream():
-            # Detect error messages yielded by the runtime
-            if isinstance(update, dict) and isinstance(update.get("data"), dict):
-                if "error" in update["data"]:
-                    has_error = True
-            await websocket_manager.send_message(str(task_db_id), update)
-    except asyncio.CancelledError:
-        has_error = False
-        raise
-    except Exception as e:
-        import traceback
-        print(f"[_run_test_session] Caught exception in background task: {e}")
-        traceback.print_exc()
-        has_error = True
-    finally:
-        # ALWAYS update final status, even if unexpected exception
-        final_status = "failed" if has_error else "completed"
+    # Wait for the global lock to prevent browser concurrency collision
+    async with _task_execution_lock:
+        # Update status to running only after acquiring the lock
+        _task_id_map[str(task_db_id)] = task_db_id
         async with async_session() as session:
             task = await session.get(Task, task_db_id)
             if task:
-                if task.status != "cancelled":
-                    task.status = final_status
-                task.completed_at = datetime.now(timezone.utc)
+                task.status = "running"
+                task.started_at = datetime.now(timezone.utc)
                 await session.commit()
+
+        has_error = False
+        try:
+            from core.runtime import Runtime
+            from agents.ui.tools import _hitl_callbacks
+            from core.document_parser import parse_and_fetch_links
+            
+            async def hitl_callback(reason: str):
+                await websocket_manager.send_message(str(task_db_id), {
+                    "type": "hitl_requested",
+                    "test_case_id": "",
+                    "step_index": 0,
+                    "data": {"reason": reason},
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
                 
-        # Trigger reflection post-task
-        await reflect_on_task(task_db_id)
+            _hitl_callbacks[str(task_db_id)] = hitl_callback
+            
+            memory_context = await retrieve_memories(target_url)
+            enriched_config = await parse_and_fetch_links(config or {})
+            
+            runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, "memory_context": memory_context, **enriched_config})
+            
+            async for update in runtime.run_stream():
+                # Detect error messages yielded by the runtime
+                if isinstance(update, dict) and isinstance(update.get("data"), dict):
+                    if "error" in update["data"]:
+                        has_error = True
+                await websocket_manager.send_message(str(task_db_id), update)
+        except asyncio.CancelledError:
+            has_error = False
+            raise
+        except Exception as e:
+            import traceback
+            print(f"[_run_test_session] Caught exception in background task: {e}")
+            traceback.print_exc()
+            has_error = True
+        finally:
+            # ALWAYS update final status, even if unexpected exception
+            final_status = "failed" if has_error else "completed"
+            async with async_session() as session:
+                task = await session.get(Task, task_db_id)
+                if task:
+                    if task.status != "cancelled":
+                        task.status = final_status
+                    task.completed_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    
+            # Trigger reflection post-task
+            await reflect_on_task(task_db_id)
+            
+            # Cleanup HITL callbacks
+            from agents.ui.tools import _hitl_callbacks, _hitl_events, _hitl_responses
+            _hitl_callbacks.pop(str(task_db_id), None)
+            _hitl_events.pop(str(task_db_id), None)
+            _hitl_responses.pop(str(task_db_id), None)

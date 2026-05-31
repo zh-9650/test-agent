@@ -94,8 +94,28 @@ async def take_screenshot(page: Any) -> str:
 
 
 async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
-    """Collect all interactive elements with numbered IDs."""
-    elements: list[dict[str, Any]] = []
+    """Collect all interactive elements using browser-use or fallback to Playwright."""
+    session = getattr(page, "_browser_session", None)
+    if session:
+        elements: list[dict[str, Any]] = []
+        try:
+            state = await session.get_browser_state_summary()
+            if state.dom_state and state.dom_state.selector_map:
+                for idx, node in state.dom_state.selector_map.items():
+                    elements.append({
+                        "id": f"#{idx}",
+                        "type": node.tag_name or "element",
+                        "xpath": node.xpath,
+                        "text": node.get_meaningful_text_for_llm(),
+                    })
+            return elements
+        except Exception as e:
+            # Fallback to Playwright if browser-use fails
+            print(f"BrowserSession extraction failed: {e}")
+            pass
+
+    # Playwright fallback
+    elements = []
     counter = 1
 
     # Inputs (excluding hidden)
@@ -109,7 +129,7 @@ async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
                 elements.append(info)
                 counter += 1
         except Exception:
-            pass  # Skip failing elements
+            pass
 
     # Buttons
     buttons = page.locator("button:visible, input[type='submit']:visible, input[type='button']:visible, [role='button']:visible")

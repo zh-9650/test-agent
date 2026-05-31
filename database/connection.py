@@ -13,12 +13,12 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.models import Base
 
-load_dotenv()
+load_dotenv(override=True)
 
 DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smart_test")
 
@@ -27,7 +27,7 @@ DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:123456@loca
 # Engine factory helpers (for tests and runtime reuse)
 # ---------------------------------------------------------------------------
 
-def create_async_engine_instance(database_url: str | None = None) -> AsyncSession:
+def create_async_engine_instance(database_url: str | None = None) -> AsyncEngine:
     """Create an async SQLAlchemy engine using asyncpg.
 
     Args:
@@ -42,7 +42,13 @@ def create_async_engine_instance(database_url: str | None = None) -> AsyncSessio
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     elif not url.startswith("postgresql+asyncpg://"):
         raise ValueError("DATABASE_URL must start with postgresql://")
-    return create_async_engine(url, echo=False, future=True, pool_pre_ping=True)
+    return create_async_engine(
+        url,
+        echo=False,
+        future=True,
+        pool_pre_ping=True,
+        connect_args={"server_settings": {"client_encoding": "utf8"}},
+    )
 
 
 def create_sync_engine(database_url: str | None = None):
@@ -62,7 +68,7 @@ def create_sync_engine(database_url: str | None = None):
 _engine = None
 
 
-def get_async_engine() -> AsyncSession:
+def get_async_engine() -> AsyncEngine:
     """Get or create the singleton async engine."""
     global _engine
     if _engine is None:
@@ -114,7 +120,7 @@ def _create_database_if_not_exists(db_name: str, admin_url: str) -> None:
         )
         if not result.scalar():
             # PostgreSQL identifiers cannot contain parameters, so use safe formatting
-            conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+            conn.execute(text(f'CREATE DATABASE "{db_name}" ENCODING \'UTF8\''))
     engine.dispose()
 
 

@@ -26,7 +26,7 @@ from core.llm_client import get_llm_client
 from core.page_semantic import extract_page_semantics, take_screenshot
 
 from agents.ui.prompts import _format_page_info, get_exploration_system_prompt, get_plan_generation_prompt
-from agents.ui.tools import get_current_page, tools_by_name, ui_tools, update_element_map
+from agents.ui.tools import get_current_page, tools_by_name, tools, update_element_map
 
 
 # =============================================================================
@@ -137,15 +137,16 @@ async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     try:
         llm = get_llm_client("default")  # qwen3.7-max for planning
-        exploration_tools = [t for t in ui_tools if t.name != "navigate"]
+        exploration_tools = [t for t in tools if t.name != "navigate"]
         llm_with_tools = llm.bind_tools(exploration_tools)
 
         task_config = state.get("task_config", {})
         explored_urls = task_config.get("_explored_urls", [])
         accounts = task_config.get("accounts", [])
+        scenarios = task_config.get("_scenarios", [])
 
         # Build prompts
-        system_prompt = get_exploration_system_prompt(accounts, task_config)
+        system_prompt = get_exploration_system_prompt(accounts, task_config, scenarios=scenarios)
         page_summary = _format_page_info(state.get("page_info", {}))
 
         credentials_ctx = ""
@@ -250,8 +251,9 @@ async def explore_execute_node(state: dict[str, Any]) -> dict[str, Any]:
 async def generate_plan_node(state: dict[str, Any]) -> dict[str, Any]:
     """Generate structured test plan using create_test_plan tool.
 
+    - Runs Risk Analyzer on collected page elements (Phase 1.5)
     - Gets LLM with create_test_plan tool bound
-    - Sends exploration results + task config as prompt
+    - Sends exploration results + risk points + task config as prompt
     - Parses tool call to extract test cases and setups
     - Returns test_plan and setups as structured data
     """
@@ -262,11 +264,28 @@ async def generate_plan_node(state: dict[str, Any]) -> dict[str, Any]:
         task_config = state.get("task_config", {})
         explored_urls = task_config.get("_explored_urls", [])
         target_url = task_config.get("target_url", "")
+        scenarios = task_config.get("_scenarios", [])
+
+        # Phase 1.5: Risk Analysis before plan generation
+        risk_points = []
+        try:
+            from core.skills.risk_analyzer import analyze_risks
+            page_info = state.get("page_info", {})
+            all_elements = page_info.get("interactive_elements", [])
+            risk_points = await analyze_risks(
+                page_elements=all_elements,
+                swagger=task_config.get("swagger", "") or task_config.get("api_doc", ""),
+                prd=task_config.get("prd", ""),
+            )
+        except Exception as e:
+            print(f"[RiskAnalyzer] Skipped due to error: {e}")
 
         prompt = get_plan_generation_prompt(
             target_url=target_url,
             explored_urls=explored_urls,
             task_config=task_config,
+            scenarios=scenarios,
+            risk_points=risk_points,
         )
 
         response = await llm_with_tool.ainvoke([
@@ -275,8 +294,10 @@ async def generate_plan_node(state: dict[str, Any]) -> dict[str, Any]:
         ])
 
         # Parse the tool call to extract test plan
-        if hasattr(response, "tool_calls") and response.tool_calls:
-            tool_call = response.tool_calls[0]
+        from core.llm_client import extract_tool_calls_from_message
+        tool_calls = extract_tool_calls_from_message(response)
+        if tool_calls:
+            tool_call = tool_calls[0]
             test_cases_data = tool_call["args"].get("test_cases", [])
             setups_data = tool_call["args"].get("setups", [])
 

@@ -11,14 +11,16 @@ import os
 import signal
 import subprocess
 import sys
-import codecs
-
-if sys.stdout.encoding.lower() != 'utf-8':
-    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.detach())
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+# Force UTF-8 for stdout and stderr on Windows (prevents GBK codec errors)
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "5173"))
@@ -51,6 +53,7 @@ def main() -> None:
             print(f"[main] Starting frontend dev server on port {FRONTEND_PORT}...")
             env = os.environ.copy()
             env["PORT"] = str(FRONTEND_PORT)
+            env["PYTHONIOENCODING"] = "utf-8"
             frontend_proc = subprocess.Popen(
                 ["npm.cmd", "run", "dev", "--", "--port", str(FRONTEND_PORT), "--host", "127.0.0.1"],
                 cwd=frontend_dir,

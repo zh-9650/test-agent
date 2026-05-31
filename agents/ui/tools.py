@@ -7,32 +7,65 @@ Includes: click, input_text, navigate, scroll, wait, and other page interactions
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from typing import Any
 
 from langchain_core.tools import tool
 
 # ---------------------------------------------------------------------------
-# Module-level state
+# Per-task context registry (replaces module-level singletons)
 # ---------------------------------------------------------------------------
 
-_current_page = None
-_element_map: dict[str, dict] = {}
+# ContextVar holds the current task_id for the running coroutine/task
+_current_task_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_current_task_id", default=None
+)
+
+# Registry mapping task_id -> {"page": <Page>, "element_map": {id: el_info}}
+_task_contexts: dict[str, dict[str, Any]] = {}
+_hitl_events: dict[str, asyncio.Event] = {}
+_hitl_responses: dict[str, str] = {}
 
 
-def set_current_page(page: Any) -> None:
-    global _current_page
-    _current_page = page
+def set_current_task(task_id: str) -> None:
+    """Set the current task_id for the running coroutine."""
+    _current_task_id.set(task_id)
+
+
+def get_current_task_id() -> str | None:
+    """Return the current task_id for the running coroutine."""
+    return _current_task_id.get()
+
+
+def cleanup_task_context(task_id: str) -> None:
+    """Remove all stored state for a finished task."""
+    _task_contexts.pop(task_id, None)
+
+
+def set_current_page(page: Any, task_id: str | None = None) -> None:
+    tid = task_id or _current_task_id.get()
+    if tid is None:
+        raise RuntimeError("No active task. Call set_current_task() first.")
+    ctx = _task_contexts.setdefault(tid, {"page": None, "element_map": {}})
+    ctx["page"] = page
 
 
 def get_current_page() -> Any:
-    if _current_page is None:
+    tid = _current_task_id.get()
+    if tid is None:
+        raise RuntimeError("No active task. Call set_current_task() first.")
+    ctx = _task_contexts.get(tid)
+    if ctx is None or ctx["page"] is None:
         raise RuntimeError("No active page. Call set_current_page() first.")
-    return _current_page
+    return ctx["page"]
 
 
 def update_element_map(elements: list[dict]) -> None:
-    global _element_map
-    _element_map = {el["id"]: el for el in elements}
+    tid = _current_task_id.get()
+    if tid is None:
+        raise RuntimeError("No active task. Call set_current_task() first.")
+    ctx = _task_contexts.setdefault(tid, {"page": None, "element_map": {}})
+    ctx["element_map"] = {el["id"]: el for el in elements}
 
 
 # ---------------------------------------------------------------------------
@@ -46,9 +79,21 @@ async def _resolve_element(target: str, page: Any) -> Any:
     1. If target starts with #, look up in _element_map and build locator
     2. Otherwise, try text-based locators in order
     """
-    if target.startswith("#") and target in _element_map:
-        el_info = _element_map[target]
-        # Build locator from element info
+    # Get per-task element map
+    tid = _current_task_id.get()
+    ctx = _task_contexts.get(tid, {}) if tid else {}
+    element_map = ctx.get("element_map", {})
+
+    if target.startswith("#") and target in element_map:
+        el_info = element_map[target]
+        
+        # If we have an exact xpath from browser-use, use it directly!
+        if "xpath" in el_info and el_info["xpath"]:
+            locator = page.locator(f"xpath={el_info['xpath']}")
+            if await locator.count() > 0:
+                return locator.first
+                
+        # Build locator from element info (Fallback)
         el_type = el_info.get("type", "")
         if el_type == "input":
             input_type = el_info.get("input_type", "text")
@@ -63,12 +108,18 @@ async def _resolve_element(target: str, page: Any) -> Any:
                 locator = page.get_by_placeholder(placeholder)
                 if await locator.count() > 0:
                     return locator.first
-        elif el_type == "button":
-            text = el_info.get("text", "")
+        elif el_type in ["button", "input"]:
+            text = ""
+            if el_type == "input" and el_info.get("input_type") in ["submit", "button"]:
+                text = el_info.get("value", "") or el_info.get("text", "")
+            else:
+                text = el_info.get("text", "")
+                
             if text:
                 locator = page.get_by_role("button", name=text)
                 if await locator.count() > 0:
                     return locator.first
+
         # ... more type-specific resolution
         # Fallback: try text content
         text = el_info.get("text", "") or el_info.get("label", "")
@@ -196,13 +247,217 @@ async def wait(seconds: float = 1.0) -> str:
     except Exception as e:
         return f"等待失败: {e}"
 
+_hitl_callbacks: dict[str, Any] = {}
+
+@tool
+async def request_human_intervention(reason: str) -> str:
+    """当遇到需要人工解决的复杂场景（如验证码、滑动拼图、MFA动态口令等）时调用此工具。
+    系统会挂起当前执行流，并通过 UI 通知人类，等待人类解决后恢复。
+
+    Args:
+        reason: 呼叫人工的具体原因和要求。例如："请在浏览器中手动完成登录滑块验证，然后点击继续"。
+
+    Returns:
+        人工干预的结果回复。
+    """
+    task_id = get_current_task_id()
+    if not task_id:
+        return "人工干预失败: 找不到当前 task_id"
+
+    # Create event and store in registry
+    event = asyncio.Event()
+    _hitl_events[task_id] = event
+
+    # Trigger callback to notify API server
+    if task_id in _hitl_callbacks:
+        await _hitl_callbacks[task_id](reason)
+    else:
+        return "人工干预失败: 没有注册 HITL 回调"
+
+    # Block execution until human responds
+    await event.wait()
+
+    # Clean up and return human response
+    _hitl_events.pop(task_id, None)
+    response = _hitl_responses.pop(task_id, "人类已处理完成")
+    return response
+
+@tool
+async def press_key(key: str) -> str:
+    """按下键盘按键。例如 'Enter', 'Escape', 'Tab' 等。
+
+    Args:
+        key: 要按下的按键名称
+
+    Returns:
+        操作结果描述
+    """
+    try:
+        page = get_current_page()
+        await page.keyboard.press(key)
+        return f"已按下 {key} 键"
+    except Exception as e:
+        return f"按键失败: {e}"
+
+@tool
+async def hover(target: str) -> str:
+    """悬停在页面上的元素上。适用于触发下拉菜单或提示框。
+
+    Args:
+        target: 元素编号（如 #3）或元素描述
+    """
+    try:
+        page = get_current_page()
+        locator = await _resolve_element(target, page)
+        await locator.hover(timeout=10000)
+        return f"已悬停在 {target} 上"
+    except Exception as e:
+        return f"悬停失败: {e}"
+
+@tool
+async def go_back() -> str:
+    """在浏览器历史记录中后退一页。"""
+    try:
+        page = get_current_page()
+        await page.go_back(wait_until="networkidle", timeout=15000)
+        return "已后退到上一页"
+    except Exception as e:
+        return f"后退失败: {e}"
+
+@tool
+async def extract_text(target: str) -> str:
+    """提取页面元素的文本内容。
+
+    Args:
+        target: 元素编号（如 #3）或元素描述
+    """
+    try:
+        page = get_current_page()
+        locator = await _resolve_element(target, page)
+        text = await locator.inner_text(timeout=5000)
+        return f"元素文本内容: {text}"
+    except Exception as e:
+        return f"提取文本失败: {e}"
+
+@tool
+async def select_dropdown(target: str, value: str) -> str:
+    """从下拉菜单(select)中选择选项。
+
+    Args:
+        target: 元素编号（如 #3）或元素描述
+        value: 要选择的选项的文本、value或label
+    """
+    try:
+        page = get_current_page()
+        locator = await _resolve_element(target, page)
+        await locator.select_option(value, timeout=10000)
+        return f"已在下拉菜单 {target} 中选择 {value}"
+    except Exception as e:
+        return f"选择下拉菜单失败: {e}"
+
+@tool
+async def evaluate_js(script: str) -> str:
+    """在当前页面中执行一段 JavaScript 代码。
+
+    Args:
+        script: 要执行的 JavaScript 代码
+    """
+    try:
+        page = get_current_page()
+        
+        # If the script contains a bare return (not inside a function), 
+        # page.evaluate will throw a SyntaxError: Illegal return statement.
+        # Wrap it in an IIFE (Immediately Invoked Function Expression) to safely evaluate it.
+        wrapped_script = script
+        if "return " in script and not script.strip().startswith("(") and not script.strip().startswith("function"):
+            wrapped_script = f"(() => {{\n{script}\n}})()"
+            
+        result = await page.evaluate(wrapped_script)
+        return f"JS执行结果: {result}"
+    except Exception as e:
+        return f"JS执行失败: {e}"
+
+
+@tool
+async def mark_task_complete(reasoning: str) -> str:
+    """标记当前任务已成功完成，并结束执行。
+
+    Args:
+        reasoning: 任务成功的理由或发现，请尽量详细说明
+    """
+    return f"任务标记为已成功: {reasoning}"
+
+
+@tool
+async def mark_task_failed(reasoning: str) -> str:
+    """标记当前任务执行失败，无法继续，并结束执行。
+
+    Args:
+        reasoning: 任务失败的具体原因（如：找不到目标元素，页面报错等）
+    """
+    return f"任务标记为已失败: {reasoning}"
+
+
+@tool
+async def mark_task_skipped(reasoning: str) -> str:
+    """标记当前任务被跳过（如前置条件已满足无需执行），并结束执行。
+
+    Args:
+        reasoning: 跳过任务的具体原因
+    """
+    return f"任务标记为已跳过: {reasoning}"
+
 
 # ---------------------------------------------------------------------------
 # Tool exports
 # ---------------------------------------------------------------------------
 
-# List of all UI tools for bind_tools()
-ui_tools = [navigate, click, input_text, scroll, wait]
+__all__ = [
+    "navigate",
+    "click",
+    "input_text",
+    "scroll",
+    "wait",
+    "press_key",
+    "hover",
+    "request_human_intervention",
+    "go_back",
+    "extract_text",
+    "select_dropdown",
+    "evaluate_js",
+    "mark_task_complete",
+    "mark_task_failed",
+    "mark_task_skipped",
+    "get_current_page",
+    "set_current_page",
+    "get_element_map",
+    "update_element_map",
+    "set_current_task",
+    "get_current_task_id",
+    "cleanup_task_context",
+    "tools",
+    "tools_by_name",
+]
 
-# Dict for dispatching tool calls to implementations
-tools_by_name = {t.name: t for t in ui_tools}
+# Provide a list of tool objects for LLM binding
+tools = [
+    navigate,
+    click,
+    input_text,
+    scroll,
+    wait,
+    press_key,
+    hover,
+    request_human_intervention,
+    go_back,
+    extract_text,
+    select_dropdown,
+    evaluate_js,
+    mark_task_complete,
+    mark_task_failed,
+    mark_task_skipped,
+]
+
+# Provide a map for easy invocation by name
+tools_by_name = {t.name: t for t in tools}
+

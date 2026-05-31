@@ -21,6 +21,7 @@
 | 11 | FastAPI 后端 | ✅ | api-dev | 2026-05-28 | 2026-05-28 | 11-fastapi.md |
 | 12 | WebSocket | ✅ | api-dev | 2026-05-28 | 2026-05-28 | 12-websocket.md |
 | 13 | React 前端 | ✅ | frontend-dev | 2026-05-28 | 2026-05-28 | 13-frontend.md |
+| 14 | Phase 1.5 修复与测试 | ✅ | Lead | 2026-05-30 | 2026-05-30 | 14-phase15-fixes.md |
 
 ## 队友分配
 
@@ -30,6 +31,7 @@
 | graph-dev | glm-5.1 (opus) | agents/ | 步骤 5, 7, 8, 9 |
 | api-dev | kimi-k2.6 (sonnet) | api/ + database/ + main.py | 步骤 2b, 11, 12 |
 | frontend-dev | deepseek-v4-flash (haiku) | frontend/ | 步骤 13 |
+| Lead | Claude | 全局 | 步骤 14 (Phase 1.5 修复) |
 
 ## 全局决策时间线
 
@@ -40,6 +42,8 @@
 | 2026-05-28 | Phase 1 全部 13 步完成。14 commits, 41 Python files, 70 files changed, 8706 lines added |
 | 2026-05-28 | 115/116 tests passing (1 test isolation issue, passes in isolation) |
 | 2026-05-28 | 执行方式：Subagent-Driven Development (sequential dispatch with model selection) |
+| 2026-05-29 | **核心架构升级 (Scheme 2)**：页面语义提取（Page Semantic Layer）从原生的 Playwright CSS Locator 彻底替换为 `browser-use` 库的 Accessibility Tree 提取方案，同时使用 CDP (Chrome DevTools Protocol) 桥接实现了与 Playwright 框架的无缝兼容。提升了复杂DOM的交互准确率（如解决登录框提取失败的问题），并完美保留了 Playwright 原有的 trace 与录屏功能。 |
+| 2026-05-30 | **Phase 1.5 修复**：修复 Risk Analyzer 字段名不一致、Scenario Extractor 集成、SessionSummary 列表响应处理、环境变量覆盖、ReportBuilder AI Summary 等 8 个问题。端到端测试验证通过。 |
 
 ## 依赖关系
 
