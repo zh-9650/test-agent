@@ -111,9 +111,9 @@
 2. **全栈抗污染防御**：采用 `about:blank` 斩断原生浏览器跨刷新状态缓存，彻底杜绝 `React` 等 SPA 框架状态不同步的问题。
 3. **表单解析算法强化**：精准识别 `type="input"` 且具有 `value` 的 `submit` 按钮事件拦截，大大提升了 Web 应用常规表单操作的通过率。
 
-## 四、 后续进化方向 (Phase 2 - V1.1 & V1.2)
+## 四、 Phase 2 核心进化 (V1.1 & V1.2)
 
-1. **Goal Driven Explorer (V1.1)**：
-   目前的探索阶段依旧偏向“自由漫游”。后续将引入 `Goal Extractor`，将 `system_model` 中的业务流转化为明确的导航目标，使得 Playwright 执行规划时“有的放矢”。
-2. **System Map 融合 (V1.2)**：
-   在带目标探索结束后，输出包含页面真实控件分布的结构化 `System Map`，与文档认知合并，双管齐下指导 Test Case 最终生成。
+1. **Goal Driven Explorer (V1.1 目标驱动探索)**：
+   引入了 `Goal Extractor`，将 `system_model` 中的业务流转化为明确的导航目标。探索节点在 Prompt 中被强制注入这些目标，使得 Playwright 执行探索时“有的放矢”，大大提升了巡检效率。
+2. **System Map 融合 (V1.2 实际系统地图)**：
+   在带目标探索结束后，系统汇集所有的探索历史，输出包含页面真实控件分布的结构化 `System Map`。它与文档认知 (`system_model`) 合并，作为 `Scenario Extractor` 的双管齐下指导，彻底保证了 Test Case 的生成具备真实的 UI 入口和操作依据。
