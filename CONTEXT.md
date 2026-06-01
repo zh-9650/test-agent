@@ -75,5 +75,6 @@
 *   **System Mapper (实际页面地图提取)**：在带目标探索结束后，收集探索历史并输出包含页面真实控件分布的结构化 `SystemMap`。它与文档认知合并，作为 `Scenario Extractor` (场景提取器) 的双管齐下指导，保证了规划出的 Test Case 具备真实执行基础（V1.2升级）。
 *   **Premium Web Report (高端数据看板)**：测试结果的 HTML 报告已抛弃原始模板，重构为现代暗黑极客风（Sleek Dark Mode + Glassmorphism）。不仅具备覆盖率实时进度条，还具备详细的 AI 总结呈现，显著提升产品高级感。
 *   **Layer 1 Use-Case Coverage 自检报告 (V1.5)**：HTML 报告新增"认知自检"卡片，可视化展示 KnowledgeBase 中业务规则的覆盖情况（已覆盖/遗漏/补全三色统计 + 覆盖率进度条 + 折叠规则详情），让用户直观看到 L1 真正"读懂"了多少业务规则。
-*   **统一 LLM 调用兜底 (V1.5)**：`core/llm_client.py` 提供 `safe_structured_invoke()`，所有 7 个 Layer 1/2 skill 统一接入，兼容原生结构化输出与手动 JSON 解析两条路径，消除 Qwen/DeepSeek/Kimi 等兼容端点对 `with_structured_output` 支持不全导致的随机 None/超时报错。
+*   **统一 LLM 调用兜底 (V1.5)**：`core/llm_client.py` 提供 `safe_structured_invoke()`，所有 7 个 Layer 1/2 skill 统一接入，兼容原生结构化输出与手动 JSON 解析两条路径，消除 Qwen/DeepSeek/Kimi 等兼容端点对 `with_structured_output` 支持不全导致的随机 None/超报错。
+*   **L1 Prompt 最佳实践内化 (V1.6, 2026-06-01)**：5 个 L1 skill 的 prompt 全部重构为 `<role>`/`<context>`/`<task>`/`<rules>`/`<examples>`/`<output_contract>` 的 XML 结构，沉淀 L1↔L2 节点契约（`docs/prompt-engineering.md`），引入 `tests/core/test_l1_prompts.py` 回归测试（4 fixtures × 7 不变量 = 28 用例）。**修复了之前没建 Node 间 schema 契约、没建 prompt 回归测试、adversarial quote fallback 缺失、priority 标准模糊、nodes 拼写不一致、action 不对应 use_case.name 等 6 个设计漏洞**。同时把 `max_tokens` 4096→65536、`timeout` 30s→1800s 解决真实目标系统输入截断/超时。
 
