@@ -24,6 +24,7 @@
 | 14 | Phase 1.5 修复与测试 | ✅ | Lead | 2026-05-30 | 2026-05-30 | 14-phase15-fixes.md |
 | 15 | [Phase 2] V1: System Modeling Agent | ✅ | core-dev | 2026-05-31 | 2026-05-31 | 15-phase2-v1-system-modeler.md |
 | 16 | [Phase 2] V1.1/V1.2: Goal-Driven Graph | ✅ | Lead | 2026-05-31 | 2026-05-31 | 16-phase2-v1.1-v1.2-graph-refactor.md |
+| 17 | [Phase 2] V1.3: Knowledge Extraction IR | ✅ | Lead | 2026-06-01 | 2026-06-01 | 17-layer1-knowledge-extraction.md |
 
 ## 队友分配
 
@@ -48,6 +49,7 @@
 | 2026-05-30 | **Phase 1.5 修复**：修复 Risk Analyzer 字段名不一致、Scenario Extractor 集成、SessionSummary 列表响应处理、环境变量覆盖、ReportBuilder AI Summary 等 8 个问题。端到端测试验证通过。 |
 | 2026-05-31 | **Phase 2 - V1 重构**：引入 `System Modeling Agent`，强行解析 PRD 提炼系统的状态流转与业务链路，并作为上下文注入 Scenario Extractor，彻底解决了生成脱离实际的“幽灵用例”问题。 |
 | 2026-05-31 | **Phase 2 - V1.1/V1.2 重构**：完成 `Goal Extractor` 与 `System Mapper`，改造 `planning_graph` 拓扑为目标驱动流水线 (`extract_goals` -> `explore` -> `generate_map` -> `extract_scenarios`)，实现了认知-探索-规划闭环。 |
+| 2026-06-01 | **Phase 2 - V1.3 重构**：重构认知提取架构为中间表达层 (IR)，新增 `KnowledgeBase` 事实库提炼，并将 `SystemModel` 升级为严谨的“轻量级状态机 (State Machine)”表达，通过优先级目标进一步优化探索 Agent 规划。 |
 
 ## 依赖关系
 

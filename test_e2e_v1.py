@@ -34,12 +34,17 @@ SauceDemo 是一款电商演示系统。
     from core.document_parser import parse_and_fetch_links
     task_config = await parse_and_fetch_links(task_config)
     
+    from core.skills.knowledge_extractor import extract_knowledge
     from core.skills.system_modeler import generate_system_model
-    system_model = await generate_system_model(
+    
+    knowledge = await extract_knowledge(
         prd_content=task_config.get("prd", ""),
         api_doc_content=task_config.get("api_doc", ""),
         changelog_content=task_config.get("changelog", "")
     )
+    task_config["_knowledge_base"] = knowledge.model_dump()
+    
+    system_model = await generate_system_model(knowledge)
     task_config["_system_model"] = system_model.model_dump()
     
     from core.execution_logger import log_task_created

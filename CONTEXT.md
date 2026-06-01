@@ -39,7 +39,7 @@
 *   **断言分级 (Hierarchical Assertion)**：执行后优先走规则断言（URL/元素/接口状态），最后再走大模型判定，降低成本与误判率。
 
 ### [进行中] Phase 2: 高级系统架构 (Advanced Architecture) - 【当前焦点】
-*   **V1 & V1.1/V1.2 架构升级 (已完成)**：引入 `SystemModelingAgent` 解决认知盲区，实现 `Goal-Driven Explorer`，动态生成 `SystemMap` 指导用例生成。实现“认知 -> 探索 -> 验证 -> 规划”完整闭环。
+*   **V1~V1.3 架构升级 (已完成)**：引入 `KnowledgeExtractionLayer` 提炼事实，`SystemModelingAgent` 升级为轻量级状态机，实现带优先级的 `Goal-Driven Explorer`，动态生成 `SystemMap` 指导用例生成。实现“认知 -> 探索 -> 验证 -> 规划”完整闭环。
 *   **后续焦点**：Business Graph 数据库、Reflection 自我反思循环、跨任务的长期 Memory 沉淀、多 Agent 协同。
 
 ### Phase 3: 自主测试团队 (Autonomous Testing Team)
@@ -67,7 +67,9 @@
 *   **Session Summary (跨 Case 记忆传递)**：在 `runtime.py` 的执行流中，每完成一个 TestCase，会调用轻量级 LLM 将执行过程压缩成百字以内的摘要（`session_summary.py`）。这个摘要会被注入到下一个 Case 的 `SystemMessage` 顶部。这使得大模型能像人类一样拥有“贯穿整个 Test Session 的记忆”，比如能记住“之前已经完成登录了，现在可以直接测业务”。
 
 ### 3. 高级探索与展示 (Exploration & Report)
-*   **System Modeling Agent (PRD 系统建模)**：引入了专门的 Agent（V1升级），强制解析 PRD 生成系统的整体状态流转与业务链路（`SystemModel`），彻底解决了模型生成脱离实际的“幽灵用例”问题。
-*   **Goal-Driven Explorer (目标驱动探索)**：引入了 `Goal Extractor`，将 `SystemModel` 转化为明确的探索目标。现在大模型带着“作战任务”去页面里翻找入口，极大提升了图谱的导航效率（V1.1升级）。
+*   **Knowledge Extraction (层级 1 知识提取)**：引入 `knowledge_extractor` 专门应对长篇复杂的 PRD。模型首先扮演无情的“规则阅读器”，将文本提纯为硬核的 `KnowledgeBase`（包括业务实体、角色、规则与约束条件）。这一层避免了后续由于幻觉导致的系统建模偏差（V1.3升级）。
+*   **System Modeling Agent (状态机建模)**：强制根据提炼出的知识库生成系统的整体状态流转（Lightweight State Machine），而非松散的业务流文本（`SystemModel`），彻底解决了模型生成脱离实际的“幽灵用例”问题（V1.3升级）。
+*   **Goal-Driven Explorer (目标驱动探索)**：引入了 `Goal Extractor`，将状态机转化为带有明确优先级 (High/Medium/Low) 的业务级探索目标。现在大模型带着“作战任务”去页面里翻找入口，极大提升了图谱的导航效率（V1.1/V1.3升级）。
 *   **System Mapper (实际页面地图提取)**：在带目标探索结束后，收集探索历史并输出包含页面真实控件分布的结构化 `SystemMap`。它与文档认知合并，作为 `Scenario Extractor` (场景提取器) 的双管齐下指导，保证了规划出的 Test Case 具备真实执行基础（V1.2升级）。
 *   **Premium Web Report (高端数据看板)**：测试结果的 HTML 报告已抛弃原始模板，重构为现代暗黑极客风（Sleek Dark Mode + Glassmorphism）。不仅具备覆盖率实时进度条，还具备详细的 AI 总结呈现，显著提升产品高级感。
+

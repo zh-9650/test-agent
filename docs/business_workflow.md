@@ -37,10 +37,15 @@
    - 将抓取回来的长文本**拼接组装**，替换原有的简短配置，生成 `enriched_config`。
    > **意义**：这一步让底层 AI 摆脱了原始链接，拿到了真实的文档文本。
 
-4. **系统认知建模 (System Modeling Agent) [Phase 2 - V1]**：
-   - 提取出文档纯文本后，送入 `core/skills/system_modeler.py` 技能模块。
-   - 强制 LLM 提炼出当前系统的四大维度地图：`modules` (模块), `roles` (角色), `business_flows` (业务流), `states` (状态)。
-   - **意义**：这一步如同人类测试员在脑海中建立业务全景图，彻底消除了生成“不存在的虚假测试用例”的可能。认知地图随后被固化到数据库 `Task.config["_system_model"]`。
+4. **知识事实提取层 (Knowledge Extraction) [Phase 2 - V1.3]**：
+   - 提取出文档纯文本后，送入 `core/skills/knowledge_extractor.py`。
+   - 大模型作为“规则阅读器”，剥离所有主观描述，将其提纯为结构化的 `KnowledgeBase`（包含硬核业务规则、实体、角色、约束条件）。
+   - **意义**：保证了下游在建模时的绝对客观，避免大模型“脑补”功能。
+
+5. **系统状态机建模 (System Modeling Agent) [Phase 2 - V1.3]**：
+   - 将事实库 `KnowledgeBase` 送入 `core/skills/system_modeler.py`。
+   - 强制 LLM 提炼出当前系统的核心骨架：模块划分与基于状态机的 `BusinessFlow`。
+   - **意义**：通过状态、流转动作等严密结构，这一步如同人类测试员在脑海中建立业务全景大地图，彻底消除了生成“不存在的虚假测试用例”的可能。认知地图随后被固化到数据库 `Task.config["_system_model"]`。
 
 ### 2. 测试用例智能规划阶段 (LLM Planning Graph)
 
