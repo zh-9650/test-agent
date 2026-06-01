@@ -1,54 +1,46 @@
 import json
 from pydantic import BaseModel, Field
-from core.llm_client import get_llm_client
+from core.llm_client import get_llm_client, safe_structured_invoke
+from core.interfaces import SystemModel, KnowledgeBase, UseCaseModel
 
-class SystemModel(BaseModel):
-    """Structured representation of the system derived from documents."""
-    modules: list[str] = Field(default_factory=list, description="Core system modules (e.g., 'Order Management', 'User System')")
-    roles: list[str] = Field(default_factory=list, description="User roles identified in the system (e.g., 'Admin', 'Applicant')")
-    business_flows: list[str] = Field(default_factory=list, description="Key business processes/flows (e.g., 'Create Order', 'Approve Order')")
-    states: list[str] = Field(default_factory=list, description="Possible entity states in the system (e.g., 'Draft', 'Pending Approval', 'Approved')")
-
-
-async def generate_system_model(prd_content: str, api_doc_content: str, changelog_content: str) -> SystemModel:
+async def generate_system_model(knowledge: KnowledgeBase, use_case_model: UseCaseModel) -> SystemModel:
     """
-    Extract a structured SystemModel from available documentation.
-    This acts as the 'System Modeling Agent' mapping docs to cognitive system knowledge.
+    Node 2: Business Extraction / System Modeling.
+    Consumes the KnowledgeBase and UseCaseModel (Cognitive Scaffold) to generate a Lightweight State Machine graph.
     """
-    llm = get_llm_client("default")
-    
     prompt = f"""
-你是一位高级系统架构师和资深测试专家。
-请根据提供的系统文档，深入理解目标系统，并提炼出系统的核心认知模型。
+你是一个顶级系统架构师。你的任务是根据"用例脚手架 (UseCase Model)"，为系统构建一张核心认知地图（轻量级状态机）。
 
-你需要提取以下信息：
-1. modules: 系统包含的核心功能模块（如：订单管理、用户系统等）
-2. roles: 系统中出现的不同用户角色（如：申请人、审批人、普通用户等）
-3. business_flows: 系统的关键业务流/动作操作（如：创建订单、审批通过、驳回审批等）
-4. states: 核心业务实体可能存在的状态流转（如：草稿、待审批、已完成等）
+相比于之前让你直接从零散的事实库中凭空想象状态机，现在你有了 UseCaseModel 作为坚实的脚手架。
+用例模型已经清楚地定义了每个动作的前置触发条件 (trigger) 和执行结果 (outcome)。
 
-如果文档缺乏某项信息，请基于常识或已提供的有限信息进行合理推断，但不要无中生有。
+请基于传入的 UseCaseModel 和 KnowledgeBase 提取以下信息构建 JSON：
+1. system_name: 系统的整体名称。
+2. modules: 划分核心业务模块。
+3. entities: 继承核心业务实体。
+4. roles: 继承角色。
+5. flows: 请基于 UseCase 中的 trigger 和 outcome，将离散的用例串联成"轻量状态机(Lightweight State Machine)"。
+   对于每个 BusinessFlow，你需要梳理出：
+   - name: 业务流名称
+   - nodes: 涉及的所有状态节点（如"草稿"、"待审批"、"已完结"）
+   - transitions: 状态间的有效流转边（包含 from_state, action, to_state）。(此处的 action 应当直接对应 UseCase 的 name)
 
-### 产品需求文档 (PRD)
-{prd_content or "未提供"}
+### 输入 1：用例脚手架 (UseCaseModel)
+```json
+{use_case_model.model_dump_json(indent=2)}
+```
 
-### 接口文档 / Swagger
-{api_doc_content or "未提供"}
+### 输入 2：知识事实库 (KnowledgeBase，用于补充细节)
+```json
+{knowledge.model_dump_json(indent=2)}
+```
 
-### 变更日志 (Changelog)
-{changelog_content or "未提供"}
-
-请以 JSON 格式返回你的分析结果，结构必须严格遵循要求。
+只返回 JSON。键名必须严格使用: system_name, modules, entities, roles, flows (flows 是数组，每个元素含 name, nodes, transitions)。transitions 元素含 from_state, action, to_state。
 """
-    
-    llm_with_struct = llm.with_structured_output(SystemModel)
-    
-    try:
-        result = await llm_with_struct.ainvoke(prompt)
-        if result is None:
-            print("[SystemModeler] LLM returned None, falling back to empty model")
-            return SystemModel()
-        return result
-    except Exception as e:
-        print(f"[SystemModeler] Error extracting system model: {e}")
+
+    result = await safe_structured_invoke(prompt, SystemModel, model_type="default")
+    if result is None:
+        print("[SystemModeler] LLM returned no usable model, using empty SystemModel")
         return SystemModel()
+    return result
+

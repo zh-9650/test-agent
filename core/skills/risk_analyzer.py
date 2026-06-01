@@ -12,7 +12,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
-from core.llm_client import get_llm_client
+from core.llm_client import get_llm_client, safe_structured_invoke
 
 class RiskPoint(BaseModel):
     element: str = Field(description="对应交互元素列表中的 id 或特征描述")
@@ -67,10 +67,8 @@ async def analyze_risks(
 请提取高风险点，并为每个高风险点提供建议的测试场景（如 ["输入负数", "输入超大金额", "输入特殊字符"]）。如果没有高风险点，返回空列表。"""
 
     try:
-        llm = get_llm_client("haiku")
-        llm_with_struct = llm.with_structured_output(RiskAnalysisOutput)
-        response = await llm_with_struct.ainvoke(prompt)
-        
+        response = await safe_structured_invoke(prompt, RiskAnalysisOutput, model_type="haiku")
+
         if response and response.risk_points:
             risk_points = [rp.model_dump() for rp in response.risk_points]
             print(f"[RiskAnalyzer] Identified {len(risk_points)} risk points")

@@ -250,6 +250,70 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
             transition: width 1s ease-in-out;
             box-shadow: 0 0 10px currentColor;
         }
+        .l1-coverage-section { margin-bottom: 2.5rem; }
+        .l1-stat-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .l1-stat {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+        }
+        .l1-stat .label {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 6px;
+        }
+        .l1-stat .value {
+            font-size: 1.6rem;
+            font-weight: 700;
+        }
+        .l1-stat.covered .value { color: var(--pass-text); }
+        .l1-stat.missing .value { color: var(--fail-text); }
+        .l1-stat.refined .value { color: var(--primary-text); }
+        .l1-rule-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .l1-rule-list li {
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+        }
+        .l1-rule-list li:last-child { border-bottom: none; }
+        .l1-rule-list li .marker {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .l1-rule-list li.covered-rule .marker { background: var(--pass-text); }
+        .l1-rule-list li.missing-rule .marker { background: var(--fail-text); }
+        .l1-collapsible {
+            margin-top: 12px;
+            border-top: 1px solid var(--border);
+            padding-top: 12px;
+        }
+        .l1-collapsible summary {
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            user-select: none;
+        }
+        .l1-collapsible summary:hover { color: var(--text-main); }
     </style>
 </head>
 <body>
@@ -280,6 +344,64 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
             <h2>✨ AI Executive Summary</h2>
             <p>{{ ai_summary or "Waiting for AI synthesis..." }}</p>
         </div>
+
+        {% if l1_coverage %}
+        <div class="l1-coverage-section glass-card">
+            <h2>🧠 Layer 1 认知自检 (Use-Case Coverage)</h2>
+            {% set cov = l1_coverage.covered_rules|length %}
+            {% set mis = l1_coverage.missing_rules|length %}
+            {% set ref = l1_coverage.added_use_cases|length %}
+            {% set total = cov + mis %}
+            <div class="l1-stat-row">
+                <div class="l1-stat covered">
+                    <div class="label">已覆盖规则</div>
+                    <div class="value">{{ cov }} / {{ total }}</div>
+                </div>
+                <div class="l1-stat missing">
+                    <div class="label">遗漏规则</div>
+                    <div class="value">{{ mis }}</div>
+                </div>
+                <div class="l1-stat refined">
+                    <div class="label">补全 / 修改用例</div>
+                    <div class="value">{{ ref }}</div>
+                </div>
+            </div>
+            {% if total > 0 %}
+            <div style="margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.95rem;">
+                    <span style="color: var(--text-muted)">规则覆盖率</span>
+                    <span style="font-weight: 600; color: var(--primary-text)">{{ ((cov / total) * 100)|round(0) }}%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" style="background: var(--primary-text); width: {{ ((cov / total) * 100)|round(0) }}%;"></div>
+                </div>
+            </div>
+            {% endif %}
+            {% if cov > 0 or mis > 0 %}
+            <details class="l1-collapsible" open>
+                <summary>业务规则详情 ({{ cov + mis }} 条)</summary>
+                <ul class="l1-rule-list">
+                    {% for rule in l1_coverage.covered_rules %}
+                    <li class="covered-rule"><span class="marker"></span>{{ rule }}</li>
+                    {% endfor %}
+                    {% for rule in l1_coverage.missing_rules %}
+                    <li class="missing-rule"><span class="marker"></span>{{ rule }}</li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+            {% if l1_coverage.added_use_cases %}
+            <details class="l1-collapsible">
+                <summary>自检补全 / 修改的用例 ({{ ref }} 个)</summary>
+                <ul class="l1-rule-list">
+                    {% for name in l1_coverage.added_use_cases %}
+                    <li class="covered-rule"><span class="marker"></span>{{ name }}</li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+        </div>
+        {% endif %}
 
         {% if page_coverage %}
         <div class="ai-summary glass-card">
@@ -379,14 +501,19 @@ class ReportBuilder:
         self.task_id = task_id
         self.results: list[TestResult] = []
         self.coverage_data: dict | None = None
+        self.l1_coverage: dict | None = None
 
     def add_result(self, result: TestResult) -> None:
         """Add a test case result."""
         self.results.append(result)
 
     def set_coverage(self, coverage_data: dict) -> None:
-        """Set coverage tracking data for the report."""
+        """Set execution-time coverage tracking data for the report."""
         self.coverage_data = coverage_data
+
+    def set_layer1_coverage(self, l1_coverage: dict) -> None:
+        """Set Layer 1 (knowledge / use-case model) coverage report."""
+        self.l1_coverage = l1_coverage
 
     def build_html(self, ai_summary: str = "") -> str:
         """Generate HTML report content using Jinja2 template."""
@@ -412,6 +539,7 @@ class ReportBuilder:
             ai_summary=ai_summary or "",
             page_coverage=page_coverage,
             scenario_coverage=scenario_coverage,
+            l1_coverage=self.l1_coverage,
         )
 
     def save(self, output_path: str, ai_summary: str = "") -> str:

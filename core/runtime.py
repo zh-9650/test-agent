@@ -760,6 +760,10 @@ class Runtime:
         if getattr(self, "coverage_tracker", None):
             builder.set_coverage(self.coverage_tracker.get_coverage_report())
 
+        l1_coverage = self.task_config.get("_coverage_report")
+        if l1_coverage:
+            builder.set_layer1_coverage(l1_coverage)
+
         # Generate AI summary
         ai_summary = ""
         try:

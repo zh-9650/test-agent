@@ -40,6 +40,7 @@
 
 ### [进行中] Phase 2: 高级系统架构 (Advanced Architecture) - 【当前焦点】
 *   **V1~V1.4 架构升级 (已完成)**：引入 `KnowledgeExtractionLayer` (含追溯指针) 与 `UseCaseModel`，将 `SystemModelingAgent` 升级为基于脚手架的轻量级状态机，实现带优先级的 `Goal-Driven Explorer`。实现“认知 -> 脚手架 -> 建模 -> 探索 -> 验证 -> 规划”完整闭环，极大地削弱了大模型幻觉。
+*   **V1.5 Layer 1 鲁棒性与可观测性 (已完成)**：在 V1.3/V1.4 基础上，针对 Qwen/DeepSeek/Kimi 等 Anthropic 兼容端点对 `with_structured_output` 支持不完整的问题，在 `core/llm_client.py` 统一 `safe_structured_invoke` 入口（原生结构化 + 手动 JSON 解析双轨，覆盖 content 块列表、code fence、单层包络、list/dict/str 三态输入）。把 Node 1.7 覆盖率自检报告接入 HTML 报告，前端 `testLayer1` 增加 SSE `progress: "error"` 抛错识别，`scratch/test_layer1.py` 端到端跑通。
 *   **后续焦点**：Business Graph 数据库、Reflection 自我反思循环、跨任务的长期 Memory 沉淀、多 Agent 协同。
 
 ### Phase 3: 自主测试团队 (Autonomous Testing Team)
@@ -73,4 +74,6 @@
 *   **Goal-Driven Explorer (目标驱动探索)**：引入了 `Goal Extractor`，将状态机转化为带有明确优先级 (High/Medium/Low) 的业务级探索目标。现在大模型带着“作战任务”去页面里翻找入口，极大提升了图谱的导航效率（V1.1/V1.3升级）。
 *   **System Mapper (实际页面地图提取)**：在带目标探索结束后，收集探索历史并输出包含页面真实控件分布的结构化 `SystemMap`。它与文档认知合并，作为 `Scenario Extractor` (场景提取器) 的双管齐下指导，保证了规划出的 Test Case 具备真实执行基础（V1.2升级）。
 *   **Premium Web Report (高端数据看板)**：测试结果的 HTML 报告已抛弃原始模板，重构为现代暗黑极客风（Sleek Dark Mode + Glassmorphism）。不仅具备覆盖率实时进度条，还具备详细的 AI 总结呈现，显著提升产品高级感。
+*   **Layer 1 Use-Case Coverage 自检报告 (V1.5)**：HTML 报告新增"认知自检"卡片，可视化展示 KnowledgeBase 中业务规则的覆盖情况（已覆盖/遗漏/补全三色统计 + 覆盖率进度条 + 折叠规则详情），让用户直观看到 L1 真正"读懂"了多少业务规则。
+*   **统一 LLM 调用兜底 (V1.5)**：`core/llm_client.py` 提供 `safe_structured_invoke()`，所有 7 个 Layer 1/2 skill 统一接入，兼容原生结构化输出与手动 JSON 解析两条路径，消除 Qwen/DeepSeek/Kimi 等兼容端点对 `with_structured_output` 支持不全导致的随机 None/超时报错。
 

@@ -26,6 +26,7 @@
 | 16 | [Phase 2] V1.1/V1.2: Goal-Driven Graph | ✅ | Lead | 2026-05-31 | 2026-05-31 | 16-phase2-v1.1-v1.2-graph-refactor.md |
 | 17 | [Phase 2] V1.3: Knowledge Extraction IR | ✅ | Lead | 2026-06-01 | 2026-06-01 | 17-layer1-knowledge-extraction.md |
 | 18 | [Phase 2] V1.4: Use Case Scaffold | ✅ | Lead | 2026-06-01 | 2026-06-01 | 18-layer1-usecase-scaffold.md |
+| 19 | [Phase 2] V1.5: Layer 1 鲁棒性 + 报告可观测性 | ✅ | Lead | 2026-06-01 | 2026-06-01 | 19-layer1-hardening.md |
 
 ## 队友分配
 
@@ -52,6 +53,7 @@
 | 2026-05-31 | **Phase 2 - V1.1/V1.2 重构**：完成 `Goal Extractor` 与 `System Mapper`，改造 `planning_graph` 拓扑为目标驱动流水线 (`extract_goals` -> `explore` -> `generate_map` -> `extract_scenarios`)，实现了认知-探索-规划闭环。 |
 | 2026-06-01 | **Phase 2 - V1.3 重构**：重构认知提取架构为中间表达层 (IR)，新增 `KnowledgeBase` 事实库提炼，并将 `SystemModel` 升级为严谨的“轻量级状态机 (State Machine)”表达，通过优先级目标进一步优化探索 Agent 规划。 |
 | 2026-06-01 | **Phase 2 - V1.4 改进**：在知识提取后加入 `UseCaseModel` (Node 1.5)，作为状态机生成的坚实脚手架。同时为知识事实引入了 `quote` 追溯指针，最大程度削减模型幻觉。 |
+| 2026-06-01 | **Phase 2 - V1.5 加固**：针对 Qwen 等 Anthropic 兼容端点对 `with_structured_output` 支持不完整的问题，在 `core/llm_client.py` 统一了 `safe_structured_invoke` 入口（原生结构化 + 手动 JSON 解析双轨）。同时把 Node 1.7 覆盖率自检报告接入 HTML 报告，前端 `testLayer1` 增加 SSE `progress: "error"` 抛错识别。`scratch/test_layer1.py` 端到端验证通过。 |
 
 ## 依赖关系
 

@@ -9,14 +9,19 @@ and caches client instances by model_type.
 
 from __future__ import annotations
 
+import json
 import os
-from typing import TYPE_CHECKING, Any
+import re
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AnyMessage
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     pass
+
+T = TypeVar("T", bound=BaseModel)
 
 # Cache for LLM client instances, keyed by model_type.
 _client_cache: dict[str, ChatAnthropic] = {}
@@ -135,7 +140,7 @@ def count_tokens(messages: list[AnyMessage], model: str = "") -> int:
 
 def extract_tool_calls_from_message(msg: AnyMessage) -> list[dict[str, Any]]:
     """Extract tool calls from an AIMessage.
-    
+
     Handles both standard msg.tool_calls and fallback parsing from msg.content
     when the LLM provider/adapter embeds the tool call as JSON blocks inside the text.
     """
@@ -153,3 +158,125 @@ def extract_tool_calls_from_message(msg: AnyMessage) -> list[dict[str, Any]]:
                     "args": item.get("input", {}),
                 })
     return extracted
+
+
+_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", re.DOTALL)
+_OUTER_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+_OUTER_ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
+
+
+def _extract_json_blob(text: str) -> str | None:
+    """Best-effort JSON extraction from raw LLM text."""
+    if not text:
+        return None
+    fence = _CODE_FENCE_RE.search(text)
+    if fence:
+        return fence.group(1)
+    start_obj = text.find("{")
+    start_arr = text.find("[")
+    if start_obj == -1 and start_arr == -1:
+        return None
+    if start_obj == -1:
+        match = _OUTER_ARRAY_RE.search(text, start_arr)
+    elif start_arr == -1:
+        match = _OUTER_OBJECT_RE.search(text, start_obj)
+    else:
+        if start_obj < start_arr:
+            match = _OUTER_OBJECT_RE.search(text, start_obj)
+        else:
+            match = _OUTER_ARRAY_RE.search(text, start_arr)
+    return match.group(0) if match else None
+
+
+def _unwrap_content(content: Any) -> str:
+    """Normalize an LLM message content into a plain text string.
+
+    Handles three shapes:
+    - str (pass through)
+    - list of Anthropic-style content blocks [{"type": "text", "text": "..."}, ...]
+    - any other object (str() fallback)
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "text" and isinstance(block.get("text"), str):
+                    parts.append(block["text"])
+                elif "text" in block and isinstance(block["text"], str):
+                    parts.append(block["text"])
+            elif isinstance(block, str):
+                parts.append(block)
+        if parts:
+            return "\n".join(parts)
+    return str(content)
+
+
+def _unwrap_envelope(blob: dict) -> dict:
+    """Some models wrap the real payload under a single key matching the model name.
+
+    e.g. {"UseCaseModel": {...}} or {"SystemModel": {...}}. We peel one layer.
+    """
+    if len(blob) == 1:
+        only = next(iter(blob.values()))
+        if isinstance(only, dict):
+            return only
+    return blob
+
+
+def _coerce_to_pydantic(payload: Any, schema: type[T]) -> T:
+    """Coerce dict/str/list payloads into the target pydantic model."""
+    if isinstance(payload, schema):
+        return payload
+    if isinstance(payload, str):
+        blob = _extract_json_blob(payload)
+        if not blob:
+            raise ValueError("no JSON blob found in string payload")
+        payload = json.loads(blob)
+    if isinstance(payload, list):
+        for candidate in ({"use_cases": payload}, payload):
+            try:
+                return schema.model_validate(candidate)
+            except Exception:
+                continue
+        raise ValueError("could not coerce list payload")
+    if isinstance(payload, dict):
+        payload = _unwrap_envelope(payload)
+        return schema.model_validate(payload)
+    raise ValueError(f"unsupported payload type: {type(payload).__name__}")
+
+
+async def safe_structured_invoke(
+    prompt: str,
+    schema: type[T],
+    model_type: str = "default",
+) -> T | None:
+    """Invoke the LLM and robustly return a parsed pydantic model.
+
+    Tries the native structured-output wrapper first; on None/exception, falls back
+    to a raw LLM call + manual JSON extraction. Returns None only if both paths
+    fail or produce an empty result.
+    """
+    llm = get_llm_client(model_type)
+
+    try:
+        result = await llm.with_structured_output(schema).ainvoke(prompt)
+        if result is not None:
+            return result
+        print(f"[LLM] structured_output returned None for {schema.__name__}, falling back to raw parse")
+    except Exception as e:
+        print(f"[LLM] structured_output errored for {schema.__name__}: {e}; falling back to raw parse")
+
+    try:
+        raw = await llm.ainvoke(prompt)
+        text = _unwrap_content(raw.content)
+        blob = _extract_json_blob(text)
+        if not blob:
+            print(f"[LLM] raw fallback: no JSON found in response for {schema.__name__}")
+            return None
+        payload = json.loads(blob)
+        return _coerce_to_pydantic(payload, schema)
+    except Exception as e:
+        print(f"[LLM] raw fallback also failed for {schema.__name__}: {e}")
+        return None

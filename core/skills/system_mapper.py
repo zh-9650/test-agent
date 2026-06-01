@@ -1,6 +1,6 @@
 import json
 from pydantic import BaseModel, Field
-from core.llm_client import get_llm_client
+from core.llm_client import get_llm_client, safe_structured_invoke
 
 class SystemMap(BaseModel):
     """Structured representation of the explored actual system."""
@@ -37,15 +37,12 @@ async def generate_system_map(exploration_history: list[dict]) -> dict:
 2. actions: 实际发现的可操作动作（按钮、链接等）
 3. forms: 实际发现的表单区域
 
-请完全依据上面的“探索历史”提取，不要凭空猜测文档里有但实际上没找到的功能。
+请完全依据上面的"探索历史"提取，不要凭空猜测文档里有但实际上没找到的功能。
+
+只返回 JSON。键名必须严格使用: pages, actions, forms (均为字符串数组)。
 """
-    
-    llm_with_struct = llm.with_structured_output(SystemMap)
-    try:
-        result = await llm_with_struct.ainvoke(prompt)
-        if result is None:
-            return {"pages": [], "actions": [], "forms": []}
-        return result.model_dump()
-    except Exception as e:
-        print(f"[SystemMapper] Error: {e}")
+
+    result = await safe_structured_invoke(prompt, SystemMap, model_type="default")
+    if result is None:
         return {"pages": [], "actions": [], "forms": []}
+    return result.model_dump()
