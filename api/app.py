@@ -12,9 +12,10 @@ from typing import Any
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Request, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+import json
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -219,6 +220,65 @@ async def resume_task(task_id: int, req: ResumeRequest) -> MessageResponse:
     _hitl_events[task_id_str].set()
     return MessageResponse(message="Task resumed")
 
+class Layer1TestRequest(BaseModel):
+    prd: str = ""
+    api_doc: str = ""
+    changelog: str = ""
+
+@app.post("/api/test/layer1")
+async def test_layer1_endpoint(req: Layer1TestRequest):
+    """Test the Layer 1 extraction pipeline with SSE streaming"""
+    if not any([req.prd, req.api_doc, req.changelog]):
+        raise HTTPException(status_code=400, detail="至少提供一个文档")
+    
+    # 截断保护
+    req.prd = req.prd[:15000]
+    req.api_doc = req.api_doc[:15000]
+    req.changelog = req.changelog[:5000]
+
+    async def generate():
+        try:
+            from core.skills.knowledge_extractor import extract_knowledge
+            from core.skills.use_case_modeler import generate_use_case_model
+            from core.skills.use_case_coverage import check_use_case_coverage
+            from core.skills.system_modeler import generate_system_model
+            from core.skills.goal_extractor import extract_goals
+            
+            yield json.dumps({"progress": "[Node 1] 正在提取无损事实库 (KnowledgeBase)..."}, ensure_ascii=False) + "\n"
+            knowledge = await extract_knowledge(req.prd, req.api_doc, req.changelog)
+            
+            yield json.dumps({"progress": "[Node 1.5] 正在构建角色用例脚手架 (UseCaseModel)..."}, ensure_ascii=False) + "\n"
+            use_case_model = await generate_use_case_model(knowledge)
+            
+            yield json.dumps({"progress": "[Node 1.7] 正在进行覆盖率自检 (Coverage Check)..."}, ensure_ascii=False) + "\n"
+            use_case_model, coverage_report = await check_use_case_coverage(knowledge, use_case_model)
+            
+            yield json.dumps({"progress": "[Node 2] 正在构建状态机流转网络 (SystemModel)..."}, ensure_ascii=False) + "\n"
+            system_model = await generate_system_model(knowledge, use_case_model)
+            
+            yield json.dumps({"progress": "[Node 3] 正在派生探索目标 (Goals)..."}, ensure_ascii=False) + "\n"
+            goals = await extract_goals(use_case_model.model_dump())
+            
+            final_result = {
+                "progress": "done",
+                "knowledge_base": knowledge.model_dump(),
+                "use_case_model": use_case_model.model_dump(),
+                "coverage_report": coverage_report.model_dump(),
+                "system_model": system_model.model_dump(),
+                "goals": [g.model_dump() for g in goals]
+            }
+            yield json.dumps(final_result, ensure_ascii=False) + "\n"
+        except Exception as e:
+            yield json.dumps({"progress": "error", "error": str(e)}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(
+        generate(), 
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 # --- Memory Endpoints ---
 
@@ -329,15 +389,29 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
             _hitl_callbacks[str(task_db_id)] = hitl_callback
             
             from core.skills.system_modeler import generate_system_model
+            from core.skills.knowledge_extractor import extract_knowledge
+            from core.skills.use_case_modeler import generate_use_case_model
+            from core.skills.use_case_coverage import check_use_case_coverage
             
             memory_context = await retrieve_memories(target_url)
             enriched_config = await parse_and_fetch_links(config or {})
             
-            system_model = await generate_system_model(
+            # Node 1: Knowledge Extraction
+            knowledge = await extract_knowledge(
                 prd_content=enriched_config.get("prd", ""),
                 api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
                 changelog_content=enriched_config.get("changelog", "")
             )
+            enriched_config["_knowledge_base"] = knowledge.model_dump()
+            
+            # Node 1.5 + 1.7: Use Case Modeling & Coverage
+            use_case_model = await generate_use_case_model(knowledge)
+            use_case_model, coverage_report = await check_use_case_coverage(knowledge, use_case_model)
+            enriched_config["_use_case_model"] = use_case_model.model_dump()
+            enriched_config["_coverage_report"] = coverage_report.model_dump()
+            
+            # Node 2: System Modeling (State Machine)
+            system_model = await generate_system_model(knowledge, use_case_model)
             enriched_config["_system_model"] = system_model.model_dump()
             
             async with async_session() as session:

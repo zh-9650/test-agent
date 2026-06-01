@@ -25,6 +25,65 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 
+from typing import Literal
+
+# =============================================================================
+# Pydantic Models — Layer 1 中间产物 (IR)
+# =============================================================================
+
+class KnowledgeItem(BaseModel):
+    """带证据指针的原子知识"""
+    text: str = Field(description="提取出的具体的知识点规则或描述")
+    source: Literal["prd", "swagger", "changelog", "inferred"] = Field(description="知识来源")
+    quote: str = Field(description="原文引用片段，必须能精准在原文定位；如果是 inferred，写明推断理由")
+    confidence: float = Field(description="置信度，取值范围 0.0 - 1.0", ge=0.0, le=1.0)
+
+class KnowledgeBase(BaseModel):
+    """节点 1 输出：带可追溯指针的结构化事实库"""
+    business_rules: list[KnowledgeItem] = Field(description="核心业务规则，如：金额>5000需总监审批")
+    roles: list[KnowledgeItem] = Field(description="系统识别出的角色集合")
+    entities: list[KnowledgeItem] = Field(description="核心业务实体，如：采购申请、订单")
+    constraints: list[KnowledgeItem] = Field(description="阈值与硬性约束条件")
+    raw_facts: list[KnowledgeItem] = Field(description="客观事实条目")
+
+class UseCase(BaseModel):
+    """新增脚手架：基于角色的单个用例"""
+    name: str = Field(description="用例名称，如 '提交采购申请'")
+    actor: str = Field(description="执行该用例的角色")
+    trigger: str = Field(description="触发该用例的前置状态或条件")
+    outcome: str = Field(description="执行后的业务结果或状态变化")
+    related_rules: list[str] = Field(description="知识库中对应规则的精确原文引用或索引")
+
+class UseCaseModel(BaseModel):
+    """节点 1.5 输出：系统的全量用例集合"""
+    use_cases: list[UseCase] = Field(description="系统所有识别到的业务用例")
+
+class StateTransition(BaseModel):
+    """状态机流转边"""
+    from_state: str = Field(description="触发前的起始状态")
+    action: str = Field(description="触发流转的动作")
+    to_state: str = Field(description="流转后的目标状态")
+
+class BusinessFlow(BaseModel):
+    """轻量级状态机节点"""
+    name: str = Field(description="流程名称，如：采购审批流")
+    nodes: list[str] = Field(description="该流程涉及的所有状态枚举")
+    transitions: list[StateTransition] = Field(description="状态之间的合法流转路径")
+
+class SystemModel(BaseModel):
+    """节点 2 输出：全系统骨架 (基于状态机)"""
+    system_name: str = Field(default="Test System", description="系统名称")
+    modules: list[str] = Field(default_factory=list, description="模块列表")
+    entities: list[str] = Field(default_factory=list, description="实体列表")
+    roles: list[str] = Field(default_factory=list, description="角色列表")
+    flows: list[BusinessFlow] = Field(default_factory=list, description="轻量状态机业务流")
+
+class ExplorationGoal(BaseModel):
+    """节点 3 输出：探索目标"""
+    goal: str = Field(description="业务级能力探索目标，如：'找到订单创建能力'")
+    priority: str = Field(description="高/中/低优先级")
+
+
 # =============================================================================
 # Pydantic Models — 所有模块共享的数据类型
 # =============================================================================

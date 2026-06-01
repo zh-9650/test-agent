@@ -22,7 +22,7 @@ export default function MemoryManager() {
   const fetchMemories = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/memory');
+      const res = await fetch('/api/memory');
       const data = await res.json();
       setMemories(data.memories || []);
     } catch (e) {
@@ -39,7 +39,7 @@ export default function MemoryManager() {
   const handleDelete = async (id: number) => {
     if (!confirm('确定删除这条记忆吗？')) return;
     try {
-      await fetch(`http://localhost:8000/api/memory/${id}`, { method: 'DELETE' });
+      await fetch(`/api/memory/${id}`, { method: 'DELETE' });
       fetchMemories();
     } catch (e) {
       console.error(e);
@@ -48,7 +48,7 @@ export default function MemoryManager() {
 
   const handleSaveEdit = async (id: number) => {
     try {
-      await fetch(`http://localhost:8000/api/memory/${id}`, {
+      await fetch(`/api/memory/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm),

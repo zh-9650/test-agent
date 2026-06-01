@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createTask } from '../api/client';
+import { createTask, testLayer1 } from '../api/client';
 import type { CreateTaskRequest } from '../types';
 import DocumentUploader from '../components/DocumentUploader';
 
@@ -23,6 +23,10 @@ export default function TaskCreate() {
   const [prototypeUrl, setPrototypeUrl] = useState('');
   const [changelog, setChangelog] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  const [testingLayer1, setTestingLayer1] = useState(false);
+  const [layer1Progress, setLayer1Progress] = useState('');
+  const [layer1Result, setLayer1Result] = useState<any>(null);
 
   const addAccount = () => {
     setAccounts([...accounts, { role: '', username: '', password: '' }]);
@@ -232,6 +236,49 @@ export default function TaskCreate() {
             onChange={setChangelog}
             placeholder="本次发版的更新内容，指导 AI 进行重点回归测试..."
           />
+
+          <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eee' }}>
+            <button
+              type="button"
+              onClick={async () => {
+                setTestingLayer1(true);
+                setLayer1Progress('初始化中...');
+                setLayer1Result(null);
+                try {
+                  const res = await testLayer1(prd, swagger, changelog, (msg) => {
+                    setLayer1Progress(msg);
+                  });
+                  setLayer1Result(res);
+                } catch (err: any) {
+                  alert('测试失败: ' + err.message);
+                } finally {
+                  setTestingLayer1(false);
+                  setLayer1Progress('');
+                }
+              }}
+              disabled={testingLayer1 || (!prd && !swagger && !changelog)}
+              style={{
+                ...buttonStyle,
+                backgroundColor: testingLayer1 ? '#999' : '#52c41a',
+                color: '#fff',
+                width: '100%'
+              }}
+            >
+              {testingLayer1 ? `🧠 ${layer1Progress}` : '🧪 试运行 Layer 1 (提取知识库 & 状态机)'}
+            </button>
+            
+            {layer1Result && (
+              <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#282c34', color: '#abb2bf', borderRadius: '4px', overflowX: 'auto', maxHeight: '500px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <h4 style={{ margin: 0, color: '#61afef' }}>提取结果 (JSON)</h4>
+                  <button type="button" onClick={() => setLayer1Result(null)} style={{ background: 'none', border: 'none', color: '#e06c75', cursor: 'pointer' }}>关闭</button>
+                </div>
+                <pre style={{ margin: 0, fontSize: '0.9rem' }}>
+                  {JSON.stringify(layer1Result, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
 
         <button

@@ -77,12 +77,13 @@ def should_continue_exploring(state: dict[str, Any]) -> str:
 async def extract_goals_node(state: dict[str, Any]) -> dict[str, Any]:
     """Extract exploration goals from the System Model before starting exploration."""
     task_config = dict(state.get("task_config", {}))
-    system_model = task_config.get("_system_model")
+    use_case_model = task_config.get("_use_case_model")
     
-    if system_model:
+    if use_case_model:
         from core.skills.goal_extractor import extract_goals
-        goals = await extract_goals(system_model)
-        task_config["_goals"] = goals
+        goals = await extract_goals(use_case_model)
+        # Store goals as list of dicts for serialization
+        task_config["_goals"] = [g.model_dump() for g in goals]
         print(f"[PlanningGraph] Extracted {len(goals)} exploration goals from System Model.")
     
     return {"task_config": task_config}
@@ -176,10 +177,20 @@ async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
                 for a in accounts
             )
 
+        def _format_goals(raw_goals: list) -> str:
+            lines = []
+            for g in raw_goals:
+                if isinstance(g, dict):
+                    priority = g.get('priority', 'medium')
+                    goal_text = g.get('goal', '')
+                    if goal_text:
+                        lines.append(f"- [优先级: {priority}] {goal_text}")
+            return "\n".join(lines)
+            
         goals = task_config.get("_goals", [])
         goals_ctx = ""
-        if goals:
-            goals_ctx = "\n### 你的探索目标 (Goals):\n请在探索时重点寻找以下入口：\n" + "\n".join([f"- {g}" for g in goals]) + "\n(当所有目标都被找到，或确认无法找到时，请停止探索)"
+        if goals and isinstance(goals, list):
+            goals_ctx = "\n### 你的探索目标 (Goals):\n请在探索时重点寻找以下业务能力入口：\n" + _format_goals(goals) + "\n(当所有高优先级目标都被找到，或确认无法找到时，请停止探索)"
 
         human_msg = f"""已探索 {len(explored_urls)} 个页面。
 已探索的URL: {chr(10).join(explored_urls[:20]) if explored_urls else '尚未探索'}

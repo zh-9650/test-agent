@@ -30,7 +30,7 @@ export default function DocumentUploader({
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:8000/api/utils/parse-doc', {
+      const response = await fetch('/api/utils/parse-doc', {
         method: 'POST',
         body: formData,
       });
@@ -57,7 +57,7 @@ export default function DocumentUploader({
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/utils/fetch-url', {
+      const response = await fetch('/api/utils/fetch-url', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

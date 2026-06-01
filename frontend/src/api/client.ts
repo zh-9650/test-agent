@@ -44,3 +44,51 @@ export async function deleteTask(taskId: number): Promise<void> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(await res.text());
 }
+
+export async function testLayer1(
+  prd: string, 
+  apiDoc: string, 
+  changelog: string,
+  onProgress?: (msg: string) => void
+): Promise<any> {
+  const res = await fetch(`${API_BASE}/test/layer1`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prd, api_doc: apiDoc, changelog }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalResult = null;
+  
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const data = JSON.parse(line);
+        if (data.progress === 'error') {
+          throw new Error(data.error || 'Layer 1 pipeline failed');
+        } else if (data.progress && data.progress !== 'done') {
+          if (onProgress) onProgress(data.progress);
+        } else if (data.progress === 'done') {
+          finalResult = data;
+        }
+      } catch (e) {
+        // ignore parse error
+      }
+    }
+  }
+
+  return finalResult;
+}

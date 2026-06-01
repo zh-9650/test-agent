@@ -35,6 +35,8 @@ SauceDemo 是一款电商演示系统。
     task_config = await parse_and_fetch_links(task_config)
     
     from core.skills.knowledge_extractor import extract_knowledge
+    from core.skills.use_case_modeler import generate_use_case_model
+    from core.skills.use_case_coverage import check_use_case_coverage
     from core.skills.system_modeler import generate_system_model
     
     knowledge = await extract_knowledge(
@@ -44,7 +46,16 @@ SauceDemo 是一款电商演示系统。
     )
     task_config["_knowledge_base"] = knowledge.model_dump()
     
-    system_model = await generate_system_model(knowledge)
+    print("\n[Node 1.5] 正在运行用例模型生成...")
+    use_case_model = await generate_use_case_model(knowledge)
+    
+    print("\n[Node 1.7] 正在运行覆盖率自检...")
+    use_case_model, coverage_report = await check_use_case_coverage(knowledge, use_case_model)
+    print("✅ 覆盖率报告:", json.dumps(coverage_report.model_dump(), indent=2, ensure_ascii=False))
+    task_config["_use_case_model"] = use_case_model.model_dump()
+    
+    print("\n[Node 2] 正在运行系统建模...")
+    system_model = await generate_system_model(knowledge, use_case_model)
     task_config["_system_model"] = system_model.model_dump()
     
     from core.execution_logger import log_task_created
