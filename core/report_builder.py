@@ -352,6 +352,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
             {% set mis = l1_coverage.missing_rules|length %}
             {% set ref = l1_coverage.added_use_cases|length %}
             {% set total = cov + mis %}
+            {% set unknown_actors = l1_coverage.unknown_actor_count|default(0) %}
             <div class="l1-stat-row">
                 <div class="l1-stat covered">
                     <div class="label">已覆盖规则</div>
@@ -364,6 +365,10 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
                 <div class="l1-stat refined">
                     <div class="label">补全 / 修改用例</div>
                     <div class="value">{{ ref }}</div>
+                </div>
+                <div class="l1-stat {% if unknown_actors > 0 %}missing{% else %}covered{% endif %}">
+                    <div class="label">未匹配角色</div>
+                    <div class="value">{{ unknown_actors }}</div>
                 </div>
             </div>
             {% if total > 0 %}
@@ -396,6 +401,19 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
                 <ul class="l1-rule-list">
                     {% for name in l1_coverage.added_use_cases %}
                     <li class="covered-rule"><span class="marker"></span>{{ name }}</li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+            {% if l1_coverage.unknown_actor_names and l1_coverage.unknown_actor_count > 0 %}
+            <details class="l1-collapsible">
+                <summary>⚠️ Actor 幻觉 ({{ l1_coverage.unknown_actor_count }} 个)</summary>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin: 8px 0;">
+                    以下 use_case.actor 不在 N1 KnowledgeBase.roles 中,可能是 LLM 杜撰的角色:
+                </p>
+                <ul class="l1-rule-list">
+                    {% for name in l1_coverage.unknown_actor_names %}
+                    <li class="missing-rule"><span class="marker"></span>{{ name }}</li>
                     {% endfor %}
                 </ul>
             </details>

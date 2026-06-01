@@ -14,6 +14,18 @@ from core.interfaces import KnowledgeBase, UseCaseModel
 
 
 _FAST_PATH_COVERAGE_THRESHOLD = 0.9
+"""Substring-coverage threshold for skipping the LLM semantic-check pass.
+
+Why 0.9 (not 0.95 or 1.0)?
+- substring normalization is a generous fuzzy match (strip whitespace + lowercase)
+- on the 4 production fixtures (2026-06-01 live test): 100% covered via fast path,
+  this 0.9 branch never fires
+- kept at 0.9 as a defensive safety net for adversarial / low-quality inputs where
+  substring match may miss 5-10% of rules but LLM semantic check would over-engineer
+  the result
+- if you observe this branch firing in production, the input likely needs PRD cleanup
+  rather than threshold lowering
+"""
 
 
 def _normalize_for_match(s: str) -> str:
@@ -57,10 +69,30 @@ def _compute_local_diff(
     return diff_names
 
 
+def _compute_unknown_actors(
+    use_case_model: UseCaseModel, knowledge: KnowledgeBase
+) -> tuple[int, list[str]]:
+    """Count use_case.actor values that are not in knowledge.roles[].text
+    AND not in the 'unknown_actor:*' explicit fallback set.
+
+    A non-zero count means the LLM invented a role (N1.5 prompt regression)
+    or our UCM enrichment introduced a new mismatch.
+    """
+    role_texts = {r.text for r in knowledge.roles}
+    unknown_names: list[str] = []
+    for uc in use_case_model.use_cases:
+        if uc.actor.startswith("unknown_actor:") or uc.actor in role_texts:
+            continue
+        unknown_names.append(f"{uc.name} → {uc.actor}")
+    return len(unknown_names), unknown_names
+
+
 class CoverageReport(BaseModel):
     covered_rules: list[str] = Field(default_factory=list, description="已覆盖的规则内容")
     missing_rules: list[str] = Field(default_factory=list, description="未覆盖或遗漏的规则内容")
     added_use_cases: list[str] = Field(default_factory=list, description="本次自检补全或修改的用例名称")
+    unknown_actor_count: int = Field(default=0, description="actor 不在 N1.roles 的用例数(LLM 幻觉指标)")
+    unknown_actor_names: list[str] = Field(default_factory=list, description="出现幻觉的具体 actor 名称列表(便于追溯)")
 
 
 class CoverageResponse(BaseModel):
@@ -78,7 +110,11 @@ async def check_use_case_coverage(knowledge: KnowledgeBase, use_case_model: UseC
        LLM prompt uses SEMANTIC coverage criterion (not substring) to align with human review.
     """
     if not knowledge.business_rules:
-        return use_case_model, CoverageReport()
+        unknown_count, unknown_names = _compute_unknown_actors(use_case_model, knowledge)
+        return use_case_model, CoverageReport(
+            unknown_actor_count=unknown_count,
+            unknown_actor_names=unknown_names,
+        )
 
     related_texts = {
         _normalize_for_match(r)
@@ -88,15 +124,24 @@ async def check_use_case_coverage(knowledge: KnowledgeBase, use_case_model: UseC
     all_rule_texts = [r.text for r in knowledge.business_rules]
 
     covered, missing, rate = _compute_coverage(all_rule_texts, related_texts)
+    unknown_count, unknown_names = _compute_unknown_actors(use_case_model, knowledge)
     if not missing and covered:
         print(f"[UseCaseCoverage] Fast path: 100% coverage detected ({len(covered)} rules), skipping LLM check.")
-        return use_case_model, CoverageReport(covered_rules=covered)
+        return use_case_model, CoverageReport(
+            covered_rules=covered,
+            unknown_actor_count=unknown_count,
+            unknown_actor_names=unknown_names,
+        )
     if rate >= _FAST_PATH_COVERAGE_THRESHOLD:
         print(
             f"[UseCaseCoverage] Near-complete fast path: {rate:.0%} coverage "
             f"({len(missing)} potential gaps), skipping LLM check."
         )
-        return use_case_model, CoverageReport(covered_rules=covered, missing_rules=missing)
+        return use_case_model, CoverageReport(
+            covered_rules=covered, missing_rules=missing,
+            unknown_actor_count=unknown_count,
+            unknown_actor_names=unknown_names,
+        )
 
     prompt = f"""<role>
 你是一个严格的 QA 审查员。你的唯一职责是审查"用例脚手架 (UseCaseModel)"是否完整覆盖了"知识库 (KnowledgeBase)"中的所有业务规则,缺失时给出**精确**的补全方案。
@@ -163,15 +208,29 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
     result = await safe_structured_invoke(prompt, CoverageResponse, model_type="default")
     if result is None:
         print("[UseCaseCoverage] LLM returned no usable refinement, using original model")
-        return use_case_model, CoverageReport(covered_rules=covered, missing_rules=missing)
+        unknown_count, unknown_names = _compute_unknown_actors(use_case_model, knowledge)
+        return use_case_model, CoverageReport(
+            covered_rules=covered, missing_rules=missing,
+            unknown_actor_count=unknown_count,
+            unknown_actor_names=unknown_names,
+        )
     try:
         refined = _coerce_use_case_model(result.use_case_model)
     except Exception as e:
         print(f"[UseCaseCoverage] Could not coerce refined use_case_model: {e}")
-        return use_case_model, CoverageReport(covered_rules=covered, missing_rules=missing)
+        unknown_count, unknown_names = _compute_unknown_actors(use_case_model, knowledge)
+        return use_case_model, CoverageReport(
+            covered_rules=covered, missing_rules=missing,
+            unknown_actor_count=unknown_count,
+            unknown_actor_names=unknown_names,
+        )
     diff_names = _compute_local_diff(use_case_model, refined)
     if diff_names:
         result.report.added_use_cases = diff_names
+    # Programmatic unknown_actor accounting (LLM may not include these fields)
+    unknown_count, unknown_names = _compute_unknown_actors(refined, knowledge)
+    result.report.unknown_actor_count = unknown_count
+    result.report.unknown_actor_names = unknown_names
     return refined, result.report
 
 

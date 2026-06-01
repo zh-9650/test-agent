@@ -227,6 +227,47 @@ async def test_n3_goals_one_per_usecase(fixture_inputs):
         assert g.priority in {"high", "medium", "low"}, f"invalid priority: {g.priority}"
 
 
+@pytest.mark.asyncio
+async def test_n17_unknown_actor_accounting(fixture_inputs):
+    """Per V1.6 hardening: CoverageReport.unknown_actor_count tracks LLM-invented roles.
+
+    Mocked pipeline uses roles=['员工', '经理', '管理员'] and actors=['员工'] only,
+    so the count should be 0. A separate test with invented actor would surface > 0.
+    """
+    out = await _run_l1_mocked(fixture_inputs)
+    assert out["cov"].unknown_actor_count == 0, \
+        f"unexpected unknown_actor_count: {out['cov'].unknown_actor_count} {out['cov'].unknown_actor_names}"
+    assert out["cov"].unknown_actor_names == []
+
+
+@pytest.mark.asyncio
+async def test_n17_unknown_actor_detects_hallucination():
+    """If UCM contains an actor NOT in roles, unknown_actor_count must be > 0.
+
+    This is the V1.6 hardening (2026-06-01) — silent LLM inventions used to be
+    swallowed. Now they surface to the HTML report.
+    """
+    from core.interfaces import KnowledgeBase, KnowledgeItem, UseCaseModel, UseCase
+    from core.skills import use_case_coverage
+    from core.skills.use_case_coverage import _compute_unknown_actors
+
+    kb = KnowledgeBase(
+        business_rules=[],
+        roles=[KnowledgeItem(text="员工", source="prd", quote="员工", confidence=1.0)],
+        entities=[], constraints=[], raw_facts=[],
+    )
+    ucm = UseCaseModel(use_cases=[
+        UseCase(name="操作1", actor="员工", trigger="t", outcome="o", related_rules=[]),
+        UseCase(name="操作2", actor="GhostAdmin", trigger="t", outcome="o", related_rules=[]),
+        UseCase(name="操作3", actor="unknown_actor:User", trigger="t", outcome="o", related_rules=[]),
+    ])
+    count, names = _compute_unknown_actors(ucm, kb)
+    assert count == 1, f"expected 1 unknown (GhostAdmin), got {count}: {names}"
+    assert "操作2 → GhostAdmin" in names[0]
+    # "unknown_actor:User" is the explicit fallback, NOT a hallucination
+    assert not any("操作3" in n for n in names)
+
+
 # ---------- Optional: live L1 test (costs tokens) ----------
 
 @pytest.mark.asyncio
