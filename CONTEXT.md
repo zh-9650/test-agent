@@ -43,6 +43,20 @@
 *   **V1.5 Layer 1 鲁棒性与可观测性 (已完成)**：在 V1.3/V1.4 基础上，针对 Qwen/DeepSeek/Kimi 等 Anthropic 兼容端点对 `with_structured_output` 支持不完整的问题，在 `core/llm_client.py` 统一 `safe_structured_invoke` 入口（原生结构化 + 手动 JSON 解析双轨，覆盖 content 块列表、code fence、单层包络、list/dict/str 三态输入）。把 Node 1.7 覆盖率自检报告接入 HTML 报告，前端 `testLayer1` 增加 SSE `progress: "error"` 抛错识别，`scratch/test_layer1.py` 端到端跑通。
 *   **后续焦点**：Business Graph 数据库、Reflection 自我反思循环、跨任务的长期 Memory 沉淀、多 Agent 协同。
 
+### V2.0 计划（已落盘 2026-06-01）: L2 全面加固
+
+V1.7 完成后 L1 + Phase 1.5 8 个 skill 全部 V1.6 化。**L2 (execution_graph) 仍是 prompt 调用 hot path**（每步 1 次 LLM，典型 case 6-10 次）但工程标准远落后 L1：3 个 prompt 全是 `##` 自由文本、assert 手剥 JSON、无 L2 回归测试、context 按"条"截断撞 65K token 上限、工具失败不计入 consecutive_failures、L2 ↔ L1 业务模型几乎零耦合。
+
+V2.0 用 4 阶段让 L2 追平 L1 V1.7 同等工程标准：
+- **Phase A (1.5d)**: 安全网 + 测试基础设施（5 个 P0 漏洞修复 + `test_l2_prompts.py` + `L2_LIVE=1` 开关 + `scratch/test_l2_e2e.py`）
+- **Phase B (2.5d)**: Prompt V1.6 化（3 个 prompt 5 段 XML + pydantic `AssertionResult` + inter-node 契约 + 账号密码从 system_prompt 剥离）
+- **Phase C (1d)**: 联动 L1 业务模型（`<prd_rules>` / `<focus_areas>` / `<scenarios>` / `<risk_points>` 4 字段进 `<context>` + ReportBuilder L2 卡片显示 reasoning_chain）
+- **Phase D (1d)**: 可观测性（tiktoken token 估算 + execution_logger node_enter/exit 事件 + ReportBuilder token 折线 + WebSocket 推 node 流与告警）
+
+**4 阶段独立 commit，7-8 天**。完整方案：`docs/layer2-v2.0-plan.md` + devlog 21。
+
+**不在 V2.0 范围**（明确）：Phase E Reflection（需 50 case 数据评估）、Business Graph、LangSmith 集成、Multi-Agent、tools.py 14 工具缺陷修复（除 evaluate_js 黑名单）、PostgreSQL checkpointer 升级。
+
 ### Phase 3: 自主测试团队 (Autonomous Testing Team)
 *   完全自主接管产品迭代的回归测试。
 

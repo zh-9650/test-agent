@@ -198,3 +198,86 @@ Return ONLY the following JSON object. No markdown. No explanation. No preamble.
 - **Auto-prompt-tuning**（用 few-shot sample 自动找最优示例）
 - **Prompt 单元测试的 LLM-as-judge**（用 haiku 模型判定 N1 输出是否"足够好"）
 - **L1↔L2 契约机器校验**（从 pydantic schema 自动生成 L1↔L2 不变量测试）
+
+---
+
+## 8. L2 模板草案（待 V2.0 B 阶段实施）
+
+> **本节为草案**，实际 L2 prompt 实施在 V2.0 Phase B 完成（2026-06-01 落盘计划）。详细计划见 `docs/layer2-v2.0-plan.md` §3.2 与 devlog 21。
+
+### 8.1 L2 通用模板
+
+L2 3 个 prompt（decide / assert / step）都遵循 V1.6 5 段 XML 结构，与 L1 一致：
+
+```text
+<role>
+你是一个 [单一明确身份: Web 测试执行智能体 / 断言评估智能体 / 步骤执行智能体]。
+</role>
+
+<context>
+本任务在 L2 决策流水线中的位置：
+- 上游输入：[observe 节点的 page_info / 上轮 assert 的 change_report / 上轮 LLM 的 tool_call]
+- 下游消费者：[execute_node 调工具 / record_node 写 StepResult / ReportBuilder 渲染]
+- 本节点的成功定义：[下游能直接消费本次输出 = 成功]
+- L1 业务模型上下文：<prd_rules>...</prd_rules> + <focus_areas>...</focus_areas> + <scenarios>...</scenarios> + <risk_points>...</risk_points>
+</context>
+
+<task>
+[具体任务，1-2 句话]
+</task>
+
+<rules>
+1. [硬约束 1 - 如: status 必填 ∈ {PASS, FAIL, INCONCLUSIVE}]
+2. [硬约束 2 - 如: 必须调一个工具（含 mark_task_*）或显式 stop]
+3. ...
+</rules>
+
+<examples>
+<example type="good">[JSON 输入输出示例]</example>
+<example type="bad">[反例: 说明常见错误模式]</example>
+</examples>
+
+<output_contract>
+Return ONLY the following JSON object. No markdown. No explanation. No preamble.
+- 严格使用字段: field1, field2, ...
+- 严格使用枚举值: field_x ∈ {a, b, c}
+- 数组长度限制: array_field 长度 ≤ N
+- 未知值用 null，不编造
+</output_contract>
+```
+
+### 8.2 L2 节点间契约（新增 - 之前缺失）
+
+| 节点 | 上游输入 | 本节点输出（schema） | 下游消费 | 硬约束 |
+|---|---|---|---|---|
+| **L2.observe** | task_id | `page_info: dict` (url/title/interactive_elements/...) | L2.decide | 不调 LLM，纯 Playwright + browser-use |
+| **L2.decide** | page_info + 上轮 assertion + change_report + L1 context | `AIMessage` 带 `tool_calls`（必填）或 `tool_calls=[]`（用例完成） | L2.execute 或 L2.record | **必填 tool_call**（含 mark_task_*）；如意图结束用例，调 `mark_task_complete` / `mark_task_failed` / `mark_task_skipped` |
+| **L2.execute** | 最后 AIMessage 的 tool_calls | `ToolMessage[]` + `state_after` + `screenshot_after` | L2.assert | 工具失败计入 `consecutive_failures`；不抛异常（返回 "执行失败" 字符串） |
+| **L2.assert** | state_before/after + tool_calls + expected | `AssertionResult { status, reasoning, confidence }` (pydantic) | L2.record | `status ∈ {PASS, FAIL, INCONCLUSIVE}`;`reasoning ≤ 200 字`;`confidence ∈ {high, medium, low}` |
+| **L2.record** | assertion + tool_results | `StepResult` 累积到 `_collected_steps` | runtime.py → ReportBuilder | 失败时**优先**走 change_detector 规则（L0 → L1 → L2 分层） |
+
+### 8.3 L2 ↔ L1 业务模型契约（新增 - CLAUDE.md Rule 3 落地）
+
+L2 `<context>` 段必须显式消费以下 L1/Phase 1.5 输出：
+
+| 来源 | 字段 | 注入位置 | 数据形态 |
+|---|---|---|---|
+| L1 (knowledge_extractor) | `task_config.rules`（PRD 提取的硬约束） | `<prd_rules>` | `list[str]` |
+| L1 (system_modeler) | `task_config.focus_areas`（优先级目标） | `<focus_areas>` | `list[ExplorationGoal]` |
+| Phase 1.5 (scenario_extractor) | `task_config._scenarios`（业务场景） | `<scenarios>` | `list[Scenario]` |
+| Phase 1.5 (risk_analyzer) | `task_config._risk_points`（风险点） | `<risk_points>` | `list[RiskPoint]` |
+
+**注入策略**：每类字段前 5 条，超出截断并在 doc 里标注。
+
+### 8.4 L2 反模式（项目内禁止 - V2.0 B 阶段生效）
+
+| 反模式 | 修复 |
+|---|---|
+| decide 用 `##` Markdown 段落 | 改 V1.6 5 段 XML |
+| decide 不知道下游是 assert | 加 inter-node 契约 |
+| assert 手剥 JSON 3 层 fallback | 改 `safe_structured_invoke` + pydantic |
+| assert system prompt 英文硬编码 | 中文化 + V1.6 风格 |
+| assert 不区分上游 change_detector 已判过的错误 | 加 inter-node 契约 |
+| 账号密码进 system_prompt 明文 | 改成 `<account>` 占位，工具自己读 task_config |
+| context 按"条"截断 | 改 token 估算截断 |
+| 工具失败不计入 consecutive_failures | 改 execute_node 错误时 +1 |
