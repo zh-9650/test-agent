@@ -81,15 +81,17 @@ def get_llm_client(model_type: str = "default") -> ChatAnthropic:
     api_key = _get_required_env("ANTHROPIC_AUTH_TOKEN")
     base_url = _get_required_env("ANTHROPIC_BASE_URL")
 
-    # Instantiate ChatAnthropic with retry support and strict timeout.
+    # Instantiate ChatAnthropic with retry support and large output/timeout budget.
+    # Real target: PRD + Swagger + Changelog easily produces 10K+ token structured JSON.
+    # 65536 covers current 5 skills + headroom for richer inputs (multi-PDF, full Swagger).
     client = ChatAnthropic(
         model=model_name,
         api_key=api_key,
         base_url=base_url,
-        max_tokens=4096,
+        max_tokens=65536,
         temperature=0,
         max_retries=2,
-        timeout=30.0,
+        timeout=1800.0,
     )
 
     # Cache and return.
