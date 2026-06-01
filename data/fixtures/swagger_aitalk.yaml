@@ -1,0 +1,186 @@
+openapi: 3.0.3
+info:
+  title: AI 对话平台 API
+  version: 1.0.0
+  description: AI Talk platform REST API
+servers:
+  - url: http://192.168.31.155
+    description: Test server (LAN)
+
+paths:
+  /api/auth/login:
+    post:
+      summary: 用户登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, example: "test_c" }
+                password: { type: string, example: "123456" }
+      responses:
+        '200':
+          description: 登录成功，返回 token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user_id: { type: integer }
+                  role: { type: string, enum: [user, admin] }
+        '401':
+          description: 用户名或密码错误
+        '423':
+          description: 账号已锁定（连续失败 5 次后）
+
+  /api/auth/logout:
+    post:
+      summary: 用户登出
+      responses:
+        '200': { description: 登出成功 }
+
+  /api/conversations:
+    get:
+      summary: 列出当前用户的会话（按更新时间倒序）
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        title: { type: string }
+                        agent_id: { type: string }
+                        updated_at: { type: string, format: date-time }
+                        status: { type: string, enum: [new, active, ended, shared] }
+    post:
+      summary: 创建新会话
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id]
+              properties:
+                title: { type: string }
+                agent_id: { type: string }
+      responses:
+        '201': { description: 创建成功 }
+        '409': { description: 单用户会话数已达 100 上限 }
+
+  /api/conversations/{id}:
+    get:
+      summary: 查看会话详情
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: 成功 }
+        '404': { description: 会话不存在 }
+    delete:
+      summary: 软删除会话
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: 删除成功，30 天内可在回收站恢复 }
+
+  /api/conversations/{id}/messages:
+    get:
+      summary: 获取消息历史
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: before
+          schema: { type: string, description: "游标分页" }
+      responses:
+        '200': { description: 成功 }
+    post:
+      summary: 发送消息
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content, type]
+              properties:
+                content: { type: string, maxLength: 8000 }
+                type: { type: string, enum: [text, image] }
+                image_url: { type: string, description: "type=image 时必填" }
+      responses:
+        '201': { description: 消息已创建 }
+        '413': { description: 图片超过 5MB }
+        '408': { description: AI 响应超时（30s） }
+
+  /api/messages/{id}/feedback:
+    post:
+      summary: 提交消息反馈
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vote]
+              properties:
+                vote: { type: string, enum: [up, down] }
+                reason: { type: string, minLength: 10, description: "vote=down 时必填且至少 10 字符" }
+      responses:
+        '200': { description: 反馈成功 }
+        '400': { description: 反馈原因缺失或过短 }
+
+  /api/agents:
+    get:
+      summary: 列出可用 Agent
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    description: { type: string }
+                    builtin: { type: boolean }
