@@ -27,6 +27,7 @@
 | 17 | [Phase 2] V1.3: Knowledge Extraction IR | ✅ | Lead | 2026-06-01 | 2026-06-01 | 17-layer1-knowledge-extraction.md |
 | 18 | [Phase 2] V1.4: Use Case Scaffold | ✅ | Lead | 2026-06-01 | 2026-06-01 | 18-layer1-usecase-scaffold.md |
 | 19 | [Phase 2] V1.5: Layer 1 鲁棒性 + 报告可观测性 | ✅ | Lead | 2026-06-01 | 2026-06-01 | 19-layer1-hardening.md |
+| 20 | [Phase 2] V1.6+V1.7: L1+Phase 1.5 prompt 全面加固 + 盲点修复 + L1 收尾 | ✅ | Lead | 2026-06-01 | 2026-06-01 | 20-layer1-prompt-engineering-v17.md |
 
 ## 队友分配
 
@@ -54,6 +55,8 @@
 | 2026-06-01 | **Phase 2 - V1.3 重构**：重构认知提取架构为中间表达层 (IR)，新增 `KnowledgeBase` 事实库提炼，并将 `SystemModel` 升级为严谨的“轻量级状态机 (State Machine)”表达，通过优先级目标进一步优化探索 Agent 规划。 |
 | 2026-06-01 | **Phase 2 - V1.4 改进**：在知识提取后加入 `UseCaseModel` (Node 1.5)，作为状态机生成的坚实脚手架。同时为知识事实引入了 `quote` 追溯指针，最大程度削减模型幻觉。 |
 | 2026-06-01 | **Phase 2 - V1.5 加固**：针对 Qwen 等 Anthropic 兼容端点对 `with_structured_output` 支持不完整的问题，在 `core/llm_client.py` 统一了 `safe_structured_invoke` 入口（原生结构化 + 手动 JSON 解析双轨）。同时把 Node 1.7 覆盖率自检报告接入 HTML 报告，前端 `testLayer1` 增加 SSE `progress: "error"` 抛错识别。`scratch/test_layer1.py` 端到端验证通过。 |
+| 2026-06-01 | **Phase 2 - V1.6 加固**:5 个 L1 skill 的 prompt 全部重构为 `<role>`/`<context>`/`<task>`/`<rules>`/`<examples>`/`<output_contract>` 5 段 XML 结构,沉淀 L1↔L2 节点契约(`docs/prompt-engineering.md`)。引入 `tests/core/test_l1_prompts.py` 回归测试(4 fixtures × 7 不变量 = 28 用例),修复 6 个设计漏洞。 |
+| 2026-06-01 | **Phase 2 - V1.7 收尾**:把 V1.6 模式扩展到 Phase 1.5 三个 skill (`risk_analyzer` / `scenario_extractor` / `session_summary`),同时把 `scenario_extractor` / `session_summary` 从裸 `llm.ainvoke().content` 切换到 `safe_structured_invoke`。修复 L1 验证报告盲点 B (`unknown_actor` 显式化,CoverageReport 新增 `unknown_actor_count` + HTML 报告展示) 和盲点 C (fast-path 90% 阈值加 8 行 docstring)。盲点 A 确认非盲点。新增 24 个 Phase 1.5 回归测试。**L1 + Phase 1.5 全部 prompt 加固完成,53 mock + 8 live skip 全过,L1 收尾。** 下一步: V1.6 模式迁移到 L2 `execution_graph.py`(prompt 调用 hot path,每步 1 次)。 |
 
 ## 依赖关系
 
