@@ -42,9 +42,13 @@
    - 大模型作为“规则阅读器”，剥离所有主观描述，将其提纯为结构化的 `KnowledgeBase`（包含硬核业务规则、实体、角色、约束条件）。
    - **意义**：保证了下游在建模时的绝对客观，避免大模型“脑补”功能。
 
-5. **系统状态机建模 (System Modeling Agent) [Phase 2 - V1.3]**：
-   - 将事实库 `KnowledgeBase` 送入 `core/skills/system_modeler.py`。
-   - 强制 LLM 提炼出当前系统的核心骨架：模块划分与基于状态机的 `BusinessFlow`。
+5. **用例脚手架提取 (UseCase Scaffold) [Phase 2 - V1.4]**：
+   - 将上一步生成的 `KnowledgeBase` 送入 `core/skills/use_case_modeler.py`。
+   - 把碎片化的事实聚合为原子级的业务用例 (`UseCaseModel`)，明确定义出每个动作的触发条件 (`trigger`) 和产生结果 (`outcome`)。
+
+6. **系统状态机建模 (System Modeling Agent) [Phase 2 - V1.3/V1.4]**：
+   - 将事实库 `KnowledgeBase` 与脚手架 `UseCaseModel` 一并送入 `core/skills/system_modeler.py`。
+   - 强制 LLM 基于脚手架提炼出当前系统的核心骨架：模块划分与基于状态机的 `BusinessFlow`。
    - **意义**：通过状态、流转动作等严密结构，这一步如同人类测试员在脑海中建立业务全景大地图，彻底消除了生成“不存在的虚假测试用例”的可能。认知地图随后被固化到数据库 `Task.config["_system_model"]`。
 
 ### 2. 测试用例智能规划阶段 (LLM Planning Graph)

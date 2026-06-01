@@ -25,6 +25,7 @@
 | 15 | [Phase 2] V1: System Modeling Agent | ✅ | core-dev | 2026-05-31 | 2026-05-31 | 15-phase2-v1-system-modeler.md |
 | 16 | [Phase 2] V1.1/V1.2: Goal-Driven Graph | ✅ | Lead | 2026-05-31 | 2026-05-31 | 16-phase2-v1.1-v1.2-graph-refactor.md |
 | 17 | [Phase 2] V1.3: Knowledge Extraction IR | ✅ | Lead | 2026-06-01 | 2026-06-01 | 17-layer1-knowledge-extraction.md |
+| 18 | [Phase 2] V1.4: Use Case Scaffold | ✅ | Lead | 2026-06-01 | 2026-06-01 | 18-layer1-usecase-scaffold.md |
 
 ## 队友分配
 
@@ -50,6 +51,7 @@
 | 2026-05-31 | **Phase 2 - V1 重构**：引入 `System Modeling Agent`，强行解析 PRD 提炼系统的状态流转与业务链路，并作为上下文注入 Scenario Extractor，彻底解决了生成脱离实际的“幽灵用例”问题。 |
 | 2026-05-31 | **Phase 2 - V1.1/V1.2 重构**：完成 `Goal Extractor` 与 `System Mapper`，改造 `planning_graph` 拓扑为目标驱动流水线 (`extract_goals` -> `explore` -> `generate_map` -> `extract_scenarios`)，实现了认知-探索-规划闭环。 |
 | 2026-06-01 | **Phase 2 - V1.3 重构**：重构认知提取架构为中间表达层 (IR)，新增 `KnowledgeBase` 事实库提炼，并将 `SystemModel` 升级为严谨的“轻量级状态机 (State Machine)”表达，通过优先级目标进一步优化探索 Agent 规划。 |
+| 2026-06-01 | **Phase 2 - V1.4 改进**：在知识提取后加入 `UseCaseModel` (Node 1.5)，作为状态机生成的坚实脚手架。同时为知识事实引入了 `quote` 追溯指针，最大程度削减模型幻觉。 |
 
 ## 依赖关系
 
