@@ -10,8 +10,18 @@ import json
 from typing import Any
 
 from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
 
 from core.llm_client import get_llm_client
+
+class RiskPoint(BaseModel):
+    element: str = Field(description="对应交互元素列表中的 id 或特征描述")
+    risk_type: str = Field(description="为什么认为它是高风险点（如 '涉及金额计算'）")
+    severity: str = Field(description="'high' 或 'medium' 或 'low'")
+    suggestions: list[str] = Field(default_factory=list, description="建议的测试场景列表（如 ['输入负数', '输入超大金额', '输入特殊字符']）")
+
+class RiskAnalysisOutput(BaseModel):
+    risk_points: list[RiskPoint] = Field(default_factory=list, description="提取出的风险点列表")
 
 
 async def analyze_risks(
@@ -53,35 +63,16 @@ async def analyze_risks(
 
 ## 页面元素列表
 {elements_text}
-请用严格的 JSON 数组格式输出，每个风险点包含:
-- "element": 对应交互元素列表中的 id 或特征描述
-- "risk_type": 为什么认为它是高风险点（如 "涉及金额计算"）
-- "severity": "high" 或 "medium" 或 "low"
-- "suggestions": 建议的测试场景列表（如 ["输入负数", "输入超大金额", "输入特殊字符"]）
 
-必须确保：
-1. 所有的键（如 "element", "risk_type", "suggestions"）必须用双引号包裹。
-2. 只输出 JSON 数组，不要其他文字。如果没有高风险点，返回空数组 []。"""
+请提取高风险点，并为每个高风险点提供建议的测试场景（如 ["输入负数", "输入超大金额", "输入特殊字符"]）。如果没有高风险点，返回空列表。"""
 
     try:
         llm = get_llm_client("haiku")
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
-        text = response.content if isinstance(response.content, str) else str(response.content)
-
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0]
-            
-        text = text.strip()
-        try:
-            risk_points = json.loads(text)
-        except json.JSONDecodeError:
-            import ast
-            # Fallback for improperly quoted json
-            risk_points = ast.literal_eval(text)
-            
-        if isinstance(risk_points, list):
+        llm_with_struct = llm.with_structured_output(RiskAnalysisOutput)
+        response = await llm_with_struct.ainvoke(prompt)
+        
+        if response and response.risk_points:
+            risk_points = [rp.model_dump() for rp in response.risk_points]
             print(f"[RiskAnalyzer] Identified {len(risk_points)} risk points")
             return risk_points
         return []
