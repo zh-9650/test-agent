@@ -1,0 +1,466 @@
+[
+  {
+    "fixture": "prd_aitalk",
+    "ucm_count": 10,
+    "ucm_names": [
+      "创建对话会话",
+      "发送消息",
+      "反馈AI回复",
+      "分享会话",
+      "查看会话列表",
+      "删除会话",
+      "恢复会话",
+      "修改密码",
+      "登录",
+      "登出"
+    ],
+    "kb_business_rules_count": 17,
+    "sm_dump": {
+      "system_name": "AI智能对话平台",
+      "modules": [
+        "会话管理",
+        "消息管理",
+        "用户认证"
+      ],
+      "entities": [
+        "对话会话",
+        "AI Agent",
+        "消息",
+        "用户",
+        "登录凭证",
+        "消息反馈"
+      ],
+      "roles": [
+        "普通用户",
+        "管理员"
+      ],
+      "flows": [
+        {
+          "name": "会话管理流",
+          "nodes": [
+            "初始态",
+            "新建会话",
+            "进行中",
+            "已分享",
+            "回收站"
+          ],
+          "transitions": [
+            {
+              "from_state": "初始态",
+              "action": "创建对话会话",
+              "to_state": "新建会话"
+            },
+            {
+              "from_state": "新建会话",
+              "action": "发送消息",
+              "to_state": "进行中"
+            },
+            {
+              "from_state": "进行中",
+              "action": "分享会话",
+              "to_state": "已分享"
+            },
+            {
+              "from_state": "进行中",
+              "action": "删除会话",
+              "to_state": "回收站"
+            },
+            {
+              "from_state": "回收站",
+              "action": "恢复会话",
+              "to_state": "进行中"
+            },
+            {
+              "from_state": "初始态",
+              "action": "查看会话列表",
+              "to_state": "初始态"
+            }
+          ]
+        },
+        {
+          "name": "消息反馈流",
+          "nodes": [
+            "已接收",
+            "已反馈"
+          ],
+          "transitions": [
+            {
+              "from_state": "已接收",
+              "action": "反馈AI回复",
+              "to_state": "已反馈"
+            }
+          ]
+        },
+        {
+          "name": "用户认证流",
+          "nodes": [
+            "未登录",
+            "已登录",
+            "已锁定"
+          ],
+          "transitions": [
+            {
+              "from_state": "未登录",
+              "action": "登录",
+              "to_state": "已登录"
+            },
+            {
+              "from_state": "已登录",
+              "action": "登出",
+              "to_state": "未登录"
+            },
+            {
+              "from_state": "已登录",
+              "action": "修改密码",
+              "to_state": "已登录"
+            }
+          ]
+        }
+      ]
+    },
+    "flows_summary": [
+      {
+        "name": "会话管理流",
+        "nodes": [
+          "初始态",
+          "新建会话",
+          "进行中",
+          "已分享",
+          "回收站"
+        ],
+        "transitions_count": 6,
+        "transitions_actions": [
+          "创建对话会话",
+          "发送消息",
+          "分享会话",
+          "删除会话",
+          "恢复会话",
+          "查看会话列表"
+        ]
+      },
+      {
+        "name": "消息反馈流",
+        "nodes": [
+          "已接收",
+          "已反馈"
+        ],
+        "transitions_count": 1,
+        "transitions_actions": [
+          "反馈AI回复"
+        ]
+      },
+      {
+        "name": "用户认证流",
+        "nodes": [
+          "未登录",
+          "已登录",
+          "已锁定"
+        ],
+        "transitions_count": 3,
+        "transitions_actions": [
+          "登录",
+          "登出",
+          "修改密码"
+        ]
+      }
+    ],
+    "fallback_triggered": false,
+    "raw_structured_ok": false,
+    "raw_structured_dump": null,
+    "raw_text_first_1500": "{\n  \"system_name\": \"AI对话平台\",\n  \"modules\": [\"会话管理\", \"消息管理\", \"用户管理\"],\n  \"entities\": [\"对话会话\", \"AI Agent\", \"消息\", \"用户\"],\n  \"roles\": [\"普通用户\", \"管理员\"],\n  \"flows\": [\n    {\n      \"name\": \"会话管理流程\",\n      \"nodes\": [\"初始状态\", \"新建状态\", \"活跃状态\", \"已结束\", \"已共享\"],\n      \"transitions\": [\n        {\"from_state\": \"初始状态\", \"action\": \"创建对话会话\", \"to_state\": \"新建状态\"},\n        {\"from_state\": \"活跃状态\", \"action\": \"查看会话列表\", \"to_state\": \"活跃状态\"},\n        {\"from_state\": \"活跃状态\", \"action\": \"删除会话\", \"to_state\": \"已结束\"},\n        {\"from_state\": \"已结束\", \"action\": \"恢复会话\", \"to_state\": \"活跃状态\"},\n        {\"from_state\": \"活跃状态\", \"action\": \"分享会话\", \"to_state\": \"已共享\"}\n      ]\n    },\n    {\n      \"name\": \"消息管理流程\",\n      \"nodes\": [\"无消息\", \"消息已发送\", \"反馈已提交\"],\n      \"transitions\": [\n        {\"from_state\": \"无消息\", \"action\": \"发送消息\", \"to_state\": \"消息已发送\"},\n        {\"from_state\": \"消息已发送\", \"action\": \"反馈AI回复\", \"to_state\": \"反馈已提交\"}\n      ]\n    },\n    {\n      \"name\": \"用户管理流程\",\n      \"nodes\": [\"未登录\", \"已登录\", \"已锁定\"],\n      \"transitions\": [\n        {\"from_state\": \"未登录\", \"action\": \"登录\", \"to_state\": \"已登录\"},\n        {\"from_state\": \"未登录\", \"action\": \"登录\", \"to_state\": \"已锁定\"},\n        {\"from_state\": \"已登录\", \"action\": \"登出\", \"to_state\": \"未登录\"},\n        {\"from_state\": \"已登录\", \"action\": \"修改密码\", \"to_state\": \"已登录\"}\n      ]\n    }\n  ]\n}"
+  },
+  {
+    "fixture": "prd_purchase",
+    "ucm_count": 4,
+    "ucm_names": [
+      "提交采购申请",
+      "部门经理审批采购申请",
+      "总监审批采购申请",
+      "确认打款"
+    ],
+    "kb_business_rules_count": 3,
+    "sm_dump": {
+      "system_name": "采购管理系统",
+      "modules": [
+        "采购管理"
+      ],
+      "entities": [
+        "采购申请"
+      ],
+      "roles": [
+        "员工",
+        "部门经理",
+        "总监",
+        "财务"
+      ],
+      "flows": [
+        {
+          "name": "采购审批流",
+          "nodes": [
+            "草稿",
+            "待审批",
+            "待付款",
+            "已完成"
+          ],
+          "transitions": [
+            {
+              "from_state": "草稿",
+              "action": "提交采购申请",
+              "to_state": "待审批"
+            },
+            {
+              "from_state": "待审批",
+              "action": "部门经理审批采购申请",
+              "to_state": "待付款"
+            },
+            {
+              "from_state": "待审批",
+              "action": "部门经理审批采购申请",
+              "to_state": "草稿"
+            },
+            {
+              "from_state": "待审批",
+              "action": "总监审批采购申请",
+              "to_state": "待付款"
+            },
+            {
+              "from_state": "待审批",
+              "action": "总监审批采购申请",
+              "to_state": "草稿"
+            },
+            {
+              "from_state": "待付款",
+              "action": "确认打款",
+              "to_state": "已完成"
+            }
+          ]
+        }
+      ]
+    },
+    "flows_summary": [
+      {
+        "name": "采购审批流",
+        "nodes": [
+          "草稿",
+          "待审批",
+          "待付款",
+          "已完成"
+        ],
+        "transitions_count": 6,
+        "transitions_actions": [
+          "提交采购申请",
+          "部门经理审批采购申请",
+          "部门经理审批采购申请",
+          "总监审批采购申请",
+          "总监审批采购申请",
+          "确认打款"
+        ]
+      }
+    ],
+    "fallback_triggered": false,
+    "raw_structured_ok": false,
+    "raw_structured_dump": null,
+    "raw_text_first_1500": "{\n  \"system_name\": \"采购审批系统\",\n  \"modules\": [\"采购流程\"],\n  \"entities\": [\"采购申请\"],\n  \"roles\": [\"员工\", \"部门经理\", \"总监\", \"财务\"],\n  \"flows\": [\n    {\n      \"name\": \"采购审批流程\",\n      \"nodes\": [\"草稿状态\", \"待审批状态\", \"待付款状态\", \"已完成状态\"],\n      \"transitions\": [\n        {\"from_state\": \"草稿状态\", \"action\": \"提交采购申请\", \"to_state\": \"待审批状态\"},\n        {\"from_state\": \"待审批状态\", \"action\": \"部门经理审批采购申请\", \"to_state\": \"待付款状态\"},\n        {\"from_state\": \"待审批状态\", \"action\": \"部门经理审批采购申请\", \"to_state\": \"草稿状态\"},\n        {\"from_state\": \"待审批状态\", \"action\": \"总监审批采购申请\", \"to_state\": \"待付款状态\"},\n        {\"from_state\": \"待审批状态\", \"action\": \"总监审批采购申请\", \"to_state\": \"草稿状态\"},\n        {\"from_state\": \"待付款状态\", \"action\": \"确认打款\", \"to_state\": \"已完成状态\"}\n      ]\n    }\n  ]\n}"
+  },
+  {
+    "fixture": "prd_minimal",
+    "ucm_count": 1,
+    "ucm_names": [
+      "登录后访问首页"
+    ],
+    "kb_business_rules_count": 1,
+    "sm_dump": {
+      "system_name": "用户认证系统",
+      "modules": [
+        "用户管理"
+      ],
+      "entities": [
+        "首页"
+      ],
+      "roles": [
+        "用户"
+      ],
+      "flows": [
+        {
+          "name": "用户登录流程",
+          "nodes": [
+            "未登录",
+            "已授权"
+          ],
+          "transitions": [
+            {
+              "from_state": "未登录",
+              "action": "登录后访问首页",
+              "to_state": "已授权"
+            }
+          ]
+        }
+      ]
+    },
+    "flows_summary": [
+      {
+        "name": "用户登录流程",
+        "nodes": [
+          "未登录",
+          "已授权"
+        ],
+        "transitions_count": 1,
+        "transitions_actions": [
+          "登录后访问首页"
+        ]
+      }
+    ],
+    "fallback_triggered": false,
+    "raw_structured_ok": false,
+    "raw_structured_dump": null,
+    "raw_text_first_1500": "{\n  \"system_name\": \"用户登录访问系统\",\n  \"modules\": [\"认证与访问\"],\n  \"entities\": [\"首页\"],\n  \"roles\": [\"用户\"],\n  \"flows\": [\n    {\n      \"name\": \"登录后访问首页流程\",\n      \"nodes\": [\"用户未登录\", \"用户已访问首页\"],\n      \"transitions\": [\n        {\n          \"from_state\": \"用户未登录\",\n          \"action\": \"登录后访问首页\",\n          \"to_state\": \"用户已访问首页\"\n        }\n      ]\n    }\n  ]\n}"
+  },
+  {
+    "fixture": "prd_adversarial",
+    "ucm_count": 4,
+    "ucm_names": [
+      "提交单据",
+      "审阅金额超过五千元的单据",
+      "批准金额不超过一万元的单据",
+      "处理金额超过一万元单据的更高一级审批流转"
+    ],
+    "kb_business_rules_count": 5,
+    "sm_dump": {
+      "system_name": "审批系统",
+      "modules": [
+        "审批管理"
+      ],
+      "entities": [
+        "单据"
+      ],
+      "roles": [
+        "申请人",
+        "部门负责人",
+        "经理",
+        "更高一级审批人"
+      ],
+      "flows": [
+        {
+          "name": "单据审批流程",
+          "nodes": [
+            "草稿",
+            "待审批",
+            "待审阅",
+            "待高级审批",
+            "已完成"
+          ],
+          "transitions": [
+            {
+              "from_state": "草稿",
+              "action": "提交单据",
+              "to_state": "待审批"
+            },
+            {
+              "from_state": "待审阅",
+              "action": "审阅金额超过五千元的单据",
+              "to_state": "待审批"
+            },
+            {
+              "from_state": "待审批",
+              "action": "批准金额不超过一万元的单据",
+              "to_state": "已完成"
+            },
+            {
+              "from_state": "待审批",
+              "action": "处理金额超过一万元单据的更高一级审批流转",
+              "to_state": "待高级审批"
+            }
+          ]
+        }
+      ]
+    },
+    "flows_summary": [
+      {
+        "name": "单据审批流程",
+        "nodes": [
+          "草稿",
+          "待审批",
+          "待审阅",
+          "待高级审批",
+          "已完成"
+        ],
+        "transitions_count": 4,
+        "transitions_actions": [
+          "提交单据",
+          "审阅金额超过五千元的单据",
+          "批准金额不超过一万元的单据",
+          "处理金额超过一万元单据的更高一级审批流转"
+        ]
+      }
+    ],
+    "fallback_triggered": false,
+    "raw_structured_ok": true,
+    "raw_structured_dump": {
+      "system_name": "单据审批系统",
+      "modules": [
+        "审批管理"
+      ],
+      "entities": [
+        "单据",
+        "申请"
+      ],
+      "roles": [
+        "申请人",
+        "部门负责人",
+        "经理",
+        "更高一级审批人"
+      ],
+      "flows": [
+        {
+          "name": "单据审批流",
+          "nodes": [
+            "草稿",
+            "待审批",
+            "部门审阅",
+            "经理审批",
+            "高级审批",
+            "审批完成"
+          ],
+          "transitions": [
+            {
+              "from_state": "草稿",
+              "action": "提交单据",
+              "to_state": "待审批"
+            },
+            {
+              "from_state": "待审批",
+              "action": "审阅金额超过五千元的单据",
+              "to_state": "部门审阅"
+            },
+            {
+              "from_state": "待审批",
+              "action": "批准金额不超过一万元的单据",
+              "to_state": "经理审批"
+            },
+            {
+              "from_state": "部门审阅",
+              "action": "批准金额不超过一万元的单据",
+              "to_state": "经理审批"
+            },
+            {
+              "from_state": "部门审阅",
+              "action": "处理金额超过一万元单据的更高一级审批流转",
+              "to_state": "高级审批"
+            },
+            {
+              "from_state": "经理审批",
+              "action": "批准金额不超过一万元的单据",
+              "to_state": "审批完成"
+            },
+            {
+              "from_state": "高级审批",
+              "action": "处理金额超过一万元单据的更高一级审批流转",
+              "to_state": "审批完成"
+            }
+          ]
+        }
+      ]
+    },
+    "raw_text_first_1500": "{\n  \"system_name\": \"审批系统\",\n  \"modules\": [\"审批流程\"],\n  \"entities\": [\"单据\", \"申请\"],\n  \"roles\": [\"申请人\", \"部门负责人\", \"经理\", \"更高一级审批人\"],\n  \"flows\": [\n    {\n      \"name\": \"单据审批流程\",\n      \"nodes\": [\"草稿\", \"待处理\", \"待审阅\", \"待审批\", \"待高级审批\", \"已完成\"],\n      \"transitions\": [\n        {\"from_state\": \"草稿\", \"action\": \"提交单据\", \"to_state\": \"待处理\"},\n        {\"from_state\": \"待处理\", \"action\": \"审阅金额超过五千元的单据\", \"to_state\": \"待审阅\"},\n        {\"from_state\": \"待审阅\", \"action\": \"批准金额不超过一万元的单据\", \"to_state\": \"待审批\"},\n        {\"from_state\": \"待审阅\", \"action\": \"处理金额超过一万元单据的更高一级审批流转\", \"to_state\": \"待高级审批\"},\n        {\"from_state\": \"待高级审批\", \"action\": \"处理金额超过一万元单据的更高一级审批流转\", \"to_state\": \"已完成\"}\n      ]\n    }\n  ]\n}"
+  }
+]
