@@ -152,9 +152,21 @@ async def explore_observe_node(state: dict[str, Any]) -> dict[str, Any]:
 async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
     """LLM decides next exploration action based on current page.
 
-    - Builds system prompt + page summary + explored URLs context
-    - Calls LLM with UI tools bound
-    - Returns LLM response as new message
+    V1.6.2 加固 (planning_graph explore V1.6 化):
+      - 5 段 XML system prompt (在 get_exploration_system_prompt)
+      - 显式注入 SystemModel (modules/entities) 作为"理论导航地图" — 让 LLM 知道理论上有
+        哪些业务模块, 避免漏探索
+      - inter-node 契约: 必须返回 tool_call (含 mark_task_*) 或空 tool_calls (探索完成)
+      - credentials / goals 注入保持原状
+
+    Best practice 依据:
+      - Anthropic Context Engineering 2025-09 "just-in-time context" — SystemModel 在每次
+        decide 时重新序列化 (虽然 _system_model 是相对稳定的), 让 LLM 看到当前最新的理论地图
+      - Codebridge 2026 Sub-agent manifest — 上游/下游契约明确
+      - 避免 "hardcode 决策树" — 把 SystemModel 当导航提示, 不强制 LLM 跟随
+
+    Returns:
+        {"messages": [AIMessage]} — AIMessage 必须带 tool_calls (长度 0 或 1)
     """
     try:
         llm = get_llm_client("default")  # qwen3.7-max for planning
@@ -165,6 +177,33 @@ async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
         explored_urls = task_config.get("_explored_urls", [])
         accounts = task_config.get("accounts", [])
         scenarios = task_config.get("_scenarios", [])
+
+        # V1.6.2: 注入 SystemModel (modules/entities) 作为理论导航地图
+        # 提取自 N2 SystemModeler 输出, 与 N3 GoalExtractor 互补:
+        #   - SystemModel 告诉 LLM "理论上有哪些业务模块" (modules 列表)
+        #   - GoalExtractor 告诉 LLM "要找的业务能力入口" (goals 列表)
+        system_model_ctx = ""
+        system_model = task_config.get("_system_model", {})
+        if system_model:
+            sm_modules = system_model.get("modules", []) if isinstance(system_model, dict) else []
+            sm_entities = system_model.get("entities", []) if isinstance(system_model, dict) else []
+            sm_system_name = system_model.get("system_name", "") if isinstance(system_model, dict) else ""
+            sm_flows = system_model.get("flows", []) if isinstance(system_model, dict) else []
+
+            nav_hints = []
+            if sm_system_name:
+                nav_hints.append(f"系统名: {sm_system_name}")
+            if sm_modules:
+                nav_hints.append(f"业务模块: {', '.join(sm_modules[:10])}")
+            if sm_entities:
+                nav_hints.append(f"业务实体: {', '.join(sm_entities[:10])}")
+            # 提取 flow names 作为"业务流提示"
+            if sm_flows:
+                flow_names = [f.get("name", "") for f in sm_flows if isinstance(f, dict) and f.get("name")]
+                if flow_names:
+                    nav_hints.append(f"业务流: {', '.join(flow_names[:5])}")
+            if nav_hints:
+                system_model_ctx = "\n### 理论业务地图 (SystemModel, V1.6.2 新增)\n" + "\n".join(nav_hints) + "\n(请带着这些业务模块去探索, 避免漏掉核心功能区)\n"
 
         # Build prompts
         system_prompt = get_exploration_system_prompt(accounts, task_config, scenarios=scenarios)
@@ -186,7 +225,7 @@ async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
                     if goal_text:
                         lines.append(f"- [优先级: {priority}] {goal_text}")
             return "\n".join(lines)
-            
+
         goals = task_config.get("_goals", [])
         goals_ctx = ""
         if goals and isinstance(goals, list):
@@ -196,6 +235,7 @@ async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
 已探索的URL: {chr(10).join(explored_urls[:20]) if explored_urls else '尚未探索'}
 {credentials_ctx}
 {goals_ctx}
+{system_model_ctx}
 
 当前页面:
 {page_summary}
@@ -209,16 +249,26 @@ async def explore_decide_node(state: dict[str, Any]) -> dict[str, Any]:
 
         return {"messages": [response]}
     except Exception as e:
-        # Never crash: return error as AI message
+        # Never crash: return error as AI message (no tool_call = explore stops safely)
         return {"messages": [AIMessage(content=f"LLM调用失败: {str(e)}")]}
 
 
 async def explore_execute_node(state: dict[str, Any]) -> dict[str, Any]:
     """Execute the exploration tool call from the LLM's decide response.
 
-    - Gets the last AI message with tool_calls
-    - Dispatches to the matching tool function
-    - Returns empty dict (tool execution modifies the page, next observe will capture changes)
+    V1.6.2 加固 (inter-node 契约):
+      - 上游契约 (explore_decide): 必填 tool_call (来自 llm.bind_tools)
+      - 下游契约 (explore_observe): 必填 ToolMessage (含 tool_call_id), 失败时返回错误字符串
+        而不是抛异常 — 让 observe 节点能继续, 不会让整个规划子图崩
+      - Navigate FireWall 保留: base_url / 已探索 URL / PRD 提及 / 元素 href 才放行
+      - 工具异常 → ToolMessage(content="执行失败: ...") 而非 raise
+
+    Best practice 依据:
+      - Anthropic Writing Tools for Agents 2025-09 — "工具失败应返回结构化错误, 让 agent 自我恢复"
+      - LangGraph 2026 Production Best Practices — node 间 explicit schema 契约
+
+    Returns:
+        {"messages": [ToolMessage]} — 必填, 失败也返回 (不抛异常)
     """
     messages = state.get("messages", [])
 

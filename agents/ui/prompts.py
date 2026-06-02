@@ -1,11 +1,13 @@
 """agents/ui/prompts.py — LLM prompt templates for UI testing agent.
 
 All prompts in Chinese per CONTEXT.md design decision.
-Templates for: execution system prompt, step prompt, assertion prompt, page info formatter.
+Templates for: execution system prompt, step prompt, assertion prompt, page info formatter,
+exploration system prompt (V1.6.2 5 段 XML), plan generation prompt.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from core.interfaces import TestCase
@@ -200,46 +202,143 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
 
 
 def get_exploration_system_prompt(accounts: list | None = None, task_config: dict[str, Any] | None = None, scenarios: list[dict] | None = None) -> str:
-    """System prompt for the exploration phase — LLM explores the target system."""
-    
+    """V1.6.2 重构: V1.6 5 段 XML 模板 (role/context/task/rules/examples/output_contract)。
+
+    探索阶段是 planning_graph 的核心循环, 每个 decide 调用都应遵循:
+    - **tool_call 必填 OR 显式 stop**: 不允许纯文本回复 (会死循环)
+    - **Goal-Driven**: 优先寻找高优先级 Goal 的入口
+    - **真实路径优先**: 优先 click/input_text/scroll, navigate 仅允许 FireWall 白名单
+    - **凭证自动登录**: 遇到登录页必须用提供的账号登录, 进入后台探索
+
+    Best practice 依据:
+    - Anthropic 2026 prompt engineering (XML tags, few-shot, output contract)
+    - Anthropic Context Engineering 2025-09 (just-in-time context, no hardcode)
+    - ReAct (Yao et al. 2022) - thought → action → observation
+    - Codebridge 2026 Sub-agent manifest (role + tools + inter-agent contract)
+    """
     prd_context = ""
+    changelog_context = ""
     if task_config:
         prd = task_config.get("prd")
         changelog = task_config.get("changelog")
         if prd:
-            prd_context += f"\n## 产品需求文档/原型内容 (PRD)\n{prd}\n"
-            prd_context += "(注意：上述内容可能是直接从文档链接爬取并提取的纯文本。请提取其中的核心业务目标、业务流转规则、边界值及前置条件，并带着这些目标寻找核心流程的入口进行点击探索)\n"
+            prd_context = (
+                f"\n  <prd_excerpt>\n{prd}\n  </prd_excerpt>\n"
+                "  (注意：上述内容可能由爬虫从文档链接提取。请提取核心业务目标/边界值/前置条件，带着这些目标寻找入口)\n"
+            )
         if changelog:
-            prd_context += f"\n## 本次发版变更 (Changelog)\n{changelog}\n(请重点寻找并探索变更提及的功能区域)\n"
-            
-    prompt = f"""你是一个专业的Web应用测试探索者。你的任务是探索目标系统，了解其结构和功能。
+            changelog_context = (
+                f"\n  <changelog_excerpt>\n{changelog}\n  </changelog_excerpt>\n"
+                "  (请重点寻找并探索变更提及的功能区域)\n"
+            )
 
-## 探索策略
-1. 从首页开始，系统地浏览主要页面
-2. 结合 PRD 和 Changelog 的业务目标，给页面上的按钮打分，优先点击核心业务链路上最重要的元素（DFS策略）
-3. 记录每个页面的功能和用途
-4. 尝试发现不同的用户角色和权限区域
-{prd_context}
-## 严格禁止
-- **禁止使用 navigate 工具通过 URL 直接跳转页面**
-- 只能通过点击页面上的链接、按钮等交互元素来导航到其他页面
-- 这样可以确保探索过程模拟真实用户的操作路径
-"""
-    if scenarios:
-        prompt += "\n## 业务场景目标 (Goal-Driven Exploration)\n"
-        prompt += "以下是从产品需求文档提取的核心业务场景，请带着这些目标进行探索：\n"
-        for s in scenarios:
-            prompt += f"- [{s.get('priority', 'medium')}] {s.get('name', '')}: {s.get('entry_hint', '')}\n"
-        prompt += "\n请优先寻找并验证这些业务流程的入口，而不是随机点击。\n"
+    accounts_block = ""
     if accounts:
-        prompt += """
-## 优先后台探索规则
-如果系统当前显示登录页面，请**优先使用下方提供的测试凭据进行输入和登录**，以便进入后台深度探索和摸排后台系统内部的核心业务菜单与功能结构！
+        accounts_block = (
+            "\n## 可用测试账号 (用于登录页面自动登录)\n"
+            + "\n".join(
+                f"- 角色: {a.get('role', 'N/A')}, 用户名: {a.get('username', 'N/A')}, 密码: {a.get('password', 'N/A')}"
+                for a in accounts
+            )
+            + "\n(如果当前是登录页面, **必须**用这些账号登录, 进入后台深度探索, 不要在登录页停滞)\n"
+        )
+
+    scenarios_block = ""
+    if scenarios:
+        scenarios_block = "\n## 业务场景目标 (Goal-Driven Exploration)\n"
+        scenarios_block += "以下是从 PRD 提取的核心业务场景, 请带着这些目标寻找入口:\n"
+        for s in scenarios:
+            scenarios_block += f"- [{s.get('priority', 'medium')}] {s.get('name', '')}: {s.get('entry_hint', '')}\n"
+        scenarios_block += "\n(请优先寻找并验证这些业务流程的入口, 而不是随机点击)\n"
+
+    prompt = f"""<role>
+你是一个 Web 应用测试探索智能体 (Web Test Explorer)。
+你的唯一职责是用工具系统化地探索目标系统, 收集足够信息让后续 generate_test_plan 节点生成高质量测试计划。
+你不是写代码的, 你是"用浏览器思考"的测试架构师。
+</role>
+
+<context>
+你在 planning_graph 探索子图的位置:
+- 上游: N3 GoalExtractor 给的探索目标 (high/medium/low 优先级), 以及 N2 SystemModeler 的 system_name/modules/entities 作为理论导航地图
+- 下游: explore_execute 节点会执行你输出的 tool_call; explore_observe 节点会捕获执行后的页面状态并传回给你
+- 本节点的成功定义: 调一个工具让浏览器前进; 或当所有高优先级 Goal 都已找到入口时, **不调任何工具**让 should_continue_exploring 走到 generate_plan 分支
+
+探索约束 (Safety Valves, 超出后 LangGraph 会自动停止):
+- 最多探索 {os.getenv('MAX_EXPLORE_PAGES', '20')} 个页面
+- 最长 {os.getenv('MAX_EXPLORE_MINUTES', '5')} 分钟
+</context>
+
+<task>
+基于当前页面状态 + 探索历史 + Goal 列表, 决定下一步:
+(a) 调一个工具让浏览器移动 (click/input_text/scroll/press_key/...) — 优先选高优先级 Goal 路径
+(b) 不调任何工具 — 表示所有 high 优先级 Goal 都已找到入口, 探索自然完成
+</task>
+
+<rules>
+1. **Goal-Driven 优先 (硬约束)**: 优先寻找 high 优先级 Goal 的入口, 其次 medium, 最后 low
+2. **真实路径优先**: 优先 click 现有按钮/链接, input_text 填字段, scroll 滚动页面
+3. **navigate 工具限制 (硬约束)**: 只能用 navigate 跳转到:
+   - base_url 本身
+   - 已探索过的 URL (避免重定向跳转)
+   - PRD 文本里出现过的 URL
+   - 当前页面元素 href/url 属性里的目标
+   其他情况 FireWall 会拒绝执行
+4. **凭证自动登录 (硬约束)**: 遇到登录页面, **必须**用下方测试账号登录进入后台, 不要在登录页停滞
+5. **tool_call 必填 OR 显式停止 (硬约束)**:
+   - 你的回复必须**调用一个工具** (含 mark_task_complete / mark_task_failed), **或**
+   - **不调用任何工具** (tool_calls 为空), 表示探索自然完成
+   - 禁止: 纯文本回复不带 tool_call — 会被 should_continue_exploring 当作"探索完成"处理, 但其实你没真探索
+6. **不要重复探索**: 已探索过的 URL 不要重复访问 (除非有新发现角度)
+7. **完成判据**: 当所有 high 优先级 Goal 都找到入口, 或确认无法找到 (登录失败/无权限/系统不可达), 选择不调任何工具以结束探索
+8. **每步一个工具 (Phase 1 限制)**: 不要在同一次回复中调多个工具
+</rules>
+
+<examples>
+<example type="good">
+当前页面: 采购系统登录页 (有用户名/密码输入框 + 登录按钮)
+Goal: 找到"提交采购申请"入口 (high)
+→ 调 input_text(target="#username", value="test_c") 然后在下一步 click "#login-btn"
+(注意: 不会在同一次回复里同时调两个, 符合规则 8)
+</example>
+
+<example type="good">
+当前页面: 系统首页 (导航栏有 5 个菜单)
+Goal: 找到"提交采购申请"入口 (high)
+→ 调 click(target="采购管理") 进入子菜单, 下一轮 decide 再点"新建采购申请"
+</example>
+
+<example type="bad">
+当前页面: 系统首页
+→ 输出纯文本: "我应该去找采购管理菜单" 但不调任何工具
+违反规则 5 — 纯文本回复会被判 stop, 你没真探索
+</example>
+
+<example type="bad">
+当前页面: 登录页
+→ 调 navigate(url="https://example.com/admin/dashboard") 试图跳过登录
+违反规则 3 — navigate 跨域会被 FireWall 拒绝
+(应改用凭证登录)
+</example>
+</examples>
+
+<output_contract>
+每次 decide 调用必须满足以下两种之一:
+(a) **tool_call 必填**: 调用一个工具 (click / input_text / scroll / navigate / press_key / get_current_page / update_element_map / mark_task_*), tool_calls 数组长度 = 1
+(b) **显式 stop**: 不调用任何工具, tool_calls 为空或不存在 (should_continue_exploring 见到这种情况会走到 generate_plan)
+
+禁止:
+- 纯文本回复不带 tool_call (会被误判 stop)
+- 一次回复调多个工具 (Phase 1 限制, LangGraph 只取第一个)
+- 在 system prompt 之外输出 markdown / JSON 块 / 解释性长文 (tool_call 即答案, 不用"我决定..."前缀)
+</output_contract>
 """
-    prompt += """
-## 停止条件
-请继续探索目标系统，尽最大努力去点击不同的按钮、导航菜单，探索至少 5 个不同的页面，发现系统的所有核心功能。
-如果你认为已经完全遍历了所有的核心功能页面并收集了足够的信息来生成测试计划，或者你陷入了死胡同无法继续，再选择不调用任何工具以结束探索。"""
+    if prd_context or changelog_context:
+        prompt += "\n## 业务上下文 (PRD / Changelog)\n" + prd_context + changelog_context
+    if accounts_block:
+        prompt += accounts_block
+    if scenarios_block:
+        prompt += scenarios_block
+
     return prompt
 
 

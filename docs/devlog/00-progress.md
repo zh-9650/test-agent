@@ -31,6 +31,7 @@
 | 21 | [Phase 2] V2.0 v1: L2 全面加固计划 (A+B+C+D, 4 阶段, 4 commit) | 📋 Plan v1 → v2 | Lead | 2026-06-01 | 2026-06-01 | 21-layer2-v2.0-plan.md + `docs/layer2-v2.0-plan.md` |
 | 22 | [Phase 2] **Phase 1.6**: N2+explore+SystemMap 三件套加固 (插在 V2.0 A 之前) | 📋 Plan | Lead | 2026-06-01 | 待执行 | 21-layer2-v2.0-plan.md §3.0 |
 | 22.1 | [Phase 2] **Phase 1.6.1**: N2 SystemModel fallback 加固 (3 层防御: prompt + normalize + 兜底) | ✅ | Lead | 2026-06-02 | 2026-06-02 | 22-phase16-completion.md |
+| 22.2 | [Phase 2] **Phase 1.6.2/3/4**: planning_graph explore V1.6 化 + SystemMap 采样 20/30 + 文档 | ✅ | Lead | 2026-06-02 | 2026-06-02 | 23-phase16-2-3-4-completion.md |
 
 ## 队友分配
 

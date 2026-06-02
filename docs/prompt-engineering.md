@@ -281,3 +281,150 @@ L2 `<context>` 段必须显式消费以下 L1/Phase 1.5 输出：
 | 账号密码进 system_prompt 明文 | 改成 `<account>` 占位，工具自己读 task_config |
 | context 按"条"截断 | 改 token 估算截断 |
 | 工具失败不计入 consecutive_failures | 改 execute_node 错误时 +1 |
+
+---
+
+## 9. planning_graph explore 子图契约（V1.6.2 新增，Phase 1.6 落地）
+
+> **V1.6.2 落盘 (2026-06-02)**：把 V1.6 5 段 XML 模式从 L1 推广到 planning_graph 的 explore 子图。
+> 之前 `get_exploration_system_prompt` 是 `##` 自由文本, V1.7 漏掉, V2.0 计划 §3.0 点名补。
+
+### 9.1 节点定位
+
+planning_graph 探索子图位于 L1 流水线 (knowledge_extractor → use_case_modeler → use_case_coverage → system_modeler → goal_extractor) 完成之后, 在 generate_test_plan 之前, **通过工具调用驱动浏览器** 在真实系统里摸排。
+
+```
+L1 流水线 (纯 LLM 调用)
+  knowledge_extractor → use_case_modeler → use_case_coverage → system_modeler → goal_extractor
+                                                                              ↓
+L1.5 探索子图 (LLM + 工具混合, planning_graph)
+  extract_goals → explore_observe ↔ explore_decide → explore_execute  ← 循环
+                                          ↓ (停止 / 触发 safety valve)
+                                     generate_system_map → extract_scenarios
+                                          ↓
+                                     generate_plan → END
+```
+
+### 9.2 V1.6 5 段 XML 模板 (explore_decide)
+
+`get_exploration_system_prompt()` 在 `agents/ui/prompts.py` 重写为:
+
+```xml
+<role>
+你是一个 Web 应用测试探索智能体 (Web Test Explorer)。
+你的唯一职责是用工具系统化地探索目标系统, 收集足够信息让后续 generate_test_plan 节点生成高质量测试计划。
+</role>
+
+<context>
+- 上游: N3 GoalExtractor (high/medium/low 优先级) + N2 SystemModeler (system_name/modules/entities 作为理论导航地图)
+- 下游: explore_execute 执行 tool_call;explore_observe 抓页面状态传回
+- Safety Valves: MAX_EXPLORE_PAGES=20, MAX_EXPLORE_MINUTES=5 (超出会自动停止)
+</context>
+
+<task>
+基于当前页面 + 历史 + Goal 列表, 决定下一步: (a) 调一个工具让浏览器移动 (b) 不调任何工具让流程进入 generate_plan
+</task>
+
+<rules>
+1. Goal-Driven 优先 (硬约束)
+2. 真实路径优先: click/input_text/scroll, navigate 走 FireWall 白名单
+3. navigate 工具限制: 只能跳 base_url / 已探索 URL / PRD 提及 / 元素 href
+4. 凭证自动登录: 登录页必须用 task_config.accounts 登录
+5. tool_call 必填 OR 显式停止 (硬约束): 禁止纯文本回复
+6. 不要重复探索: 已探索 URL 不重复访问
+7. 完成判据: high 优先级 Goal 都找到入口 → 选不调工具
+8. 每步一个工具 (Phase 1 限制)
+</rules>
+
+<examples>
+<example type="good">登录页 + Goal "提交采购申请" → 调 input_text 填用户名</example>
+<example type="bad">登录页 + 调 navigate 跳 /admin → 违反规则 3 (FireWall 拒绝)</example>
+</examples>
+
+<output_contract>
+(a) tool_call 必填 (tool_calls 长度 = 1)
+(b) 显式 stop (tool_calls 为空)
+禁止: 纯文本, 多工具, 长 markdown
+</output_contract>
+```
+
+### 9.3 explore_decide inter-node 契约
+
+| 节点 | 上游输入 | 本节点输出 | 下游消费 | 硬约束 |
+|---|---|---|---|---|
+| **explore_observe** | task_id + 当前浏览器 | `page_info: dict` (url/title/interactive_elements/error_messages) + `screenshot: str` + `_exploration_history.append(...)` + `_explored_urls.append(...)` | explore_decide | 不调 LLM, 纯 Playwright + browser-use |
+| **explore_decide** (V1.6.2) | `page_info` + 历史 `_explored_urls` + `_goals` + `_scenarios` + `_system_model` (V1.6.2 新增) + `accounts` | `AIMessage` 带 `tool_calls` (长度 0 或 1) | explore_execute / generate_plan | **必填 tool_call** (含 mark_task_*) **或显式 stop** (空 tool_calls);禁止纯文本 |
+| **explore_execute** (V1.6.2 强化) | 最后 `AIMessage.tool_calls[0]` | `ToolMessage` (tool_call_id 必填) + `_explored_urls` 可能更新 | explore_observe | 工具失败返回 `ToolMessage(content="执行失败: ...")` 而非 raise;Navigate FireWall 保留 (4 个白名单) |
+| **generate_system_map** | `_exploration_history` (V1.6.3: 20 页 / 30 元素) | `SystemMap { pages, actions, forms }` (dict) | extract_scenarios | V1.6.3 sampling 20/30 + V1.6 XML prompt + safe_structured_invoke |
+| **extract_scenarios** | `prd` + `changelog` + `focus_areas` + `_system_model` + `_system_map` | `list[Scenario]` (via scenario_extractor) | generate_plan | SystemMap 注入到 system_model._actual_system_map 字段 |
+| **generate_plan** | `target_url` + `_explored_urls` + `_scenarios` + `_risk_points` + task_config | `test_plan: list[TestCase]` + `setups: dict[str, Setup]` (via create_test_plan tool_call) | runtime → execution_graph | 必填 tool_call with `create_test_plan`;否则 fallback 为空 plan |
+
+### 9.4 V1.6.2 关键改造点 (vs V1.7 漏点)
+
+| 改造 | 旧 | 新 (V1.6.2) | 理由 |
+|---|---|---|---|
+| `get_exploration_system_prompt` 模板 | `##` 自由文本 | V1.6 5 段 XML (role/context/task/rules/examples/output_contract) | 与 L1 8 skill 统一, 沉淀模式 |
+| `explore_decide` 上下文注入 | 缺 SystemModel | 注入 `_system_model.system_name/modules/entities/flows` 作为"理论导航地图" | V1.7 报告 §2.4 漏点; LLM 缺理论地图易漏探索 |
+| `explore_decide` tool_call 契约 | 隐式 (无规则约束) | 显式 `<output_contract>`: tool_call 必填 OR 显式 stop | V1.7 报告 4 fixture live 有 1 fixture LLM 卡"纯文本"死循环 |
+| `explore_execute` 失败处理 | 工具失败返回错误字符串 (已 OK) | docstring 显式标注 inter-node 契约 | 防回归 |
+| Navigate FireWall | 4 个白名单 (base_url/已探索/PRD/元素 href) | 保留 + prompt 端硬约束 | V1.6.2 把 FireWall 写进 prompt, 让 LLM 知道有这事, 别尝试跨域 navigate |
+
+### 9.5 V1.6.3 关键改造点 (system_mapper.py)
+
+| 改造 | 旧 (V1.2) | 新 (V1.6.3) | 理由 |
+|---|---|---|---|
+| 采样参数 | 10 页 / 15 元素 (硬编码) | **20 页 / 30 元素** (env 可降级: SYSTEM_MAP_MAX_PAGES, SYSTEM_MAP_MAX_ELEMENTS_PER_PAGE) | V1.2 省 token 太保守, 4 fixture 实测 20/30 ≈ 22K tokens, 安全 |
+| Prompt 模板 | `###` Markdown | V1.6 5 段 XML + few-shot (good/bad) | 与 L1 8 skill 统一 |
+| 入口函数 | `generate_system_map() -> dict` | **双入口**: `extract_system_map_structured() -> SystemMap` (新) + `generate_system_map() -> dict` (旧, 兼容 planning_graph) | 加 pydantic 强类型, 防字段漂移 |
+| 兜底 | 返回 `{"pages":[], "actions":[], "forms":[]}` | 返回 `SystemMap()` (空 pydantic) | 类型一致 |
+| 安全网 | 无 token 上限校验 | 30K 字符硬阈值测试 (test_v163_summarize_history_token_safety) | 防 65K 溢出 |
+
+### 9.6 反模式 (planning_graph 内禁止 - V1.6.2 生效)
+
+| 反模式 | 修复 |
+|---|---|
+| explore_decide 不知道下游 explore_execute | 显式 inter-node 契约 (本文档 §9.3) |
+| explore_decide 输出纯文本无 tool_call | 改 V1.6.5 段 XML, `<output_contract>` 硬约束 |
+| explore_decide 不知道 Navigate FireWall | prompt 加 rule + `<examples>` 展示反例 |
+| explore_decide 不注入 SystemModel | V1.6.2 显式注入 modules/entities/flows |
+| explore_execute 抛异常让规划子图崩 | try/except 包住, 返回 ToolMessage |
+| system_mapper 采样硬编码 10/15 | V1.6.3 改 20/30 + env 可降级 |
+| system_mapper prompt 是 `###` 自由文本 | 改 V1.6 5 段 XML |
+| scenario_extractor 不知道 SystemMap 存在 | 通过 system_model._actual_system_map 注入 (§9.3) |
+
+### 9.7 自动化守护 (回归测试)
+
+- `tests/agents/ui/test_planning_graph.py`: 13 个 V1.6.2 测试
+  - 6 个 prompt 结构测试 (V1.6 XML / tool_call 契约 / FireWall 文档化 / 账号注入 / scenarios 注入 / safety valve)
+  - 2 个 decide 行为测试 (注入 SystemModel / 无 SystemModel graceful)
+  - 3 个 execute 契约测试 (失败返 ToolMessage / FireWall 拦截 / FireWall 放行)
+  - 2 个共享契约测试 (LLM 收到 V1.6 XML / should_continue_exploring 处理 stop)
+- `tests/core/test_system_mapper.py`: 14 个 V1.6.3 测试
+  - 6 个 sampling 参数测试 (默认 20/30 / env 覆盖 / max_pages / max_elements / 空 history / token 安全)
+  - 2 个 prompt 结构测试 (V1.6 XML / output_contract)
+  - 6 个 schema 契约测试 (schema 有效 / 空 history / LLM 失败 / 走 safe_structured_invoke / dict 兼容层 / scenario_extractor 消费)
+
+### 9.8 验证
+
+```powershell
+# Mock 测试 (不消耗 token)
+pytest tests/agents/ui/test_planning_graph.py tests/core/test_system_mapper.py -v
+# 期望: 37 passed in ~5s
+
+# Live 测试 (消耗 token)
+$env:L1_LIVE = "1"
+$env:SYSTEM_MAP_LIVE = "1"
+pytest tests/core/test_system_mapper.py::test_system_mapper_live -v -s
+```
+
+### 9.9 V1.6.2/1.6.3 改造依据 (best practice)
+
+| 实践 | 来源 | 解决的问题 |
+|---|---|---|
+| V1.6 5 段 XML + few-shot | Anthropic 2026 prompt engineering | prompt 风格统一, 防 LLM 注意力漂移 |
+| Inter-node 契约 (本文档) | Codebridge 2026 Sub-agent manifest | L1↔L2 节点间 schema 漂移 (V1.7 漏点) |
+| Navigate FireWall 写进 prompt | Anthropic Writing Tools for Agents 2025-09 | 工具失败应预先约束, 而非仅靠代码 FireWall |
+| tool_call OR 显式 stop | ReAct (Yao et al. 2022) | ReAct 必须有 "stop action", 纯文本不算 action |
+| token 估算硬阈值 | Anthropic Context Engineering 2025-09 | 防 65K context window 溢出 |
+| env 可降级采样 | Context Engineering: just-in-time | 生产数据多了可临时降级跑通 |
+| 双入口 (pydantic + dict) | AppScale 2026 Structured Output | 强类型入口 + 弱类型兼容层, 不破坏 caller |
