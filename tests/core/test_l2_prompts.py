@@ -857,6 +857,163 @@ async def test_b4_format_page_info_used_in_decide_prompt(sample_test_case, sampl
 
 
 # ---------------------------------------------------------------------------
+# V2.0 C (2026-06-02): 联动 L1 业务模型 — rules/focus_areas/scenarios/risk_points
+# ---------------------------------------------------------------------------
+
+def test_c1_prd_rules_block_injected(sample_test_case):
+    """C1 契约: task_config.rules 应进 <prd_rules> 块, LLM 看到 PRD 规则."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    cfg = {"rules": ["不要测试支付", "只测 functional 类别"]}
+    p = get_execution_system_prompt(sample_test_case, cfg)
+    assert "<prd_rules>" in p
+    assert "不要测试支付" in p
+    assert "只测 functional 类别" in p
+
+
+def test_c2_focus_areas_block_injected_as_list(sample_test_case):
+    """C2 契约: task_config.focus_areas 是 list 时, 应进 <focus_areas> 块."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    cfg = {"focus_areas": ["登录", "导航", "表单校验"]}
+    p = get_execution_system_prompt(sample_test_case, cfg)
+    assert "<focus_areas>" in p
+    assert "登录" in p
+    assert "导航" in p
+    assert "表单校验" in p
+
+
+def test_c2_focus_areas_string_normalized_to_list(sample_test_case):
+    """C2 契约: task_config.focus_areas 是 string (逗号/换行分隔) 时, 应规范化为 list."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    cfg = {"focus_areas": "登录,导航\n表单"}
+    p = get_execution_system_prompt(sample_test_case, cfg)
+    assert "<focus_areas>" in p
+    # 三个都应出现
+    assert "登录" in p
+    assert "导航" in p
+    assert "表单" in p
+
+
+def test_c3_scenarios_block_injected(sample_test_case):
+    """C3 契约: task_config._scenarios 应进 <scenarios> 块."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    cfg = {
+        "_scenarios": [
+            {"priority": "high", "name": "采购申请", "entry_hint": "菜单 > 采购管理 > 新建"},
+            {"priority": "medium", "name": "库存查询", "entry_hint": "导航栏 > 库存"},
+        ]
+    }
+    p = get_execution_system_prompt(sample_test_case, cfg)
+    assert "<scenarios>" in p
+    assert "采购申请" in p
+    assert "库存查询" in p
+    assert "菜单 > 采购管理 > 新建" in p
+    # priority 标签
+    assert "high" in p
+    assert "medium" in p
+
+
+def test_c4_risk_points_block_injected(sample_test_case):
+    """C4 契约: task_config._risk_points 应进 <risk_points> 块."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    cfg = {
+        "_risk_points": [
+            {"severity": "high", "description": "SQL 注入漏洞在搜索框"},
+            {"severity": "medium", "description": "密码字段无强度校验"},
+        ]
+    }
+    p = get_execution_system_prompt(sample_test_case, cfg)
+    assert "<risk_points>" in p
+    assert "SQL 注入" in p
+    assert "密码字段" in p
+    assert "high" in p
+
+
+def test_c5_step_result_has_reasoning_chain_field():
+    """C5 契约: StepResult 新增 reasoning_chain 字段, list[str]."""
+    from core.interfaces import StepResult, AssertionResult
+    sr = StepResult(
+        step_index=0,
+        action_type="click",
+        action_target="#login",
+        action_args={"target": "#login"},
+        result="ok",
+        assertion=AssertionResult(status="pass", reasoning="通过"),
+        thought="点击登录按钮",
+        reasoning_chain=["[Decide] 我决定点击登录", "[Assert] 通过"],
+    )
+    assert sr.reasoning_chain == ["[Decide] 我决定点击登录", "[Assert] 通过"]
+
+
+@pytest.mark.asyncio
+async def test_c5_record_node_captures_reasoning_chain(sample_test_case):
+    """C5 集成: record_node 实际运行时, 应从 decide AIMessage + _last_assertion 抽取 reasoning_chain."""
+    from agents.ui.execution_graph import record_node
+    from langchain_core.messages import AIMessage
+    from core.interfaces import AssertionResult
+
+    # 模拟 decide_node 返回的 AIMessage (含 thinking 块)
+    ai_msg = AIMessage(
+        content=[
+            {"type": "thinking", "thinking": "我看到登录页, 应该输入用户名"},
+            {"type": "text", "text": "Input text"},
+        ],
+        tool_calls=[{"name": "input_text", "args": {"target": "#1", "value": "practice"}, "id": "c1"}],
+    )
+    state = {
+        "messages": [ai_msg],
+        "current_step": 1,  # execute incremented to 1
+        "consecutive_failures": 0,
+        "_last_tool_result": "ok",
+        "_last_change_report": None,
+        "_last_assertion": AssertionResult(status="inconclusive", reasoning="中间步骤"),
+    }
+    result = await record_node(state)
+    steps = result.get("_collected_steps", [])
+    assert len(steps) == 1
+    chain = steps[0].reasoning_chain
+    assert len(chain) == 2, f"应 2 条, 实际 {chain}"
+    assert "[Decide]" in chain[0]
+    assert "我看到登录页" in chain[0]
+    assert "[Assert]" in chain[1]
+    assert "中间步骤" in chain[1]
+
+
+@pytest.mark.asyncio
+async def test_c5_report_builder_includes_reasoning_chain_html():
+    """C5 集成: ReportBuilder HTML 报告应含 💭 AI 思考链 折叠区 (details/summary)."""
+    from core.report_builder import ReportBuilder
+    from core.interfaces import StepResult, AssertionResult, TestResult
+
+    rb = ReportBuilder(task_id="c5-test")
+    rb.add_result(TestResult(
+        test_case_id="TC-001",
+        test_case_title="登录",
+        status="passed",
+        steps=[
+            StepResult(
+                step_index=0,
+                action_type="click",
+                action_target="#login",
+                result="ok",
+                assertion=AssertionResult(status="pass", reasoning="通过"),
+                reasoning_chain=["[Decide] 我看到登录页", "[Assert] 通过"],
+            )
+        ],
+    ))
+    # 调用 build_html
+    html = rb.build_html(ai_summary="共 1 个用例")
+    assert "AI 思考链" in html, "C5 报告缺 AI 思考链折叠区"
+    assert "<details>" in html
+    assert "我看到登录页" in html
+    assert "通过" in html
+
+
+# ---------------------------------------------------------------------------
 # Live integration test (costs tokens, requires L2_LIVE=1)
 # ---------------------------------------------------------------------------
 

@@ -652,6 +652,28 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
             action_target = str(tool_call.get("args", {}).get("target", ""))
             action_args = tool_call.get("args", {})
 
+        # V2.0 C5 (2026-06-02): 捕获 reasoning_chain
+        # 从 decide AIMessage (last_ai_msg) 抽取 thinking 块, 从 _last_assertion 抽取 reasoning
+        # 形成"决策 → 断言"的完整思考链, ReportBuilder L2 卡片折叠展示
+        reasoning_chain: list[str] = []
+        think_text = last_ai_msg.content if isinstance(last_ai_msg.content, str) else ""
+        if not think_text and isinstance(last_ai_msg.content, list):
+            # list 格式: [{"type": "thinking", "thinking": "..."}, ...]
+            parts = []
+            for item in last_ai_msg.content:
+                if isinstance(item, dict):
+                    if item.get("type") == "thinking":
+                        parts.append(item.get("thinking", ""))
+                    elif item.get("type") == "text":
+                        parts.append(item.get("text", ""))
+            think_text = "\n".join(parts).strip()
+        if think_text:
+            reasoning_chain.append(f"[Decide] {think_text[:300]}{'...' if len(think_text) > 300 else ''}")
+
+        last_assertion = state.get("_last_assertion")
+        if last_assertion and last_assertion.reasoning:
+            reasoning_chain.append(f"[Assert] {last_assertion.reasoning[:300]}{'...' if len(last_assertion.reasoning) > 300 else ''}")
+
         step_result = StepResult(
             step_index=state.get("current_step", 0) - 1,  # execute already incremented
             action_type=action_type,
@@ -662,6 +684,7 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
             change_report=state.get("_last_change_report"),
             assertion=state.get("_last_assertion"),
             thought=last_ai_msg.content if isinstance(last_ai_msg.content, str) else str(last_ai_msg.content),
+            reasoning_chain=reasoning_chain,
         )
         collected_steps = [step_result]
 

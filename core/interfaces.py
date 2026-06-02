@@ -132,6 +132,7 @@ class StepResult(BaseModel):
     change_report: Optional[ChangeReport] = Field(default=None, description="变化报告")
     assertion: Optional[AssertionResult] = Field(default=None, description="断言结果")
     thought: str = Field(default="", description="AI 思考过程（AIMessage.content）")
+    reasoning_chain: list[str] = Field(default_factory=list, description="V2.0 C5: 跨步 AI 思考链 (decide + assert reasoning), 用于 ReportBuilder L2 卡片折叠展示")
 
 
 class AssertionResult(BaseModel):

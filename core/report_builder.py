@@ -499,6 +499,20 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
                                 {% endif %}
                             </td>
                         </tr>
+                        {% if step.reasoning_chain %}
+                        <tr>
+                            <td colspan="5" style="padding: 4px 12px 12px 36px; background: rgba(255,255,255,0.02);">
+                                <details>
+                                    <summary style="cursor: pointer; color: var(--text-muted); font-size: 0.78rem; padding: 4px 0;">
+                                        💭 AI 思考链 ({{ step.reasoning_chain|length }} 条)
+                                    </summary>
+                                    <div style="margin-top: 8px; padding: 10px; background: rgba(0,0,0,0.2); border-left: 2px solid var(--accent); border-radius: 3px; font-size: 0.82rem; line-height: 1.5; white-space: pre-wrap; font-family: monospace;">
+                                        {% for thought in step.reasoning_chain %}<div style="margin-bottom: 6px;">{{ thought }}</div>{% endfor %}
+                                    </div>
+                                </details>
+                            </td>
+                        </tr>
+                        {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>

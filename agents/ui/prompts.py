@@ -48,8 +48,10 @@ def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any]
         if rules:
             rules_block = "\n<prd_rules>\n" + "\n".join(f"- {r}" for r in rules[:5]) + "\n</prd_rules>\n"
 
-        # C2: focus_areas 注入
+        # C2: focus_areas 注入 (兼容 string / list 两种格式, 字符串按换行/逗号分割)
         focus = task_config.get("focus_areas", [])
+        if isinstance(focus, str):
+            focus = [s.strip() for s in focus.replace("\n", ",").split(",") if s.strip()]
         if focus:
             focus_block = "\n<focus_areas>\n" + "\n".join(f"- {f}" for f in focus[:5]) + "\n</focus_areas>\n"
 

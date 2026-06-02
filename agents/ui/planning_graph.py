@@ -406,6 +406,10 @@ async def generate_plan_node(state: dict[str, Any]) -> dict[str, Any]:
         except Exception as e:
             print(f"[RiskAnalyzer] Skipped due to error: {e}")
 
+        # V2.0 C4 (2026-06-02): 持久化 risk_points 到 task_config, 让 L2 prompt 的 <risk_points> 块能消费
+        task_config = dict(task_config)
+        task_config["_risk_points"] = risk_points
+
         prompt = get_plan_generation_prompt(
             target_url=target_url,
             explored_urls=explored_urls,
