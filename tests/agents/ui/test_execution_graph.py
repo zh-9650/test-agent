@@ -399,18 +399,14 @@ async def test_assert_node_mock():
         gone_elements=["#3 button: 登录"],
     )
 
-    # V2.0 A (2026-06-02): pre-existing test bug — 中文全角逗号(，) 在 JSON.loads 时
-    # 抛 SyntaxError, 改用规范 JSON 格式
-    llm_assert_response = AIMessage(
-        content='思考过程: URL已从登录页面跳转到主页, 验证成功。\n```json\n{"status": "PASS", "reasoning": "URL跳转成功, 验证通过。"}\n```'
-    )
-
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(return_value=llm_assert_response)
+    # V2.0 B2 (2026-06-02): assert_node 改走 safe_structured_invoke + pydantic AssertionResult.
+    # Mock 直接返回 AssertionResult 对象, 跳过 LLM 调用.
+    from core.interfaces import AssertionResult as _AR
+    mock_assertion = _AR(status="pass", reasoning="URL跳转成功, 验证通过。")
 
     with patch("agents.ui.execution_graph.detect_changes", return_value=mock_change_report), \
-         patch("agents.ui.execution_graph.get_llm_client", return_value=mock_llm), \
-         patch("agents.ui.execution_graph.get_assertion_prompt", return_value="请判断操作结果是否符合预期。"):
+         patch("agents.ui.execution_graph.get_assertion_prompt", return_value="请判断操作结果是否符合预期。"), \
+         patch("agents.ui.execution_graph.safe_structured_invoke", new=AsyncMock(return_value=mock_assertion)):
 
         result = await assert_node(state)
 

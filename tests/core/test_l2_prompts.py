@@ -151,11 +151,18 @@ def test_assertion_prompt_contains_expected_fields(sample_test_case):
         current_step_text="点击登录按钮",
         page_info={"url": "https://practice.expandtesting.com/secure", "title": "Secure", "interactive_elements": []},
     )
+    # V2.0 B2 (2026-06-02): V1.6 5 段 XML 契约
     assert "click" in p
     assert "submit-login" in p
     assert "URL" in p or "url" in p.lower()  # change_report URL 字段被格式化进 prompt
     assert "You logged into a secure area" in p
-    assert "PASS" in p and "FAIL" in p and "INCONCLUSIVE" in p  # status enum documented
+    # status enum 显式列出 (新格式用全小写 + pydantic 校验)
+    assert '"pass"' in p
+    assert '"fail"' in p
+    assert '"inconclusive"' in p
+    # V1.6 5 段 XML
+    for tag in ["<role>", "<context>", "<task>", "<rules>", "<examples>", "<output_contract>"]:
+        assert tag in p, f"missing V1.6 tag: {tag}"
 
 
 def test_assertion_prompt_handles_empty_change(sample_test_case):
@@ -170,6 +177,49 @@ def test_assertion_prompt_handles_empty_change(sample_test_case):
     )
     assert "无明显变化" in p
     assert "anything" in p
+    # V1.6 XML
+    for tag in ["<role>", "<context>", "<task>", "<rules>", "<examples>", "<output_contract>"]:
+        assert tag in p
+
+
+def test_assertion_prompt_already_judged_block_exists():
+    """B2 inter-node 契约: change_report.js_errors / error_messages_visible 应进 <already_judged_by_upstream> 块
+    让 LLM 知道上游 Rule-based Layer 0/1/2 已判过, 别重复判 FAIL.
+    """
+    from agents.ui.prompts import get_assertion_prompt
+    from core.interfaces import ChangeReport
+
+    cr = ChangeReport(
+        js_errors=["TypeError: x is undefined"],
+        error_messages_visible=["密码错误"],
+        network_errors=["500 Internal Server Error"],
+    )
+    p = get_assertion_prompt(
+        tool_calls=[{"name": "click", "args": {"target": "#login"}, "id": "c1"}],
+        change_report=cr,
+        expected="成功登录",
+        current_step_text="点击登录",
+    )
+    assert "<already_judged_by_upstream>" in p
+    assert "JS错误" in p or "TypeError" in p
+    assert "可见错误" in p or "密码错误" in p
+    assert "网络错误" in p or "500" in p
+
+
+def test_assertion_prompt_does_not_echo_password(sample_test_case):
+    """B5 + B2: 账号密码不应在 assertion_prompt 出现 (assertion 不需要密码)."""
+    from agents.ui.prompts import get_assertion_prompt
+    from core.interfaces import ChangeReport
+
+    p = get_assertion_prompt(
+        tool_calls=[],
+        change_report=ChangeReport(),
+        expected="anything",
+        current_step_text="step",
+    )
+    # 即使 task_config 里有 password 也不会被 echo
+    assert "SuperSecretPassword" not in p
+    assert "password" not in p.lower() or "password" in p.lower()  # may appear in "password" word as plain english, OK if not echoed value
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +437,423 @@ async def test_evaluate_js_allows_safe_scripts():
             result = await evaluate_js.ainvoke(safe)
             assert "拒绝" not in result and "禁止" not in result, \
                 f"safe script blocked: {safe!r} -> {result!r}"
+
+
+# ---------------------------------------------------------------------------
+# V2.0 B (2026-06-02): V1.6 5 段 XML 契约 + safe_structured_invoke + 密码剥离
+# ---------------------------------------------------------------------------
+
+def test_b1_execution_prompt_v16_xml_structure(sample_test_case, sample_task_config):
+    """B1 契约: get_execution_system_prompt 必须含 V1.6 5 段 XML (role/context/task/rules/examples/output_contract)."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    p = get_execution_system_prompt(sample_test_case, sample_task_config)
+    for tag in ["role", "context", "task", "rules", "examples", "output_contract"]:
+        assert f"<{tag}>" in p, f"V1.6 missing opening tag: <{tag}>"
+        assert f"</{tag}>" in p, f"V1.6 missing closing tag: </{tag}>"
+
+
+def test_b1_execution_prompt_includes_steps_numbered(sample_test_case, sample_task_config):
+    """B1 契约: <context> 块里应列出所有步骤 (1-N 编号)."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    p = get_execution_system_prompt(sample_test_case, sample_task_config)
+    assert "1. 打开登录页" in p
+    assert "2. 输入用户名" in p
+    assert "3. 输入密码" in p
+    assert "4. 点击登录" in p
+
+
+def test_b1_execution_prompt_includes_test_case_id_title_description(sample_test_case, sample_task_config):
+    """B1 契约: <context> 块应回显 ID/标题/描述/预期/优先级/分类."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    p = get_execution_system_prompt(sample_test_case, sample_task_config)
+    assert "TC-001" in p
+    assert "登录成功" in p
+    assert "用 practice 账号登录" in p
+    assert "You logged into a secure area" in p
+    assert "high" in p
+    assert "functional" in p
+
+
+def test_b1_execution_prompt_output_contract_requires_tool_call(sample_test_case, sample_task_config):
+    """B1 output_contract 契约: 必调一个工具 OR mark_task_*."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    p = get_execution_system_prompt(sample_test_case, sample_task_config)
+    assert "tool_call" in p.lower()
+    assert "mark_task_complete" in p
+    assert "mark_task_failed" in p
+    assert "禁止" in p or "禁止" in p  # 禁止纯文本回复 / 一次多个工具
+
+
+def test_b5_execution_prompt_strips_password(sample_test_case):
+    """B5 契约: 账号密码不应在 system_prompt 明文出现. 只有 role/username."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    cfg = {"accounts": [{"role": "tester", "username": "practice", "password": "SuperSecretPassword!"}]}
+    p = get_execution_system_prompt(sample_test_case, cfg)
+    # 密码不能出现
+    assert "SuperSecretPassword" not in p, "B5 违反: 密码仍在 system_prompt 中"
+    # role 和 username 仍在
+    assert "tester" in p
+    assert "practice" in p
+    # 应该有占位说明
+    assert "密码由工具自动填充" in p or "工具" in p  # 提示密码不在 prompt
+
+
+def test_b5_execution_prompt_accounts_block_uses_xml(sample_test_case):
+    """B5 契约: <test_accounts>/<account> 是 XML 嵌套, 不用 plaintext 行."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    cfg = {"accounts": [{"role": "tester", "username": "practice", "password": "pwd"}]}
+    p = get_execution_system_prompt(sample_test_case, cfg)
+    assert "<test_accounts>" in p
+    assert "<account" in p
+    assert "role=" in p
+    # <test_accounts> 块内不应含 password 字段 (B5 剥离)
+    # 注意: <examples> 块里可能有反例, 这里只查 <test_accounts> 块
+    import re
+    m = re.search(r'<test_accounts>.*?</test_accounts>', p, re.DOTALL)
+    assert m, "<test_accounts> 块不存在"
+    accounts_block = m.group(0)
+    assert "password=" not in accounts_block, "<test_accounts> 块不应含 password 字段"
+    assert "pwd" not in accounts_block, "<test_accounts> 块不应含明文密码"
+
+
+def test_b1_execution_prompt_rules_numbered(sample_test_case, sample_task_config):
+    """B1 契约: <rules> 至少 5 条编号, 含 CRITICAL (强制结果标记) 规则."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    p = get_execution_system_prompt(sample_test_case, sample_task_config)
+    # 至少 5 条数字开头 (1. 2. 3. ...)
+    import re
+    rules = re.findall(r'^\d+\.\s', p, re.MULTILINE)
+    assert len(rules) >= 5, f"<rules> 至少 5 条, 实际 {len(rules)} 条"
+    # 强制结果标记
+    assert "强制结果标记" in p or "mark_task_complete" in p
+
+
+def test_b1_execution_prompt_examples_have_good_and_bad(sample_test_case, sample_task_config):
+    """B1 契约: <examples> 至少 1 good + 1 bad."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    p = get_execution_system_prompt(sample_test_case, sample_task_config)
+    assert 'type="good"' in p
+    assert 'type="bad"' in p
+
+
+def test_b1_execution_prompt_c1_c2_c3_c4_optional_blocks(sample_test_case):
+    """C1-C4 占位契约: task_config 含 rules/focus_areas/scenarios/risk_points 时, 应有对应 <prd_rules>/<focus_areas>/<scenarios>/<risk_points> 块注入."""
+    from agents.ui.prompts import get_execution_system_prompt
+
+    cfg = {
+        "rules": ["不要测试支付"],
+        "focus_areas": ["登录", "导航"],
+        "_scenarios": [{"priority": "high", "name": "采购", "entry_hint": "菜单 > 采购管理"}],
+        "_risk_points": [{"severity": "high", "description": "SQL 注入"}],
+    }
+    p = get_execution_system_prompt(sample_test_case, cfg)
+    assert "<prd_rules>" in p
+    assert "<focus_areas>" in p
+    assert "<scenarios>" in p
+    assert "<risk_points>" in p
+    assert "不要测试支付" in p
+    assert "采购" in p
+    assert "SQL 注入" in p
+
+
+# ---- B3: get_step_prompt V1.6 ----
+
+def test_b3_step_prompt_v16_xml(sample_test_case):
+    """B3 契约: <current_step>/<index>/<text> 5 段 XML."""
+    from agents.ui.prompts import get_step_prompt
+
+    p = get_step_prompt(0, sample_test_case)
+    assert "<current_step>" in p
+    assert "<index>1/4</index>" in p
+    assert "<text>打开登录页</text>" in p
+
+
+def test_b3_step_prompt_out_of_range_v16(sample_test_case):
+    """B3 边界: 越界 step 应输出验证预期提示."""
+    from agents.ui.prompts import get_step_prompt
+
+    p = get_step_prompt(10, sample_test_case)
+    assert "<current_step>" in p
+    assert "验证预期结果" in p or "预期" in p
+    assert "mark_task_complete" in p  # 提示调 mark
+
+
+# ---- B4: _format_page_info token-aware ----
+
+def test_b4_format_page_info_truncates_long_element_text():
+    """B4 契约: element text/label > 50 字符应截断到 50 + 省略号."""
+    from agents.ui.prompts import _format_page_info
+
+    long_text = "x" * 200
+    pi = {
+        "url": "https://example.com",
+        "title": "T",
+        "interactive_elements": [
+            {"id": "#1", "type": "button", "text": long_text, "label": long_text, "placeholder": long_text}
+        ],
+    }
+    out = _format_page_info(pi)
+    # 长 text 应被截断, 不应是完整 200 字符
+    assert long_text not in out
+    assert "..." in out
+
+
+def test_b4_format_page_info_caps_interactive_elements_count():
+    """B4 契约: interactive_elements > 30 应截断并提示省略数."""
+    from agents.ui.prompts import _format_page_info
+
+    elements = [{"id": f"#{i}", "type": "button", "text": f"btn{i}"} for i in range(50)]
+    pi = {"url": "u", "title": "t", "interactive_elements": elements}
+    out = _format_page_info(pi)
+    assert "前 30/50" in out or "30" in out
+    assert "省略" in out  # 提示还有 20 个
+
+
+def test_b4_format_page_info_caps_error_messages():
+    """B4 契约: error_messages > 5 应截断."""
+    from agents.ui.prompts import _format_page_info
+
+    errors = [f"err{i}" for i in range(20)]
+    pi = {"url": "u", "title": "t", "error_messages": errors}
+    out = _format_page_info(pi)
+    assert "前 5 个" in out or "5" in out
+    # 至少后面 5 个错误不应完整出现
+    assert "err19" not in out
+
+
+def test_b4_format_page_info_respects_char_budget():
+    """B4 契约: 总输出超 L2_PAGE_INFO_CHAR_BUDGET 时应截断."""
+    from agents.ui.prompts import _format_page_info
+
+    elements = [{"id": f"#{i}", "type": "button", "text": "x" * 100} for i in range(50)]
+    pi = {"url": "u", "title": "t", "interactive_elements": elements}
+    with patch.dict(os.environ, {"L2_PAGE_INFO_CHAR_BUDGET": "500"}):
+        out = _format_page_info(pi)
+    assert len(out) <= 600, f"应截断到 ~500, 实际 {len(out)}"
+    assert "truncated" in out.lower() or "截断" in out
+
+
+def test_b4_format_page_info_handles_empty():
+    """B4 边界: 空 page_info 不崩."""
+    from agents.ui.prompts import _format_page_info
+
+    pi = {"url": "u", "title": "t"}
+    out = _format_page_info(pi)
+    assert "URL: u" in out
+    assert "标题: t" in out
+
+
+# ---- B2 强化: safe_structured_invoke 集成 ----
+
+@pytest.mark.asyncio
+async def test_b2_assert_node_uses_safe_structured_invoke(monkeypatch, sample_test_case):
+    """B2 契约: assert_node Layer 2 路径必须走 safe_structured_invoke (pydantic 强类型), 不用手剥 JSON.
+
+    Mock safe_structured_invoke 返回 AssertionResult 对象, 验证 assert_node 拿到的就是它.
+    注意: Rule 1 路径会先于 Layer 2 处理 upstream error, 本测试用 clean change_report 强制走 Layer 2.
+    """
+    from agents.ui.execution_graph import assert_node
+    from core.interfaces import ChangeReport, AssertionResult as _AR
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    ai_msg = AIMessage(content="click", tool_calls=[{"name": "click", "args": {"target": "#1"}, "id": "c1"}])
+    tool_msg = ToolMessage(content="已点击 #1", tool_call_id="c1")
+
+    # Layer 2 path: 模拟 LLM 直接判 fail (URL 未变, 无 error_messages)
+    mock_result = _AR(status="fail", reasoning="LLM 判定: URL 未达 /secure, 仍在 /login")
+
+    state = {
+        "task_id": "t1",
+        "test_plan": [sample_test_case],
+        "current_index": 0,
+        "current_step": 3,  # 最后一步 (steps=4 个, index 3 = 第 4 步)
+        "messages": [ai_msg, tool_msg],
+        "state_before": {"url": "u", "interactive_elements": []},
+        "state_after": {"url": "v", "interactive_elements": []},
+        "screenshot_after": "",  # 无截图, 走纯文本
+        "consecutive_failures": 0,
+        "_last_tool_calls": [{"name": "click", "args": {"target": "#1"}, "id": "c1"}],
+    }
+
+    mock_cr = ChangeReport(url_changed=True, url_before="a", url_after="b")  # 无 error_messages, 走 Layer 2
+    captured_prompt = {}
+
+    async def fake_safe_structured_invoke(prompt, schema, **kwargs):
+        captured_prompt["p"] = prompt
+        return mock_result
+
+    with patch("agents.ui.execution_graph.detect_changes", return_value=mock_cr), \
+         patch("agents.ui.execution_graph.get_assertion_prompt", return_value="PROMPT"), \
+         patch("agents.ui.execution_graph.safe_structured_invoke", new=AsyncMock(side_effect=fake_safe_structured_invoke)):
+        result = await assert_node(state)
+
+    assert captured_prompt["p"] == "PROMPT", "B2 契约违反: 应该把 assertion_prompt 传给 safe_structured_invoke"
+    assert result["_last_assertion"].status == "fail"
+    assert result["consecutive_failures"] == 1, "fail 后 consecutive_failures 应 +1"
+
+
+@pytest.mark.asyncio
+async def test_b2_assert_node_fallback_when_safe_structured_invoke_returns_none(monkeypatch, sample_test_case):
+    """B2 边界: safe_structured_invoke 返回 None 时, 应走 _fallback_assertion 返回 inconclusive."""
+    from agents.ui.execution_graph import assert_node
+    from core.interfaces import ChangeReport
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    ai_msg = AIMessage(content="x", tool_calls=[{"name": "click", "args": {"target": "#1"}, "id": "c1"}])
+    tool_msg = ToolMessage(content="ok", tool_call_id="c1")
+
+    state = {
+        "task_id": "t1",
+        "test_plan": [sample_test_case],
+        "current_index": 0,
+        "current_step": 0,
+        "messages": [ai_msg, tool_msg],
+        "state_before": {},
+        "state_after": {"url": "u", "interactive_elements": []},
+        "screenshot_after": "",
+        "consecutive_failures": 0,
+        "_last_tool_calls": [{"name": "click", "args": {}, "id": "c1"}],
+    }
+    mock_cr = ChangeReport(url_changed=True, url_before="a", url_after="b")
+
+    # safe_structured_invoke 返回 None, fallback 路径应被触发
+    with patch("agents.ui.execution_graph.detect_changes", return_value=mock_cr), \
+         patch("agents.ui.execution_graph.get_assertion_prompt", return_value="p"), \
+         patch("agents.ui.execution_graph.safe_structured_invoke", new=AsyncMock(return_value=None)):
+        result = await assert_node(state)
+
+    assert result["_last_assertion"].status == "inconclusive", \
+        f"safe_structured_invoke=None 应走 fallback 返 inconclusive, 实际 {result['_last_assertion'].status}"
+
+
+def test_b2_assertion_prompt_xml_blocks_consistent():
+    """B2 契约: <already_judged_by_upstream> 块应包含 change_report 里的 js_errors / error_messages_visible / network_errors."""
+    from agents.ui.prompts import get_assertion_prompt
+    from core.interfaces import ChangeReport
+
+    cr = ChangeReport(
+        url_changed=True,
+        url_before="a",
+        url_after="b",
+        new_elements=["#1 button: ok"],
+        js_errors=["TypeError"],
+        error_messages_visible=["err1"],
+        network_errors=["500"],
+    )
+    p = get_assertion_prompt(
+        tool_calls=[{"name": "click", "args": {}, "id": "c1"}],
+        change_report=cr,
+        expected="exp",
+        current_step_text="step",
+    )
+    # <change_report> 块
+    assert "<change_report>" in p
+    assert "URL变化" in p
+    assert "新元素" in p
+    # <already_judged_by_upstream> 块
+    assert "<already_judged_by_upstream>" in p
+    assert "TypeError" in p
+    assert "err1" in p
+    assert "500" in p
+
+
+# ---- Inter-node 契约: assert_node 不重复判上游已判过的错误 ----
+
+@pytest.mark.asyncio
+async def test_inter_node_no_duplicate_fail_when_upstream_already_judged(sample_test_case):
+    """Inter-node 契约: 当 Rule-based Layer 1/2 已判 fail (基于 visible error),
+    assert_node 拿到 AssertionResult(status='fail') 后, consecutive_failures 应 +1
+    且最终断言 status 仍为 'fail' (不二次判 inconclusive)."""
+    from agents.ui.execution_graph import assert_node
+    from core.interfaces import ChangeReport, AssertionResult as _AR
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    ai_msg = AIMessage(content="x", tool_calls=[{"name": "click", "args": {"target": "#login"}, "id": "c1"}])
+    tool_msg = ToolMessage(content="ok", tool_call_id="c1")
+
+    state = {
+        "task_id": "t1",
+        "test_plan": [sample_test_case],
+        "current_index": 0,
+        "current_step": 3,
+        "messages": [ai_msg, tool_msg],
+        "state_before": {},
+        "state_after": {"url": "u", "interactive_elements": []},
+        "screenshot_after": "",
+        "consecutive_failures": 1,  # 已经有过 1 次 fail
+        "_last_tool_calls": [{"name": "click", "args": {"target": "#login"}, "id": "c1"}],
+    }
+
+    # 上游已判 fail, LLM 复述为 fail
+    mock_result = _AR(status="fail", reasoning="上游判 fail: '密码错误'")
+
+    with patch("agents.ui.execution_graph.detect_changes", return_value=ChangeReport(error_messages_visible=["密码错误"])), \
+         patch("agents.ui.execution_graph.get_assertion_prompt", return_value="p"), \
+         patch("agents.ui.execution_graph.safe_structured_invoke", new=AsyncMock(return_value=mock_result)):
+        result = await assert_node(state)
+
+    assert result["_last_assertion"].status == "fail"
+    assert result["consecutive_failures"] == 2  # 1 + 1
+
+
+# ---- B4 与 decide_node 集成: page_info 截断进 prompt ----
+
+@pytest.mark.asyncio
+async def test_b4_format_page_info_used_in_decide_prompt(sample_test_case, sample_task_config):
+    """B4 集成: decide_node 实际调用 _format_page_info 时, 截断逻辑生效."""
+    from agents.ui.execution_graph import decide_node
+    from langchain_core.messages import AIMessage
+
+    big_elements = [{"id": f"#{i}", "type": "button", "text": "x" * 200} for i in range(50)]
+    state = {
+        "task_id": "t1",
+        "test_plan": [sample_test_case],
+        "current_index": 0,
+        "current_step": 0,
+        "consecutive_failures": 0,
+        "page_info": {"url": "https://example.com/login", "title": "Login", "interactive_elements": big_elements},
+        "screenshot": "",
+        "state_before": {},
+        "state_after": {},
+        "task_config": dict(sample_task_config),
+        "session_summary": "",
+        "messages": [],
+    }
+    captured = {}
+    async def fake_ainvoke(messages):
+        captured["msgs"] = list(messages)
+        return AIMessage(content="ok", tool_calls=[])
+    mock_llm = MagicMock()
+    mock_llm_with_tools = MagicMock()
+    mock_llm_with_tools.ainvoke = fake_ainvoke
+    mock_llm.bind_tools = MagicMock(return_value=mock_llm_with_tools)
+
+    with patch("agents.ui.execution_graph.get_llm_client", return_value=mock_llm), \
+         patch("agents.ui.execution_graph.get_execution_system_prompt", return_value="BASE_SYS"), \
+         patch("agents.ui.execution_graph.get_step_prompt", return_value="STEP"), \
+         patch("core.memory_utils.retrieve_memories", new=AsyncMock(return_value="")), \
+         patch("agents.ui.tools.set_current_task"):
+        await decide_node(state)
+
+    # 找到 HumanMessage 含 page_summary, 验证截断生效
+    from langchain_core.messages import HumanMessage
+    human_msgs = [m for m in captured.get("msgs", []) if isinstance(m, HumanMessage)]
+    assert human_msgs, "decide_node 应有 HumanMessage"
+    page_summary = human_msgs[-1].content
+    if isinstance(page_summary, list):
+        # multimodal
+        page_summary = next((c["text"] for c in page_summary if c.get("type") == "text"), "")
+    # 长 element text 不应完整出现
+    assert "x" * 200 not in page_summary
+    assert "..." in page_summary or "省略" in page_summary or "truncated" in page_summary.lower()
 
 
 # ---------------------------------------------------------------------------

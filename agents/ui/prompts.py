@@ -14,53 +14,171 @@ from core.interfaces import TestCase
 
 
 def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any] | None = None) -> str:
-    """System prompt for the execution phase of a single test case."""
-    accounts_info = ""
-    memory_info = ""
+    """V1.6 5 段 XML system prompt (B1, 2026-06-02).
+
+    Sections:
+    - <role>: 单一身份 (Web Test Executor)
+    - <context>: 当前 test_case 元数据 + accounts (角色+用户名, 密码不暴露) + memory + session_summary slot
+    - <task>: 一句话任务
+    - <rules>: 编号 1-N 同步规则
+    - <examples>: 1 good + 1 bad
+    - <output_contract>: 必调一个工具 OR mark_task_*
+
+    B5 fix: 账号密码从 system_prompt 剥离 — 改为只暴露 role/username,
+    工具自己读 task_config 拿密码 (避免密码进 LLM 上下文 + 明文落盘风险).
+    """
+    accounts_block = ""
+    memory_block = ""
+    rules_block = ""
+    focus_block = ""
+    scenarios_block = ""
+    risk_block = ""
+
     if task_config:
-        if task_config.get("accounts"):
-            accounts = task_config.get("accounts", [])
-            accounts_info = "\n## 测试账号\n你可以使用以下提供的测试账号进行登录或测试：\n"
+        # B5: 账号密码剥离 - 只暴露 role/username, 密码不写入 system_prompt
+        accounts = task_config.get("accounts", [])
+        if accounts:
+            accounts_block = "\n<test_accounts>\n登录或测试时可使用以下账号 (密码由工具自动填充, 不在 prompt 中暴露):\n"
             for a in accounts:
-                accounts_info += f"- 角色: {a.get('role', 'N/A')}, 账号: {a.get('username', 'N/A')}, 密码: {a.get('password', 'N/A')}\n"
-        
-        if task_config.get("memory_context"):
-            memory_info = task_config.get("memory_context", "")
+                accounts_block += f"- <account role=\"{a.get('role', 'N/A')}\">username: {a.get('username', 'N/A')}</account>\n"
+            accounts_block += "</test_accounts>\n"
 
-    return f"""你是一个专业的Web应用测试工程师AI。你正在执行一个测试用例。
+        # C1: prd_rules 注入 (Phase C 占位, 当前 task_config 可能没这字段)
+        rules = task_config.get("rules", [])
+        if rules:
+            rules_block = "\n<prd_rules>\n" + "\n".join(f"- {r}" for r in rules[:5]) + "\n</prd_rules>\n"
 
-## 当前测试用例
-- ID: {test_case.id}
+        # C2: focus_areas 注入
+        focus = task_config.get("focus_areas", [])
+        if focus:
+            focus_block = "\n<focus_areas>\n" + "\n".join(f"- {f}" for f in focus[:5]) + "\n</focus_areas>\n"
+
+        # C3: scenarios 注入
+        scenarios = task_config.get("_scenarios", [])
+        if scenarios:
+            scenarios_block = "\n<scenarios>\n" + "\n".join(
+                f"- [{s.get('priority', 'medium')}] {s.get('name', '')}: {s.get('entry_hint', '')}"
+                for s in scenarios[:5]
+            ) + "\n</scenarios>\n"
+
+        # C4: risk_points 注入
+        risk_points = task_config.get("_risk_points", [])
+        if risk_points:
+            risk_block = "\n<risk_points>\n" + "\n".join(
+                f"- [{rp.get('severity', 'medium')}] {rp.get('description', '')}"
+                for rp in risk_points[:5]
+            ) + "\n</risk_points>\n"
+
+        # Memory context (RAG)
+        memory = task_config.get("memory_context", "")
+        if memory:
+            memory_block = f"\n<memory_context>\n{memory}\n</memory_context>\n"
+
+    steps_text = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(test_case.steps))
+
+    return f"""<role>
+你是 Web 应用测试执行智能体 (Web Test Executor)。
+你的唯一职责是按当前测试用例的步骤, 用工具系统化地操作浏览器, 验证预期结果。
+你不是写代码的, 你是"用浏览器思考"的 QA 执行者。
+</role>
+
+<context>
+- 当前测试用例 ID: {test_case.id}
 - 标题: {test_case.title}
 - 描述: {test_case.description}
 - 预期结果: {test_case.expected}
-{accounts_info}
-{memory_info}
-## 你的工作方式
-1. 观察当前页面状态（页面元素、结构、状态）
-2. 根据测试步骤决定下一步操作
-3. 使用提供的工具与页面交互
-4. 允许一次性下发多个操作组合（如先输入账号再输入密码最后点击登录），系统会按顺序依次执行
+- 步骤:
+{steps_text}
+- 优先级: {test_case.priority}
+- 分类: {test_case.category}
+{accounts_block}{rules_block}{focus_block}{scenarios_block}{risk_block}{memory_block}
+- 上游: planning_graph 已生成 test_plan, 当前是第 N 个用例
+- 下游: observe → decide → execute → assert → record 循环, 由 LangGraph 调度
+- 你的成功定义: 调一个工具让浏览器前进; 或当用例达成/失败/跳过时, 调 mark_task_*
+</context>
 
-## ⚠️ 核心防呆与同步规则 (CRITICAL SYNC RULES)
-1. **强制结果标记机制**：在你认为当前测试步骤或整个用例已完成时，**必须**调用 `mark_task_complete`。如果是彻底失败，调用 `mark_task_failed`。如果你不调用这三个标记工具之一，系统将认为你还在思考，导致死循环。
-2. **表单校验拦截 (Form Validation)**：在点击任何“保存”、“提交”或“登录”按钮前，或在点击后页面没有跳转时：
-   - **必须**检查页面上是否有红字错误信息（Validation Errors）。
-   - 如果有错误信息，**绝不允许**强行标记任务成功或关闭弹窗，**必须**补全缺失的字段或修正错误后重试。
-3. **DOM 异步渲染保护 (Dropdown & Modal Isolation)**：如果你的点击动作会触发一个下拉框展开，或弹出一个对话框（Modal），**必须在点击后立刻停止，等待系统传回最新的截图，在下一步再去操作新出现的元素**。绝对禁止在同一个组合操作里既点击下拉框又去选里面的值，否则会导致元素定位失败！
+<task>
+基于当前页面状态 + 当前步骤 + 预期结果, 决定下一步:
+(a) 调一个工具让浏览器移动 (click/input_text/scroll/press_key/...) — 优先选当前步骤对应的操作
+(b) 调 mark_task_complete (用例达成) / mark_task_failed (用例彻底失败) / mark_task_skipped (用例主动跳过)
+</task>
 
-## 完成条件
-当你确认所有测试步骤已完成，预期结果已验证，**必须调用 `mark_task_complete` 工具**。如果遇到致命错误无法进行，**必须调用 `mark_task_failed` 工具**。
+<rules>
+1. **强制结果标记机制 (硬约束)**: 在你认为当前测试步骤或整个用例已完成/失败/跳过时, **必须**调用 mark_task_complete / mark_task_failed / mark_task_skipped 之一. 不调用会被判死循环.
+2. **表单校验拦截 (Form Validation)**: 在点击"保存/提交/登录"按钮前, **必须**检查页面上是否有红字错误信息. 有错误, 补全/修正后重试, 绝不允许强行 mark_task_complete.
+3. **DOM 异步渲染保护 (Dropdown & Modal Isolation)**: 如果点击会触发下拉框展开或弹窗 (Modal), **必须**点击后立刻停, 等下一步拿到新截图再操作新元素. 禁止同一个 tool_call 里既点下拉又选值.
+4. **一个工具一次 (Phase 1 限制)**: 不要在同一次回复中调多个工具 (LangGraph 一次只取一个).
+5. **凭证自动登录 (硬约束)**: 遇到登录页面, **必须**用 <test_accounts> 里的账号登录进入后台, 不要在登录页停滞.
+6. **使用工具读取账号**: 密码不在 system_prompt 中, 工具内部自动从 task_config 读, 你只调工具不传 password 参数.
+7. **<prd_rules> 优先级最高**: 如果 <prd_rules> 里有"不要测试 X", 即使步骤里包含也跳过.
+8. **<focus_areas> 优先关注**: 用例设计与 step 选择优先对齐 <focus_areas>.
+9. **<risk_points> 重点验证**: 遇到 <risk_points> 里的场景, 必须触发相关路径并验证.
+10. **完成判据**: 当所有步骤已执行, 且页面变化/URL/可见元素明确满足 <预期结果> 时, mark_task_complete.
+</rules>
+
+<examples>
+<example type="good">
+当前步骤 2/4: 输入用户名
+页面状态: 有 #username 输入框可见
+→ 调 input_text(target="#username", value="practice")
+</example>
+
+<example type="good">
+当前步骤 4/4: 点击登录
+页面状态: 账号密码都已填, #login-btn 可点
+→ 调 click(target="#login-btn")
+</example>
+
+<example type="bad">
+当前页面: 登录页
+→ 输出纯文本: "我应该登录" 但不调任何工具
+违反规则 1 — 不调 mark_task_* 会被判死循环
+</example>
+
+<example type="bad">
+当前步骤 1/4: 打开登录页
+→ 调 input_text(target="#username", value="practice", password="<此处省略明文>")
+违反规则 6 — 密码不应进 prompt, 工具自己读
+</example>
+</examples>
+
+<output_contract>
+每次 decide 调用必须满足以下两种之一:
+(a) **tool_call 必填**: 调用一个工具 (click / input_text / scroll / press_key / navigate / get_current_page / update_element_map / evaluate_js / mark_task_*), tool_calls 数组长度 = 1
+(b) **显式 mark**: 当用例达成/失败/跳过时, 调 mark_task_complete / mark_task_failed / mark_task_skipped, reasoning 字段 ≤ 200 字描述判定理由
+
+禁止:
+- 纯文本回复不带 tool_call (会被判死循环)
+- 一次回复调多个工具 (Phase 1 限制, LangGraph 只取第一个)
+- 在 tool_call 之外输出 markdown / JSON 块 / 解释性长文 (tool_call 即答案)
+- 把密码或其他敏感信息嵌入 tool_call 的 value 参数
+</output_contract>
 """
 
 
-
 def get_step_prompt(step_index: int, test_case: TestCase) -> str:
-    """Prompt for the current step."""
+    """V1.6 5 段 XML step prompt (B3, 2026-06-02).
+
+    输出短小 — 这是 HumanMessage 的一部分, 紧跟在 system_prompt 后.
+    """
     steps = test_case.steps
-    if step_index < len(steps):
-        return f"当前步骤 {step_index + 1}/{len(steps)}: {steps[step_index]}"
-    return f"步骤 {step_index + 1}: 验证预期结果是否满足"
+    total = len(steps)
+    if step_index < total:
+        current = steps[step_index]
+        return f"""<current_step>
+<index>{step_index + 1}/{total}</index>
+<text>{current}</text>
+</current_step>
+
+请观察页面状态, 决定下一步操作. 如果该步骤已完成, 推进到下一条; 如果是最后一步, 验证预期结果并调 mark_task_*.\
+"""
+    return f"""<current_step>
+<index>{step_index + 1}</index>
+<text>验证预期结果: {test_case.expected}</text>
+</current_step>
+
+所有 steps 已执行, 请基于当前页面状态判断预期结果是否满足, 调 mark_task_complete / mark_task_failed / mark_task_skipped 之一.\
+"""
 
 
 def get_assertion_prompt(
@@ -70,13 +188,24 @@ def get_assertion_prompt(
     current_step_text: str,
     page_info: dict[str, Any] | None = None,
 ) -> str:
-    """Prompt for LLM semantic assertion."""
+    """V1.6 5 段 XML assertion prompt (B2, 2026-06-02).
+
+    Sections:
+    - <role>: 单一身份 (Test Assertion Judge)
+    - <context>: 工具调用 + change_report + page_info + 上游已判过的错误
+    - <task>: 一句话任务
+    - <rules>: 编号 1-N (含 inter-node 契约: 上游已判过的别再判)
+    - <examples>: 1 good PASS + 1 good FAIL + 1 good INCONCLUSIVE
+    - <output_contract>: 显式声明 AssertionResult JSON schema, 走 safe_structured_invoke
+    """
     tool_info = ""
     if tool_calls:
         calls_text = [f"{tc['name']}({tc.get('args', {})})" for tc in tool_calls]
-        tool_info = f"执行的操作序列: {', '.join(calls_text)}"
+        tool_info = "\n".join(f"  - {ct}" for ct in calls_text)
 
+    # change_report 格式化
     changes: list[str] = []
+    already_judged: list[str] = []  # 上游已判过的 (Rule 4: 别再判)
     if change_report:
         if change_report.url_changed:
             changes.append(
@@ -90,110 +219,180 @@ def get_assertion_prompt(
             changes.append(
                 f"消失元素: {', '.join(change_report.gone_elements[:5])}"
             )
-        if change_report.js_errors:
-            changes.append(f"JS错误: {', '.join(change_report.js_errors[:3])}")
-        if change_report.error_messages_visible:
-            changes.append(
-                f"可见错误: {', '.join(change_report.error_messages_visible)}"
-            )
         if change_report.modal_appeared:
             changes.append("弹窗出现")
+        # 上游已判过的 (B2 inter-node 契约): js_errors / error_messages_visible / network_errors
+        # Rule-based Layer 0/1/2 已处理, LLM 不要重复判 FAIL
+        if change_report.js_errors:
+            already_judged.append(f"JS错误(已判): {', '.join(change_report.js_errors[:3])}")
+        if change_report.error_messages_visible:
+            already_judged.append(f"可见错误(已判): {', '.join(change_report.error_messages_visible[:3])}")
+        if change_report.network_errors:
+            already_judged.append(f"网络错误(已判): {', '.join(change_report.network_errors[:3])}")
 
-    change_text = "\n".join(changes) if changes else "无明显变化"
+    change_text = "\n".join(f"  - {c}" for c in changes) if changes else "  - 无明显变化"
+    judged_text = "\n".join(f"  - {j}" for j in already_judged) if already_judged else "  - (无)"
 
     page_state_text = ""
     if page_info:
-        page_state_text = "\n## 当前页面状态（最新全貌）\n" + _format_page_info(page_info)
+        page_state_text = "\n<page_state>\n" + _format_page_info(page_info) + "\n</page_state>\n"
 
-    return f"""你是一个专业的 UI 自动化测试断言专家。你的任务是根据智能体刚刚执行的【具体操作】和页面的【前后变化】，判断该操作是否达成了测试用例的【最终预期结果】。
+    return f"""<role>
+你是 UI 自动化测试断言专家 (Test Assertion Judge).
+你的唯一职责是基于【已执行的操作 + 页面变化 + 上游已判过的错误】, 判断该步骤是否达成测试用例的【最终预期结果】.
+你不是写代码的, 你是"看页面 + 看规则"的断言判官.
+</role>
 
-## 刚刚执行的实际操作
-{tool_info}
-
-## 当前计划的步骤描述（仅供参考，可能与实际操作有差异）
-{current_step_text}
-
-## 页面变化（与上一步的差异）
-{change_text}
-{page_state_text}
-
-## 用例的最终预期结果
+<context>
+<expected_result>
 {expected}
+</expected_result>
 
-## 判断策略（极其重要）
-1. **区分中间步骤与决断步骤**：如果当前步骤只是一个过渡动作（如滚动页面、等待、输入文本但未提交），只要页面未报错崩溃，就不应该判定为 PASS 或 FAIL，而必须判定为 INCONCLUSIVE（不确定）。
-2. **只有最终预期达成才能 PASS**：只有当页面的【当前状态】或【页面变化】已经明确显示满足了【用例的最终预期结果】时，才能输出 PASS。
-3. **明确的失败**：如果操作后出现了错误提示、网络异常，或者执行了触发动作但预期元素未出现，则判定为 FAIL。
+<tool_calls>
+{tool_info if tool_info else "  (无)"}
+</tool_calls>
 
-## 示例 (Few-Shot Examples)
+<current_step_text>
+{current_step_text}
+</current_step_text>
 
-示例 1（中间步骤，未达最终预期）：
-操作: scroll({{"direction": "down"}})
-当前步骤目标: 找到页面底部的提交按钮
-预期结果: 订单提交成功并显示“感谢购买”
-评估结果:
-思考过程：当前操作是向下滚动页面，目的是寻找提交按钮。由于尚未进行实际的提交动作，也没有页面崩溃或异常，因此用例的最终预期尚未达成，但也没有失败。
+<change_report>
+{change_text}
+</change_report>
+
+<already_judged_by_upstream>
+{judged_text}
+</already_judged_by_upstream>
+{page_state_text}
+</context>
+
+<task>
+基于上述信息, 输出 AssertionResult (status ∈ {{pass, fail, inconclusive}}, reasoning ≤ 200 字).
+</task>
+
+<rules>
+1. **区分中间步骤与决断步骤**: 如果当前步骤只是过渡动作 (滚动/等待/输入未提交), 且页面未报错, 必须判 INCONCLUSIVE, 不准判 PASS/FAIL.
+2. **只有最终预期达成才能 PASS**: 只有 page_state 或 change_report 明确显示满足 expected, 才能 PASS.
+3. **明确失败才能 FAIL**: 操作后出现未预期的错误/网络异常/触发动作但预期元素未出现, 才判 FAIL.
+4. **inter-node 契约 (硬约束)**: <already_judged_by_upstream> 里的错误 Rule-based Layer 0/1/2 已判过, **不要再判 FAIL**; 只复述 PASS/INCONCLUSIVE 即可.
+5. **截图优先**: 截图比 change_report 更权威, 两者冲突时以截图为准.
+6. **JSON 唯一输出**: reasoning + status 必须严格符合 <output_contract> 的 JSON schema, 不要在 JSON 之外加解释.
+</rules>
+
+<examples>
+<example type="good" status="INCONCLUSIVE">
+tool_calls: scroll({{"direction": "down"}})
+current_step: 找到提交按钮
+expected: 订单提交成功并显示"感谢购买"
+change_report: 无明显变化
+already_judged: (无)
+→ 滚动是过渡动作, 尚未触发提交, 预期未达成
 {{
-  "status": "INCONCLUSIVE",
-  "reasoning": "滚动只是为了寻找按钮，未触发提交，最终预期尚未达成。"
+  "status": "inconclusive",
+  "reasoning": "滚动仅为寻找提交按钮, 未触发提交, 预期未达成。"
+}}
+</example>
+
+<example type="good" status="PASS">
+tool_calls: click({{"target": "#submit-btn"}})
+current_step: 点击提交按钮
+expected: 订单提交成功并显示"感谢购买"
+change_report: 新元素: "感谢购买"
+already_judged: (无)
+→ change_report 直接显示预期元素
+{{
+  "status": "pass",
+  "reasoning": "点击提交后, 页面出现'感谢购买'提示, 与最终预期一致。"
+}}
+</example>
+
+<example type="good" status="FAIL">
+tool_calls: click({{"target": "#login-btn"}})
+current_step: 点击登录
+expected: 成功进入后台主页
+change_report: (无)
+already_judged: 可见错误(已判): "密码错误，请重试"
+→ 上游已判 fail 信号, 直接复述
+{{
+  "status": "fail",
+  "reasoning": "点击登录后, 页面显示'密码错误'提示 (上游 change_detector 已捕获), 未能进入后台。"
+}}
+</example>
+
+<example type="bad">
+tool_calls: click({{"target": "#login-btn"}})
+current_step: 点击登录
+expected: 成功进入后台主页
+change_report: (无)
+already_judged: (无)
+→ 直接判 fail 而未考虑"输入框为空时也显示密码错误", 这是规则 5 违反 — 应先看截图确认是否真有错
+{{
+  "status": "fail",
+  "reasoning": "登录失败"  ← 过于简略, 且未引用 already_judged
+}}
+</example>
+</examples>
+
+<output_contract>
+你必须**只**输出一个 JSON 对象, 严格遵守以下 schema:
+{{
+  "status": "pass" | "fail" | "inconclusive",  // 必填, 严格小写
+  "reasoning": "string"                         // 必填, ≤ 200 字, 中文
 }}
 
-示例 2（决断步骤，达成最终预期）：
-操作: click({{"target": "#submit-btn"}})
-当前步骤目标: 点击提交按钮
-预期结果: 订单提交成功并显示“感谢购买”
-页面变化: 新元素出现: "感谢购买"
-评估结果:
-思考过程：当前操作点击了提交按钮。执行后，页面上出现了预期的“感谢购买”文本。这直接符合用例的最终预期结果，说明购买流程已成功完成。
-{{
-  "status": "PASS",
-  "reasoning": "点击提交后，页面成功显示了预期的‘感谢购买’提示。"
-}}
-
-示例 3（决断步骤，发生明显失败）：
-操作: click({{"target": "#login-btn"}})
-当前步骤目标: 点击登录
-预期结果: 成功进入后台主页
-页面变化: 可见错误: "密码错误，请重试"
-评估结果:
-思考过程：当前操作是点击登录按钮。预期的结果是成功进入后台主页。但执行后页面上出现了明确的红色报错“密码错误，请重试”。这意味着操作失败，预期未达成。
-{{
-  "status": "FAIL",
-  "reasoning": "点击登录后出现了‘密码错误’的红色提示，未能进入后台主页。"
-}}
-## 请判断
-请在输出最终评估结果前，先简要分析页面的变化和最终预期结果之间的关系（思考过程）。
-然后，你必须在输出的最后，以纯 JSON 格式输出你的评估结果，必须严格遵守以下 JSON 结构：
-{{
-  "status": "PASS", // 只能是 PASS, FAIL, 或 INCONCLUSIVE
-  "reasoning": "简短的一句话理由，解释为什么给出这个状态"
-}}
+调用方式: safe_structured_invoke(prompt, AssertionResult), 走 pydantic 强类型, 不需要手剥 JSON.
+禁止:
+- 在 JSON 之外输出 markdown / 解释 / 思考过程
+- 超出 schema 的字段 (如 confidence / 4 字段老格式)
+- 大小写错乱 (status 必须是全小写)
+</output_contract>
 """
 
 
 def _format_page_info(page_info: dict[str, Any]) -> str:
-    """Format page_info dict into a readable string for the LLM."""
-    lines = [f"URL: {page_info.get('url', 'N/A')}"]
-    lines.append(f"标题: {page_info.get('title', 'N/A')}")
+    """V1.6 5 段 XML-compatible page info (B4, 2026-06-02).
+
+    Token-aware truncation:
+    - 单个 element text/label > 50 字符 → 截断到 50 + 省略号
+    - interactive_elements > 30 → 截断到 30 + 提示省略数
+    - error_messages > 5 → 截断到 5
+    - 总输出按 L2_PAGE_INFO_TOKEN_BUDGET (默认 2000) 估算截断
+
+    估算规则: 1 token ≈ 1.5 字符 (中英文混合); 按字符预算 = token_budget * 1.5.
+    """
+    import os as _os
+    char_budget = int(_os.getenv("L2_PAGE_INFO_CHAR_BUDGET", "3000"))  # 2000 token ≈ 3000 char
+    parts: list[str] = []
+    parts.append(f"URL: {page_info.get('url', 'N/A')}")
+    parts.append(f"标题: {page_info.get('title', 'N/A')}")
 
     elements = page_info.get("interactive_elements", [])
     if elements:
-        lines.append("\n交互元素:")
-        for el in elements[:30]:  # limit to 30 for context
+        max_el = 30
+        truncated_elements = elements[:max_el]
+        parts.append(f"\n交互元素 (前 {len(truncated_elements)}/{len(elements)} 个):")
+        for el in truncated_elements:
             desc = f"  {el['id']}: {el['type']}"
-            if el.get("label"):
-                desc += f" - {el['label']}"
-            if el.get("text"):
-                desc += f" - {el['text']}"
-            if el.get("placeholder"):
-                desc += f" (placeholder: {el['placeholder']})"
-            lines.append(desc)
+            for key in ("label", "text", "placeholder"):
+                v = el.get(key)
+                if v:
+                    v_str = str(v)
+                    if len(v_str) > 50:
+                        v_str = v_str[:50] + "..."
+                    desc += f" - {v_str}" if key != "placeholder" else f" (placeholder: {v_str})"
+            parts.append(desc)
+        if len(elements) > max_el:
+            parts.append(f"  ... 还有 {len(elements) - max_el} 个元素省略")
 
     errors = page_info.get("error_messages", [])
     if errors:
-        lines.append(f"\n可见错误: {', '.join(errors)}")
+        max_err = 5
+        parts.append(f"\n可见错误 (前 {min(len(errors), max_err)} 个): {', '.join(errors[:max_err])}")
 
-    return "\n".join(lines)
+    out = "\n".join(parts)
+    if len(out) > char_budget:
+        out = out[:char_budget] + f"\n... [truncated at {char_budget} chars, full page state in screenshot]"
+    return out
 
 
 # =============================================================================

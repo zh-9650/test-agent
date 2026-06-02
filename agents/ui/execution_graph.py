@@ -23,7 +23,7 @@ from langgraph.graph import END, START, StateGraph
 
 from core.change_detector import detect_changes
 from core.interfaces import AssertionResult, ChangeReport, StepResult, TestCase, TestState
-from core.llm_client import count_tokens, get_llm_client
+from core.llm_client import count_tokens, get_llm_client, safe_structured_invoke
 from core.page_semantic import extract_page_semantics, take_screenshot, take_screenshot_compressed
 
 from agents.ui.prompts import _format_page_info, get_assertion_prompt, get_execution_system_prompt, get_step_prompt
@@ -528,9 +528,9 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
 
         # =================================================================
         # Layer 2: LLM semantic judgment (fallthrough — no rule fired)
+        # V2.0 B2 (2026-06-02): 走 safe_structured_invoke + pydantic AssertionResult
+        # 替换 V1.5 的 50 行手剥 JSON, pydantic 强类型 + 双重 fallback (structured + raw parse)
         # =================================================================
-
-        llm = get_llm_client("sonnet")
 
         assertion_prompt = get_assertion_prompt(
             tool_calls=tool_calls,
@@ -540,89 +540,57 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
             page_info=state_after,
         )
 
+        # B2: 把 screenshot_after 拼到 prompt 末尾 (multimodal)
         screenshot_after = state.get("screenshot_after")
         if screenshot_after:
-            content = [
+            # 视觉证据优先: 拼接图像块到 HumanMessage
+            content_with_image = [
                 {"type": "text", "text": assertion_prompt},
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_after}"}}
             ]
+            full_prompt = assertion_prompt  # safe_structured_invoke 走纯文本
+            multimodal = True
         else:
-            content = assertion_prompt
+            full_prompt = assertion_prompt
+            multimodal = False
 
-        # Robust Retry Loop for API Rate Limits (429)
-        import asyncio
-        max_retries = 3
-        response = None
-        sys_prompt = "You are a QA testing assistant. Evaluate the test result and return status/reasoning as JSON."
-        for attempt in range(max_retries):
+        # B2: 走 safe_structured_invoke + pydantic AssertionResult
+        # 双轨: 1) structured_output (主) → 2) raw parse + JSON extract (fallback)
+        result = await safe_structured_invoke(full_prompt, AssertionResult, model_type="sonnet")
+
+        if result is not None and isinstance(result, AssertionResult):
+            status = result.status
+            final_reasoning = result.reasoning
+        else:
+            # B2 双 fallback 都失败 → V2.0 A6 _fallback_assertion 兜底
+            print(f"[HierarchicalAssert] B2 safe_structured_invoke returned None, using _fallback_assertion")
+            # 取最后一次 LLM 响应文本 (从 multimodal 切换到 raw 调用)
             try:
-                response = await llm.ainvoke([
-                    SystemMessage(content=sys_prompt),
-                    HumanMessage(content=content)
-                ])
-                break
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                llm = get_llm_client("sonnet")
+                msgs = [SystemMessage(content="你是 UI 自动化测试断言专家. 输出 JSON: {status, reasoning}")]
+                if multimodal:
+                    msgs.append(HumanMessage(content=content_with_image))
                 else:
-                    raise e
-
-        # Parse assertion result from LLM response
-        reasoning = response.content if hasattr(response, "content") else str(response)
-        if isinstance(reasoning, list):
-            text_parts = []
-            for item in reasoning:
-                if isinstance(item, str):
-                    text_parts.append(item)
-                elif isinstance(item, dict):
-                    if item.get("type") == "thinking":
-                        text_parts.append(item.get("thinking", ""))
-                    elif item.get("type") == "text":
-                        text_parts.append(item.get("text", ""))
-                    elif "text" in item:
-                        text_parts.append(item["text"])
-            reasoning = "\n".join(text_parts).strip()
-        elif not isinstance(reasoning, str):
-            reasoning = str(reasoning)
-
-        import json
-        import re
-        
-        status = "inconclusive"
-        final_reasoning = reasoning
-        
-        # Try to extract json block if wrapped in markdown
-        thinking_str = ""
-        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', reasoning, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-            thinking_str = reasoning[:json_match.start()].strip()
-        else:
-            # Fallback: extract the first {...} block
-            fallback_match = re.search(r'(\{.*?\})', reasoning, re.DOTALL)
-            json_str = fallback_match.group(1) if fallback_match else reasoning
-            thinking_str = reasoning[:fallback_match.start()].strip() if fallback_match else ""
-        
-        try:
-            import ast
-            try:
-                parsed = json.loads(json_str.strip())
-            except json.JSONDecodeError:
-                parsed = ast.literal_eval(json_str.strip())
-
-            if isinstance(parsed, dict):
-                status_str = parsed.get("status", "").upper()
-                if status_str in ["PASS", "FAIL", "INCONCLUSIVE"]:
-                    status = status_str.lower()
-                final_reasoning = parsed.get("reasoning", str(parsed))
-                if thinking_str:
-                    final_reasoning = f"{thinking_str}\n\n结论: {final_reasoning}"
-        except Exception as parse_err:
-            # V2.0 A6 (2026-06-02): JSON 解析失败走 _fallback_assertion 兜底
-            print(f"[HierarchicalAssert] LLM JSON parse failed: {parse_err}. Raw: {reasoning[:200]}")
-            fallback = _fallback_assertion(reasoning, parse_err)
+                    msgs.append(HumanMessage(content=full_prompt))
+                raw = await llm.ainvoke(msgs)
+                raw_text = raw.content if hasattr(raw, "content") else str(raw)
+                if isinstance(raw_text, list):
+                    parts = []
+                    for item in raw_text:
+                        if isinstance(item, dict) and "text" in item:
+                            parts.append(item["text"])
+                        elif isinstance(item, str):
+                            parts.append(item)
+                    raw_text = "\n".join(parts)
+                fallback = _fallback_assertion(raw_text if isinstance(raw_text, str) else str(raw_text), ValueError("safe_structured_invoke returned None"))
+            except Exception as e2:
+                fallback = _fallback_assertion(f"LLM 调用失败: {e2}", e2)
             status = fallback.status
             final_reasoning = fallback.reasoning
+
+        # B2: 状态归一化 (pydantic 已经校验 status enum, 但万一 raw parse 走到要兜底)
+        if status not in ("pass", "fail", "inconclusive"):
+            status = "inconclusive"
 
         assertion = AssertionResult(status=status, reasoning=final_reasoning)
 
