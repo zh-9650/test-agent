@@ -68,6 +68,15 @@ def update_element_map(elements: list[dict]) -> None:
     ctx["element_map"] = {el["id"]: el for el in elements}
 
 
+def get_element_map() -> dict[str, dict]:
+    """Return the current task's element map (read-only snapshot)."""
+    tid = _current_task_id.get()
+    if tid is None:
+        return {}
+    ctx = _task_contexts.get(tid, {})
+    return dict(ctx.get("element_map", {}))
+
+
 # ---------------------------------------------------------------------------
 # Element resolution helper
 # ---------------------------------------------------------------------------
@@ -361,17 +370,30 @@ async def evaluate_js(script: str) -> str:
 
     Args:
         script: 要执行的 JavaScript 代码
+
+    Returns:
+        JS 执行结果文本,或"拒绝执行"提示（如果脚本命中黑名单）
     """
+    # V2.0 A5 (2026-06-02): 5 个关键字黑名单, 防止 LLM 通过 evaluate_js 跳出沙箱
+    # 理由: page.goto/page.evaluate 是 Playwright API 不可用, 会被拒 (但浪费 LLM 步);
+    #       window.location/location.href/fetch() 都能导航或外发请求, 破坏测试隔离
+    # 设计: 关键字检测在 page.evaluate 之前, 命中即返 "拒绝执行: ..." 不抛异常
+    blacklist = ("page.goto", "page.evaluate", "window.location", "location.href", "fetch(")
+    lower = script.lower()
+    for keyword in blacklist:
+        if keyword in lower:
+            return f"拒绝执行: 脚本包含被禁关键字 {keyword!r}。请改用 navigate / click / 元素操作工具, 不要直接操控 URL 或发起网络请求。"
+
     try:
         page = get_current_page()
-        
-        # If the script contains a bare return (not inside a function), 
+
+        # If the script contains a bare return (not inside a function),
         # page.evaluate will throw a SyntaxError: Illegal return statement.
         # Wrap it in an IIFE (Immediately Invoked Function Expression) to safely evaluate it.
         wrapped_script = script
         if "return " in script and not script.strip().startswith("(") and not script.strip().startswith("function"):
             wrapped_script = f"(() => {{\n{script}\n}})()"
-            
+
         result = await page.evaluate(wrapped_script)
         return f"JS执行结果: {result}"
     except Exception as e:
@@ -460,4 +482,9 @@ tools = [
 
 # Provide a map for easy invocation by name
 tools_by_name = {t.name: t for t in tools}
+
+# V2.0 A (2026-06-02): Backward-compat alias for pre-existing test_tools.py import
+# 之前 test_tools.py 写 `from agents.ui.tools import ... ui_tools ...`, 但实际导出名是 `tools`
+# 加 alias 让 test_tools.py 能 import (之前是 pre-existing failure, 留 V2.0 A 修)
+ui_tools = tools
 

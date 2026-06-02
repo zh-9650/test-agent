@@ -140,6 +140,34 @@ async def test_error_messages_detected(page):
 
 
 # ---------------------------------------------------------------------------
+# V2.0 A (2026-06-02): 成功消息不应被识别为错误
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_success_messages_not_detected_as_errors(page):
+    """V2.0-A fix: Bootstrap-flash .alert-success / [role='alert'] 不应被识别为错误.
+
+    Repro: practice.expandtesting.com 登录后 flash 成功消息:
+    <div class="flash success" role="alert">You logged into a secure area!</div>
+    原实现会被 [role='alert'] 撞到, 误判为错误.
+    """
+    await page.set_content("""
+    <html>
+    <body>
+        <div class="flash success" role="alert">You logged into a secure area!</div>
+        <div class="alert-success" role="alert">Login successful</div>
+        <div class="toast-success">Saved!</div>
+    </body>
+    </html>
+    """)
+    result = await extract_page_semantics(page)
+
+    assert result["error_messages"] == [], (
+        f"成功消息不应进入 error_messages, 实际: {result['error_messages']}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # test_take_screenshot_returns_base64
 # ---------------------------------------------------------------------------
 

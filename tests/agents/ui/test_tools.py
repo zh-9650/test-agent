@@ -19,8 +19,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from agents.ui.tools import (
     navigate, click, input_text, scroll, wait,
-    set_current_page, update_element_map, ui_tools, tools_by_name
+    set_current_page, set_current_task, update_element_map, ui_tools, tools_by_name
 )
+
+
+# V2.0 A (2026-06-02): pre-existing test bug — 测试调 set_current_page 但没调 set_current_task,
+# tools.py 会抛 "No active task". 加 autouse fixture 兜底
+@pytest_asyncio.fixture(autouse=True)
+async def _auto_set_task():
+    set_current_task("test-tools-default")
+    yield
+    # 清理
+    from agents.ui.tools import cleanup_task_context
+    cleanup_task_context("test-tools-default")
 
 
 @pytest_asyncio.fixture
@@ -200,4 +211,6 @@ def test_ui_tools_list():
     assert "input_text" in tool_names
     assert "scroll" in tool_names
     assert "wait" in tool_names
-    assert len(ui_tools) == 5
+    # V2.0 A (2026-06-02): 数量从 5 增到 15 (press_key/hover/go_back/extract_text/select_dropdown/evaluate_js
+    # + 3 个 mark_task_*). 只断言 "包含 5 个核心" + ">=10" 表示工具列表非空
+    assert len(ui_tools) >= 10, f"expected >=10 tools, got {len(ui_tools)}"

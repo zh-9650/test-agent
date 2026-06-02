@@ -7,6 +7,7 @@ This is the "eyes" of the AI testing agent.
 from __future__ import annotations
 
 import base64
+import os
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -85,6 +86,30 @@ async def take_screenshot(page: Any) -> str:
         base64 编码的截图字符串
     """
     screenshot_bytes = await page.screenshot(type="png")
+    return base64.b64encode(screenshot_bytes).decode("utf-8")
+
+
+async def take_screenshot_compressed(page: Any, quality: int | None = None) -> str:
+    """V2.0 A2 (2026-06-02): 压缩截图供 LLM 上下文使用。
+
+    设计理由:
+    - 默认 PNG (1280x720) ~50-200KB, base64 编码后 ~67-267K 字符
+    - 算 token (中文 1.5 char/token): 17K-67K tokens, 撞 L2 65K context 风险
+    - JPEG quality=60: ~10-30KB, 2.5K-7.5K tokens (~80% 减少)
+    - LLM 视觉理解对 JPEG quality>=60 几乎无损
+    - 仍用 base64 编码 (与现有 image_url data: 协议兼容)
+
+    Args:
+        page: Playwright Page 对象
+        quality: JPEG 质量 1-100, 默认 60 (从 env L2_SCREENSHOT_QUALITY 读取)
+
+    Returns:
+        base64 编码的 JPEG 字符串 (data URI 前缀由调用方加)
+    """
+    if quality is None:
+        quality = int(os.getenv("L2_SCREENSHOT_QUALITY", "60"))
+    quality = max(10, min(95, quality))  # clamp 到合理范围
+    screenshot_bytes = await page.screenshot(type="jpeg", quality=quality)
     return base64.b64encode(screenshot_bytes).decode("utf-8")
 
 
@@ -488,17 +513,24 @@ async def _extract_tables(page: Any) -> list[dict[str, Any]]:
 
 
 async def _extract_error_messages(page: Any) -> list[str]:
-    """Extract visible error/warning messages."""
+    """Extract visible error/warning messages.
+
+    V2.0-A (2026-06-02): 排除 .alert-success / .flash.success / .toast-success 等
+    成功提示, 避免 [role='alert'] 撞到 Bootstrap-flash 成功消息.
+    """
     error_selectors = [
         ".error:visible",
         ".alert-danger:visible",
+        ".alert-error:visible",
         ".el-message--error:visible",
         ".ant-message-error:visible",
-        "[role='alert']:visible",
+        "[role='alert']:visible:not(.alert-success):not(.flash-success):not(.flash.success):not(.toast-success):not(.notification-success)",
         ".toast-error:visible",
         ".notification-error:visible",
         ".error-message:visible",
         ".validation-error:visible",
+        ".form-error:visible",
+        ".has-error .help-block:visible",
     ]
     result: list[str] = []
     for selector in error_selectors:

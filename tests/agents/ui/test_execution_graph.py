@@ -222,8 +222,9 @@ async def test_observe_node_mock():
 
     state = make_sample_state()
 
+    # V2.0 A2 (2026-06-02): observe_node 现在用 take_screenshot_compressed, 改 patch 它
     with patch("agents.ui.execution_graph.extract_page_semantics", new_callable=AsyncMock) as mock_semantic, \
-         patch("agents.ui.execution_graph.take_screenshot", new_callable=AsyncMock) as mock_ss, \
+         patch("agents.ui.execution_graph.take_screenshot_compressed", new_callable=AsyncMock) as mock_ss, \
          patch("agents.ui.execution_graph.get_current_page") as mock_get_page, \
          patch("agents.ui.execution_graph.update_element_map") as mock_update_map:
 
@@ -271,11 +272,15 @@ async def test_decide_node_mock():
         ]
     )
 
+    # V2.0 A (2026-06-02): pre-existing test bug — 源码用 `tools` 不是 `ui_tools`,
+    # 且 retrieve_memories 会被真调, 要 mock 掉
     with patch("agents.ui.execution_graph.get_llm_client", return_value=mock_llm), \
          patch("agents.ui.execution_graph.get_execution_system_prompt", return_value="执行系统提示"), \
          patch("agents.ui.execution_graph.get_step_prompt", return_value="当前步骤: 输入用户名"), \
-         patch("agents.ui.execution_graph.ui_tools", return_value=[]), \
-         patch("agents.ui.execution_graph._format_page_info", return_value="URL: http://example.com/login\n交互元素:\n  #1: input - 用户名"):
+         patch("agents.ui.execution_graph.tools", return_value=[]), \
+         patch("agents.ui.execution_graph._format_page_info", return_value="URL: http://example.com/login\n交互元素:\n  #1: input - 用户名"), \
+         patch("core.memory_utils.retrieve_memories", new=AsyncMock(return_value="")), \
+         patch("agents.ui.tools.set_current_task"):
 
         result = await decide_node(state)
 
@@ -394,8 +399,11 @@ async def test_assert_node_mock():
         gone_elements=["#3 button: 登录"],
     )
 
-    # Mock LLM response for assertion
-    llm_assert_response = AIMessage(content="PASS: URL已从登录页面跳转到主页，验证成功。")
+    # V2.0 A (2026-06-02): pre-existing test bug — 中文全角逗号(，) 在 JSON.loads 时
+    # 抛 SyntaxError, 改用规范 JSON 格式
+    llm_assert_response = AIMessage(
+        content='思考过程: URL已从登录页面跳转到主页, 验证成功。\n```json\n{"status": "PASS", "reasoning": "URL跳转成功, 验证通过。"}\n```'
+    )
 
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(return_value=llm_assert_response)
@@ -409,7 +417,7 @@ async def test_assert_node_mock():
         assert "_last_change_report" in result
         assert "_last_assertion" in result
         assert result["_last_assertion"].status == "pass"
-        assert "PASS" in result["_last_assertion"].reasoning or "通过" in result["_last_assertion"].reasoning
+        assert "通过" in result["_last_assertion"].reasoning or "PASS" in result["_last_assertion"].reasoning
 
 
 # ---------------------------------------------------------------------------

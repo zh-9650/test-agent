@@ -15,6 +15,7 @@ Safety valves: max steps per case, max consecutive failures (both configurable v
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
@@ -22,11 +23,88 @@ from langgraph.graph import END, START, StateGraph
 
 from core.change_detector import detect_changes
 from core.interfaces import AssertionResult, ChangeReport, StepResult, TestCase, TestState
-from core.llm_client import get_llm_client
-from core.page_semantic import extract_page_semantics, take_screenshot
+from core.llm_client import count_tokens, get_llm_client
+from core.page_semantic import extract_page_semantics, take_screenshot, take_screenshot_compressed
 
 from agents.ui.prompts import _format_page_info, get_assertion_prompt, get_execution_system_prompt, get_step_prompt
 from agents.ui.tools import get_current_page, set_current_task, tools_by_name, tools, update_element_map
+
+
+# =============================================================================
+# V2.0 A (2026-06-02) — L2 Safety Net Helpers
+# =============================================================================
+
+
+def _fallback_assertion(reasoning: str, parse_error: Exception) -> AssertionResult:
+    """V2.0 A6 (2026-06-02): 兜底断言, 当 LLM 返回无法解析为 JSON 时调用.
+
+    设计理由 (来自 V2.0 v2 plan §3.1):
+    - 老代码: JSON 解析失败 → 返 "未能解析评估结果 (非 JSON 格式)" + status="inconclusive"
+    - 老代码问题: 散在 assert_node 内联 try/except, 难测试, 难复用
+    - V2.0 A6: 抽出独立函数, 单元测试可独立验证, Phase B pydantic AssertionResult 接入也走它
+    - 行为: 永远返 inconclusive, 不假装"猜测"status, reasoning 包含原始文本 + 错误
+
+    Args:
+        reasoning: LLM 原始响应文本
+        parse_error: 解析时抛出的异常 (ValueError/SyntaxError/...)
+
+    Returns:
+        AssertionResult(status="inconclusive", reasoning=...)
+    """
+    excerpt = (reasoning or "")[:200]
+    return AssertionResult(
+        status="inconclusive",
+        reasoning=f"LLM 响应 JSON 解析失败, 走 fallback 断言 (错误: {type(parse_error).__name__}: {parse_error})。原始响应片段: {excerpt!r}",
+    )
+
+
+def _truncate_messages_by_token(messages: list, budget: int) -> list[RemoveMessage]:
+    """V2.0 A2 (2026-06-02): 按 token 数截断 messages, 保护 L2 context 不撞 65K.
+
+    设计依据 (Anthropic Context Engineering 2025-09 + Microsoft Compaction 2026):
+    - 保留 system message (index 0) + 最近 5 条 (含最新 user/assistant)
+    - 删掉中间 (老) 的消息
+    - 顺序: 从最老往新删, 直到 token count <= budget
+    - 安全阀: budget 默认 30000 (留 65K - 30K 给 LLM output + 安全 buffer)
+    - env 可调: L2_TOKEN_BUDGET
+
+    Args:
+        messages: LangChain 消息列表
+        budget: token 预算
+
+    Returns:
+        RemoveMessage 列表 (LangGraph 会从 state 移除这些 id)
+    """
+    if not messages:
+        return []
+    total = count_tokens(messages)
+    if total <= budget:
+        return []
+
+    # 计算可保留的范围: 永远保留 [0] (system) + 最后 5 条
+    head = messages[:1]  # system
+    tail_count = 5
+    tail = messages[-tail_count:] if len(messages) > tail_count else []
+    middle = messages[1:-tail_count] if len(messages) > tail_count + 1 else []
+
+    # 从 middle 最老的开始删
+    to_remove: list[RemoveMessage] = []
+    working_head = list(head)
+    working_middle = list(middle)
+    working_tail = list(tail)
+    while working_middle:
+        candidate = working_head + working_middle + working_tail
+        if count_tokens(candidate) <= budget:
+            break
+        m = working_middle.pop(0)  # 删最老的
+        if hasattr(m, "id") and m.id:
+            to_remove.append(RemoveMessage(id=m.id))
+        elif m is not None:
+            # 兜底: 没 id 时按 hash 构造 (LangGraph 不会真删, 但不会崩)
+            import hashlib
+            fake_id = hashlib.md5(repr(m).encode()).hexdigest()
+            to_remove.append(RemoveMessage(id=fake_id))
+    return to_remove
 
 
 # =============================================================================
@@ -103,7 +181,7 @@ async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
     """Extract page semantics and screenshot from the current page.
 
     - Calls extract_page_semantics() to get page info
-    - Calls take_screenshot() for visual context
+    - Calls take_screenshot_compressed() for visual context (V2.0 A2: JPEG q=60)
     - Updates element map so tools can resolve #N references
     - Saves state_before for change detection after execute
     """
@@ -115,7 +193,12 @@ async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
 
         # Extract semantics
         page_info = await extract_page_semantics(page)
-        screenshot = await take_screenshot(page)
+        # V2.0 A2: 截图压缩 (env L2_SCREENSHOT_COMPRESSED=1 默认开)
+        compress = os.getenv("L2_SCREENSHOT_COMPRESSED", "1") != "0"
+        if compress:
+            screenshot = await take_screenshot_compressed(page)
+        else:
+            screenshot = await take_screenshot(page)
 
         # Update element map for tools to resolve #N references
         update_element_map(page_info.get("interactive_elements", []))
@@ -146,6 +229,10 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
     - Builds system prompt + step prompt + page info
     - Calls LLM with tools bound (kimi-k2.6 for execution)
     - Returns LLM response as new message
+
+    V2.0 A3 (2026-06-02): session_summary 注入修复
+    - V1.7 漏: decide_node 每步 insert(0, SystemMessage(...)) 覆盖前一个 case 留下的 summary
+    - 修复: 从 state.session_summary 读取, 拼到 system_prompt 顶部, 跨 case 续传
     """
     try:
         llm = get_llm_client("sonnet")  # kimi-k2.6 for execution
@@ -170,7 +257,18 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
             task_config["memory_context"] = contextual_memory
 
         # Build prompts
-        system_prompt = get_execution_system_prompt(current_test_case, task_config)
+        base_system_prompt = get_execution_system_prompt(current_test_case, task_config)
+
+        # V2.0 A3: 把 session_summary 拼到 system_prompt 顶部 (跨 case 续传)
+        session_summary = state.get("session_summary", "")
+        if session_summary:
+            system_prompt = (
+                f"<session_summary>\n{session_summary}\n</session_summary>\n\n"
+                f"{base_system_prompt}"
+            )
+        else:
+            system_prompt = base_system_prompt
+
         step_prompt = get_step_prompt(state.get("current_step", 0), current_test_case)
 
         # Build messages for LLM
@@ -183,16 +281,21 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
         page_info = state.get("page_info", {})
         page_summary = _format_page_info(page_info)
         text_content = f"{step_prompt}\n\n当前页面状态:\n{page_summary}"
-        
+
+        # V2.0 A2: 截图压缩 (env L2_SCREENSHOT_COMPRESSED=1 默认开, 节省 80% tokens)
+        # 兼容旧行为: 传 "0" 关闭
+        compress = os.getenv("L2_SCREENSHOT_COMPRESSED", "1") != "0"
         screenshot_base64 = state.get("screenshot")
         if screenshot_base64:
+            # 注意: state.screenshot 已是 base64, 不再二次压缩
+            # 压缩应在 observe_node 截图时就做 (后续优化点)
             content = [
                 {"type": "text", "text": text_content},
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_base64}"}}
             ]
         else:
             content = text_content
-            
+
         messages.append(HumanMessage(content=content))
 
         # Call LLM
@@ -221,9 +324,12 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
     - Dispatches to the matching tool function
     - Takes post-action snapshot for change detection
     - Increments current_step
+    - V2.0 A4 (2026-06-02): 工具失败计入 consecutive_failures (不再沉默)
+    - V2.0 A2 (2026-06-02): 截图压缩 (默认 JPEG q=60, 节省 ~80% tokens)
     """
     messages = state.get("messages", [])
     current_step = state.get("current_step", 0)
+    consecutive_failures = state.get("consecutive_failures", 0)
     task_id = state.get("task_id")
     if task_id:
         set_current_task(task_id)
@@ -246,11 +352,12 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
     # Execute all tools sequentially
     results = []
     tool_messages = []
+    any_failure = False
     for tool_call in tool_calls:
         tool_name = tool_call.get("name", "")
         tool_args = tool_call.get("args", {})
         tool_call_id = tool_call.get("id", "")
-        
+
         try:
             if tool_name in tools_by_name:
                 tool_fn = tools_by_name[tool_name]
@@ -259,12 +366,21 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
                 result_text = f"未知工具: {tool_name}"
         except Exception as e:
             result_text = f"执行失败: {str(e)}"
-            
+
         results.append(result_text)
         tool_messages.append(ToolMessage(content=result_text, tool_call_id=tool_call_id, name=tool_name))
-        
-        if "执行失败" in result_text or "未知工具" in result_text:
-            break # Stop executing further tools if one fails
+
+        # V2.0 A4: 失败信号捕获
+        if "执行失败" in result_text or "未知工具" in result_text or "拒绝执行" in result_text:
+            any_failure = True
+            break  # Stop executing further tools if one fails
+
+    # V2.0 A4: 失败计数
+    if any_failure:
+        consecutive_failures += 1
+    else:
+        # 成功重置 (与 L1 assert_node 行为一致, 防止老 fail 累积)
+        consecutive_failures = 0
 
     # Take post-action snapshot for change detection
     state_after = {}
@@ -272,8 +388,12 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
     try:
         page = get_current_page()
         state_after = await extract_page_semantics(page)
-        from core.page_semantic import take_screenshot
-        screenshot_after = await take_screenshot(page)
+        # V2.0 A2: 截图压缩 (JPEG q=60, env 可调)
+        compress = os.getenv("L2_SCREENSHOT_COMPRESSED", "1") != "0"
+        if compress:
+            screenshot_after = await take_screenshot_compressed(page)
+        else:
+            screenshot_after = await take_screenshot(page)
     except Exception:
         # If we can't get post-action state, use empty dict
         pass
@@ -288,6 +408,7 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
         "current_step": current_step + 1,
         "_last_tool_result": "\n".join(results),
         "_last_tool_calls": tool_calls, # Pass the batch for assertion
+        "consecutive_failures": consecutive_failures,
     }
 
 
@@ -488,7 +609,7 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
                 parsed = json.loads(json_str.strip())
             except json.JSONDecodeError:
                 parsed = ast.literal_eval(json_str.strip())
-                
+
             if isinstance(parsed, dict):
                 status_str = parsed.get("status", "").upper()
                 if status_str in ["PASS", "FAIL", "INCONCLUSIVE"]:
@@ -496,10 +617,12 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
                 final_reasoning = parsed.get("reasoning", str(parsed))
                 if thinking_str:
                     final_reasoning = f"{thinking_str}\n\n结论: {final_reasoning}"
-        except Exception as e:
-            print(f"[HierarchicalAssert] LLM JSON parse failed: {e}. Raw: {reasoning}")
-            status = "inconclusive"
-            final_reasoning = "未能解析评估结果 (非 JSON 格式)"
+        except Exception as parse_err:
+            # V2.0 A6 (2026-06-02): JSON 解析失败走 _fallback_assertion 兜底
+            print(f"[HierarchicalAssert] LLM JSON parse failed: {parse_err}. Raw: {reasoning[:200]}")
+            fallback = _fallback_assertion(reasoning, parse_err)
+            status = fallback.status
+            final_reasoning = fallback.reasoning
 
         assertion = AssertionResult(status=status, reasoning=final_reasoning)
 
@@ -531,7 +654,10 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
     1. After assert (normal step) → build StepResult and collect it
     2. From decide with no tool_call (test case complete) → skip StepResult
 
-    Also does context management: trim messages if > 10 to keep context manageable.
+    V2.0 A2 (2026-06-02): 上下文管理从"按条"截断改为"按 token"截断
+    - 老逻辑: messages > 10 → 删中间, 撞 65K token 风险
+    - 新逻辑: total tokens > L2_TOKEN_BUDGET (默认 30K) → 删中间 (保留 system + 最近 5)
+    - 依据: Anthropic Context Engineering 2025-09 + Microsoft Compaction 2026
     """
     # Determine if this is a normal step (path from assert) or completion (path from decide)
     messages = list(state.get("messages", []))
@@ -571,19 +697,15 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
         )
         collected_steps = [step_result]
 
-    # Context management: trim messages if conversation grows too long
-    messages_to_remove = []
-    if len(messages) > 10:
-        middle_messages = messages[1:-10]
-        for m in middle_messages:
-            if hasattr(m, "id") and m.id:
-                messages_to_remove.append(m)
+    # V2.0 A2: token-aware truncation
+    budget = int(os.getenv("L2_TOKEN_BUDGET", "30000"))
+    messages_to_remove = _truncate_messages_by_token(messages, budget)
 
     result: dict[str, Any] = {}
     if collected_steps:
         result["_collected_steps"] = collected_steps
     if messages_to_remove:
-        result["messages"] = [RemoveMessage(id=m.id) for m in messages_to_remove]
+        result["messages"] = messages_to_remove
 
     return result
 

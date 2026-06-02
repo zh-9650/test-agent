@@ -210,6 +210,7 @@ class TestState(MessagesState):
 
     # 每步临时数据（被下一步覆盖，不进 reducer）
     _last_tool_result: str  # execute_node 设置的工具执行结果文本
+    _last_tool_calls: list[dict[str, Any]]  # V2.0-A (2026-06-02): execute_node 传给 assert_node 的工具调用列表 (供 Rule 0.5 mark_task_complete 使用)
     _last_change_report: Optional[ChangeReport]  # assert_node 设置的变化报告
     _last_assertion: Optional[AssertionResult]  # assert_node 设置的断言结果
 

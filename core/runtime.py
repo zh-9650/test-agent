@@ -423,6 +423,15 @@ class Runtime:
                 content=f"开始执行测试用例: {test_case.id} - {test_case.title}{previous_context}"
             ),
         ]
+        # V2.0 A3 (2026-06-02): 把前序 case 摘要作为独立 state 字段, 让 decide_node 拼到 system_prompt
+        # 解决 V1.7 漏点: decide_node insert(0, SystemMessage(...)) 每步覆盖前 case summary
+        if self._case_summaries:
+            summaries_text_2 = "\n".join(
+                f"- {s['case_id']}: {s.get('summary', '')}" for s in self._case_summaries
+            )
+            execution_state["session_summary"] = summaries_text_2
+        else:
+            execution_state["session_summary"] = ""
         execution_state["test_plan"] = test_plan
         execution_state["setups"] = setups
         execution_state["current_index"] = index
@@ -564,6 +573,15 @@ class Runtime:
                 content=f"开始执行测试用例: {test_case.id} - {test_case.title}{previous_context}"
             ),
         ]
+        # V2.0 A3 (2026-06-02): 把前序 case 摘要作为独立 state 字段, 让 decide_node 拼到 system_prompt
+        # 解决 V1.7 漏点: decide_node insert(0, SystemMessage(...)) 每步覆盖前 case summary
+        if self._case_summaries:
+            summaries_text_2 = "\n".join(
+                f"- {s['case_id']}: {s.get('summary', '')}" for s in self._case_summaries
+            )
+            execution_state["session_summary"] = summaries_text_2
+        else:
+            execution_state["session_summary"] = ""
         execution_state["test_plan"] = test_plan
         execution_state["setups"] = setups
         execution_state["current_index"] = index
