@@ -38,6 +38,30 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _should_emit_early_warning(state: dict[str, Any], max_failures: int) -> bool:
+    """V2.0 D4 (2026-06-02): 判断当前 state 是否应该推 early_warning 告警.
+
+    设计:
+    - 阈值: consecutive_failures >= 2 (留 1 次缓冲给上游, 避免"刚 fail 一次就狂叫")
+    - 限频: 1 次/case (用 _early_warning_sent 标志)
+    - 边界: cf >= max_failures 时直接触发安全阀, 不发 early-warning (避免重复告警)
+
+    Args:
+        state: 当前累积 state
+        max_failures: MAX_CONSECUTIVE_FAILURES env
+
+    Returns:
+        True if early_warning 应发, False otherwise
+    """
+    cf = state.get("consecutive_failures", 0)
+    threshold = 2
+    return (
+        cf >= threshold
+        and cf < max_failures
+        and not state.get("_early_warning_sent", False)
+    )
+
+
 def _stream_items(update: Any) -> list[tuple[str, dict[str, Any]]]:
     """Normalize LangGraph astream updates to (node_name, state_update) pairs."""
     if isinstance(update, tuple) and len(update) == 2 and isinstance(update[0], str):
@@ -351,6 +375,12 @@ class Runtime:
             "_last_tool_result": "",
             "_last_change_report": None,
             "_last_assertion": None,
+            # V2.0 D 可观测性 (2026-06-02)
+            "_last_token_count": 0,
+            "_last_node_name": "",
+            "_last_node_duration_ms": 0,
+            "_early_warning_sent": False,
+            "_step_token_log": [],
             "task_id": self.task_id,
             "task_config": self.task_config,
         }
@@ -598,6 +628,41 @@ class Runtime:
                     # Accumulate state from each node
                     final_state.update(state_update)
 
+                    # V2.0 D2 (2026-06-02): 节点级 observability — 推 node_event WebSocket
+                    # 每个节点完成后发一个事件, 含节点名/耗时/token 数
+                    # (在 observe/decide/execute/assert/record 各 case 之后, 保证一定有数据)
+                    if "_last_node_name" in state_update:
+                        yield {
+                            "type": "node_event",
+                            "test_case_id": test_case.id,
+                            "step_index": final_state.get("current_step", 0),
+                            "data": {
+                                "node": state_update.get("_last_node_name", node_name),
+                                "duration_ms": state_update.get("_last_node_duration_ms", 0),
+                                "token_count": state_update.get("_last_token_count", 0),
+                            },
+                            "timestamp": _now_iso(),
+                        }
+
+                    # V2.0 D4 (2026-06-02): consecutive_failures >= 2 early-warning
+                    # 限频 1/case (用 _early_warning_sent 标志), WebSocket 推 "early_warning" 事件
+                    max_failures_now = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "3"))
+                    if _should_emit_early_warning(final_state, max_failures_now):
+                        cf = final_state.get("consecutive_failures", 0)
+                        final_state["_early_warning_sent"] = True
+                        yield {
+                            "type": "early_warning",
+                            "test_case_id": test_case.id,
+                            "step_index": final_state.get("current_step", 0),
+                            "data": {
+                                "consecutive_failures": cf,
+                                "threshold": 2,
+                                "max": max_failures_now,
+                                "message": f"⚠️ 连续失败 {cf} 次, 即将触发安全阀 (上限 {max_failures_now})",
+                            },
+                            "timestamp": _now_iso(),
+                        }
+
                     if node_name == "observe":
                         page_info = state_update.get("page_info", {})
                         yield {
@@ -639,7 +704,7 @@ class Runtime:
                         tool_name = tool_calls[0].get("name", "") if tool_calls else ""
                         tool_args = tool_calls[0].get("args", {}) if tool_calls else {}
                         result_text = state_update.get("_last_tool_result", "")
-                        
+
                         yield {
                             "type": "action_result",
                             "test_case_id": test_case.id,

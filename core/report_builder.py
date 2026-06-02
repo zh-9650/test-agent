@@ -314,6 +314,64 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
             user-select: none;
         }
         .l1-collapsible summary:hover { color: var(--text-main); }
+        .l2-observability {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+        .l2-observability h3 {
+            font-size: 0.95rem;
+            color: var(--text-main);
+            margin: 0 0 12px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .token-chart {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .token-bar-row {
+            display: grid;
+            grid-template-columns: 60px 1fr 80px;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.85rem;
+        }
+        .token-bar-label {
+            color: var(--text-muted);
+            font-family: monospace;
+        }
+        .token-bar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            height: 8px;
+            overflow: hidden;
+        }
+        .token-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-text), var(--pass-text));
+            border-radius: 4px;
+            box-shadow: 0 0 8px var(--primary-glow);
+        }
+        .token-bar-value {
+            color: var(--primary-text);
+            font-family: monospace;
+            text-align: right;
+            font-weight: 600;
+        }
+        .l2-meta-row {
+            display: flex;
+            gap: 24px;
+            margin-top: 12px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .l2-meta-row span strong {
+            color: var(--text-main);
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -516,6 +574,30 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
                         {% endfor %}
                     </tbody>
                 </table>
+                {% endif %}
+                {% set step_token_total = result.steps|sum(attribute='token_count') %}
+                {% if step_token_total > 0 %}
+                <div class="l2-observability">
+                    <h3>📊 L2 Token 用量 (per step)</h3>
+                    {% set max_tokens = (result.steps|map(attribute='token_count')|list|sort|last) or 1 %}
+                    <div class="token-chart">
+                        {% for step in result.steps %}
+                        {% if step.token_count > 0 %}
+                        <div class="token-bar-row">
+                            <div class="token-bar-label">#{{ step.step_index }}</div>
+                            <div class="token-bar-track">
+                                <div class="token-bar-fill" style="width: {{ (step.token_count / max_tokens * 100)|round(1) }}%;"></div>
+                            </div>
+                            <div class="token-bar-value">{{ step.token_count }} tok</div>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    <div class="l2-meta-row">
+                        <span>本用例总 token: <strong>{{ step_token_total }}</strong></span>
+                        <span>本用例步数: <strong>{{ result.steps|length }}</strong></span>
+                    </div>
+                </div>
                 {% endif %}
             </div>
             {% endfor %}

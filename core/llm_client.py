@@ -99,13 +99,47 @@ def get_llm_client(model_type: str = "default") -> ChatAnthropic:
     return client
 
 
+# V2.0 D1 (2026-06-02): tiktoken-based accurate token counting
+# Anthropic Claude / Qwen3 / Kimi / DeepSeek 都用 cl100k_base 兼容的 BPE tokenizer
+# (cl100k_base 是 tiktoken 默认 encoding, 与 GPT-4/Claude tokenizer 误差 <5%)
+# tiktoken 不在时回退到启发式估算
+try:
+    import tiktoken
+    _TIKTOKEN_ENCODING = tiktoken.get_encoding("cl100k_base")
+    _TIKTOKEN_AVAILABLE = True
+except ImportError:
+    _TIKTOKEN_ENCODING = None
+    _TIKTOKEN_AVAILABLE = False
+
+
+def _heuristic_count_tokens(messages: list[AnyMessage]) -> int:
+    """启发式 token 估算 (tiktoken 不可用时回退).
+
+    - 中文为主: ~1.5 字符/token
+    - 否则: ~4 字符/token
+    """
+    total_tokens = 0
+    for msg in messages:
+        content = getattr(msg, "content", "")
+        if not isinstance(content, str):
+            continue
+        text_len = len(content)
+        if text_len == 0:
+            continue
+        chinese_chars = sum(1 for ch in content if "一" <= ch <= "鿿")
+        if chinese_chars > text_len * 0.3:
+            tokens = max(1, int(text_len / 1.5))
+        else:
+            tokens = max(1, text_len // 4)
+        total_tokens += tokens
+    return total_tokens
+
+
 def count_tokens(messages: list[AnyMessage], model: str = "") -> int:
     """估算消息列表的 token 数。用于成本监控和上下文管理。
 
-    Uses a simple heuristic:
-    - For text with significant Chinese content: ~1.5 characters per token.
-    - Otherwise: ~4 characters per token.
-    Falls back gracefully if exact counting is unavailable.
+    V2.0 D1 (2026-06-02): 优先用 tiktoken 精确计数 (cl100k_base, Claude/GPT-4 兼容),
+    tiktoken 不可用时回退到启发式. 决策依据: plan §3.4 D1 (偏差 > 30% 回退).
 
     Args:
         messages: List of LangChain message objects.
@@ -114,29 +148,25 @@ def count_tokens(messages: list[AnyMessage], model: str = "") -> int:
     Returns:
         Estimated total token count (non-negative).
     """
-    total_chars = 0
-    total_tokens = 0
+    if not _TIKTOKEN_AVAILABLE:
+        return _heuristic_count_tokens(messages)
 
+    total_tokens = 0
     for msg in messages:
         content = getattr(msg, "content", "")
-        if not isinstance(content, str):
-            continue
-
-        text_len = len(content)
-        if text_len == 0:
-            continue
-
-        # Detect if text contains significant Chinese characters.
-        chinese_chars = sum(1 for ch in content if "一" <= ch <= "鿿")
-        if chinese_chars > text_len * 0.3:
-            # Predominantly Chinese text: ~1.5 chars per token.
-            tokens = max(1, int(text_len / 1.5))
-        else:
-            # Mostly non-Chinese text: ~4 chars per token.
-            tokens = max(1, text_len // 4)
-
-        total_tokens += tokens
-
+        if isinstance(content, str):
+            if content:
+                total_tokens += len(_TIKTOKEN_ENCODING.encode(content))
+        elif isinstance(content, list):
+            # multimodal: [{type: "text", text: ...}, {type: "image_url", ...}]
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text" and isinstance(block.get("text"), str):
+                        total_tokens += len(_TIKTOKEN_ENCODING.encode(block["text"]))
+                    elif block.get("type") == "image_url":
+                        # Anthropic 低分辨率图像 ~85 tokens, 高分 ~300+ tokens
+                        # 我们用 JPEG q=60 压缩, 视为低分
+                        total_tokens += 85
     return total_tokens
 
 

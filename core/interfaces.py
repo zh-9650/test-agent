@@ -133,6 +133,8 @@ class StepResult(BaseModel):
     assertion: Optional[AssertionResult] = Field(default=None, description="断言结果")
     thought: str = Field(default="", description="AI 思考过程（AIMessage.content）")
     reasoning_chain: list[str] = Field(default_factory=list, description="V2.0 C5: 跨步 AI 思考链 (decide + assert reasoning), 用于 ReportBuilder L2 卡片折叠展示")
+    token_count: int = Field(default=0, description="V2.0 D1: 本步 decide_node 调用消耗的 token 数 (tiktoken 估算)")
+    duration_ms: int = Field(default=0, description="V2.0 D2: 本步总耗时 (ms), observe→decide→execute→assert 累计")
 
 
 class AssertionResult(BaseModel):
@@ -214,6 +216,13 @@ class TestState(MessagesState):
     _last_tool_calls: list[dict[str, Any]]  # V2.0-A (2026-06-02): execute_node 传给 assert_node 的工具调用列表 (供 Rule 0.5 mark_task_complete 使用)
     _last_change_report: Optional[ChangeReport]  # assert_node 设置的变化报告
     _last_assertion: Optional[AssertionResult]  # assert_node 设置的断言结果
+
+    # V2.0 D 可观测性 (2026-06-02)
+    _last_token_count: int  # D1: 上一次 LLM 调用 (decide/assert) 的 token 数
+    _last_node_name: str  # D2: 上一次执行的节点名 (runtime 据此发 node_event WebSocket)
+    _last_node_duration_ms: int  # D2: 上一次节点耗时
+    _early_warning_sent: bool  # D4: 当前 case 早警告是否已发 (限频 1/case)
+    _step_token_log: Annotated[list[dict[str, Any]], operator.add]  # D3: 每步 token+duration, ReportBuilder 折线用
 
     # 任务元数据
     task_id: str

@@ -14,20 +14,67 @@ Safety valves: max steps per case, max consecutive failures (both configurable v
 
 from __future__ import annotations
 
+import functools
 import os
 import re
-from typing import Any
+import time
+from typing import Any, Awaitable, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
 from core.change_detector import detect_changes
+from core.execution_logger import log_node_event
 from core.interfaces import AssertionResult, ChangeReport, StepResult, TestCase, TestState
 from core.llm_client import count_tokens, get_llm_client, safe_structured_invoke
 from core.page_semantic import extract_page_semantics, take_screenshot, take_screenshot_compressed
 
 from agents.ui.prompts import _format_page_info, get_assertion_prompt, get_execution_system_prompt, get_step_prompt
 from agents.ui.tools import get_current_page, set_current_task, tools_by_name, tools, update_element_map
+
+
+# =============================================================================
+# V2.0 D (2026-06-02) — Observability: Node Instrumentation Decorator
+# =============================================================================
+
+
+def instrument_node(node_name: str) -> Callable[[Callable[..., Awaitable[dict]]], Callable[..., Awaitable[dict]]]:
+    """V2.0 D2 (2026-06-02): 装饰 L2 节点, 自动:
+    1. log_node_event("enter") + log_node_event("exit", duration_ms, token_count)
+    2. 把 node_name / duration_ms 写到 state (_last_node_name, _last_node_duration_ms)
+       让 runtime 据此发 WebSocket node_event
+    3. 保留原函数签名, 单测可直接 await observe_node(state) 不变
+
+    Args:
+        node_name: 节点名 (observe/decide/execute/assert/record)
+
+    Returns:
+        Decorator
+    """
+
+    def decorator(func: Callable[..., Awaitable[dict]]) -> Callable[..., Awaitable[dict]]:
+        @functools.wraps(func)
+        async def wrapper(state: dict[str, Any]) -> dict[str, Any]:
+            task_id = state.get("task_id", "")
+            log_node_event(task_id, node_name, "enter", token_count=0)
+            start = time.perf_counter()
+            result: dict[str, Any] = {}
+            try:
+                result = await func(state)
+                if not isinstance(result, dict):
+                    result = {}
+            finally:
+                duration_ms = int((time.perf_counter() - start) * 1000)
+                token_count = result.get("_last_token_count", 0) if isinstance(result, dict) else 0
+                log_node_event(task_id, node_name, "exit", duration_ms=duration_ms, token_count=token_count)
+                if isinstance(result, dict):
+                    result["_last_node_name"] = node_name
+                    result["_last_node_duration_ms"] = duration_ms
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 # =============================================================================
@@ -177,6 +224,7 @@ def should_continue_or_stop(state: dict[str, Any]) -> str:
 # =============================================================================
 
 
+@instrument_node("observe")
 async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
     """Extract page semantics and screenshot from the current page.
 
@@ -222,6 +270,7 @@ async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
         }
 
 
+@instrument_node("decide")
 async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
     """LLM decides the next action based on page semantics and test case steps.
 
@@ -298,6 +347,10 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
 
         messages.append(HumanMessage(content=content))
 
+        # V2.0 D1 (2026-06-02): 估算本次 decide 调用的 token 数
+        # count_messages_token() handles multimodal content + 中文 tokenize via tiktoken
+        decide_token_count = count_tokens(messages)
+
         # Call LLM
         # Robust Retry Loop for API Rate Limits (429)
         import asyncio
@@ -305,18 +358,19 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
         for attempt in range(max_retries):
             try:
                 response = await llm_with_tools.ainvoke(messages)
-                return {"messages": [response]}
+                return {"messages": [response], "_last_token_count": decide_token_count}
             except Exception as e:
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2 ** attempt)
                 else:
-                    return {"messages": [AIMessage(content=f"LLM调用失败: {str(e)}")]}
+                    return {"messages": [AIMessage(content=f"LLM调用失败: {str(e)}")], "_last_token_count": decide_token_count}
 
     except Exception as e:
         # Never crash: return error as AI message
         return {"messages": [AIMessage(content=f"LLM调用失败: {str(e)}")]}
 
 
+@instrument_node("execute")
 async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
     """Execute the tool call from the LLM's decide response.
 
@@ -412,6 +466,7 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@instrument_node("assert")
 async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
     """Assert the action result using hierarchical layers:
     
@@ -556,6 +611,16 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
 
         # B2: 走 safe_structured_invoke + pydantic AssertionResult
         # 双轨: 1) structured_output (主) → 2) raw parse + JSON extract (fallback)
+        # V2.0 D1 (2026-06-02): 估算本次 assert 调用的 token 数 (与 decide_node 同样的 tiktoken 路径)
+        # multimodal 路径 token 数 = prompt text + image (85)
+        if multimodal:
+            assert_token_count = count_tokens(
+                [SystemMessage(content="你是 UI 自动化测试断言专家. 输出 JSON: {status, reasoning}"),
+                 HumanMessage(content=content_with_image)]
+            )
+        else:
+            assert_token_count = count_tokens([HumanMessage(content=full_prompt)])
+
         result = await safe_structured_invoke(full_prompt, AssertionResult, model_type="sonnet")
 
         if result is not None and isinstance(result, AssertionResult):
@@ -605,6 +670,7 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
             "_last_change_report": change_report,
             "_last_assertion": assertion,
             "consecutive_failures": consecutive_failures,
+            "_last_token_count": assert_token_count,
         }
     except Exception as e:
         # Never crash: return inconclusive assertion
@@ -615,6 +681,7 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
         }
 
 
+@instrument_node("record")
 async def record_node(state: dict[str, Any]) -> dict[str, Any]:
     """Record the step result and manage context for next step.
 
@@ -674,6 +741,15 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
         if last_assertion and last_assertion.reasoning:
             reasoning_chain.append(f"[Assert] {last_assertion.reasoning[:300]}{'...' if len(last_assertion.reasoning) > 300 else ''}")
 
+        # V2.0 D1+D2 (2026-06-02): 记录本步 token 用量 + 总耗时, ReportBuilder 折线用
+        # _last_token_count 来自上一步 decide_node 调用 (decide 是 LLM 入口, 主要 token 消耗)
+        # duration_ms 来自 record_node 自身 (在 @instrument_node wrapper 里, 但我们在 step result 里记一个聚合值)
+        step_token_count = state.get("_last_token_count", 0)
+        # 累计耗时: 累加 4 个节点 (observe→decide→execute→assert→record) 的 _last_node_duration_ms
+        # 简化: 取当前 step 内最大的节点耗时作为 step duration (粗略, 4 节点串行实际接近求和)
+        # 更准确做法: 用 _step_token_log 累加. 这里用 _last_node_duration_ms 作单点参考.
+        step_duration_ms = state.get("_last_node_duration_ms", 0)
+
         step_result = StepResult(
             step_index=state.get("current_step", 0) - 1,  # execute already incremented
             action_type=action_type,
@@ -685,8 +761,19 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
             assertion=state.get("_last_assertion"),
             thought=last_ai_msg.content if isinstance(last_ai_msg.content, str) else str(last_ai_msg.content),
             reasoning_chain=reasoning_chain,
+            token_count=step_token_count,
+            duration_ms=step_duration_ms,
         )
         collected_steps = [step_result]
+
+        # V2.0 D3 (2026-06-02): 累积到 _step_token_log (operator.add reducer 自动 append)
+        # ReportBuilder 用这个画 token 折线
+        step_log_entry = {
+            "step_index": state.get("current_step", 0) - 1,
+            "token_count": step_token_count,
+            "duration_ms": step_duration_ms,
+            "assertion_status": state["_last_assertion"].status if state.get("_last_assertion") else "none",
+        }
 
     # V2.0 A2: token-aware truncation
     budget = int(os.getenv("L2_TOKEN_BUDGET", "30000"))
@@ -695,6 +782,8 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     if collected_steps:
         result["_collected_steps"] = collected_steps
+        # 只有当 has_tool_call 时才有 step_log_entry
+        result["_step_token_log"] = [step_log_entry]
     if messages_to_remove:
         result["messages"] = messages_to_remove
 

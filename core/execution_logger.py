@@ -6,6 +6,9 @@ and test results. Uses SQLAlchemy async session for database operations.
 
 from __future__ import annotations
 
+import json
+import sys
+import time
 from typing import Any
 
 from sqlalchemy import select
@@ -16,6 +19,59 @@ from database.models import Task, TaskStep
 
 # Maps external string task_id (UUID) to internal database auto-increment id.
 _task_id_map: dict[str, int] = {}
+
+# V2.0 D2 (2026-06-02): in-memory node event buffer.
+# 给单测 + WebSocket 消费者 + 离线分析. 进程内 (不持久化), 测试用 clear_node_events() 重置.
+_node_event_log: list[dict[str, Any]] = []
+
+
+def log_node_event(
+    task_id: str,
+    node_name: str,
+    event_type: str,
+    duration_ms: int = 0,
+    token_count: int = 0,
+) -> None:
+    """V2.0 D2 (2026-06-02): 记录 L2 执行图节点事件. 进 stderr (JSON) + in-memory buffer.
+
+    设计理由 (来自 V2.0 v2 plan §3.4 D2):
+    - stderr: 结构化 JSON 行, 方便 docker/k8s/日志聚合工具收集
+    - in-memory: 给 WebSocket consumer + 单测 + 报告生成器消费
+    - 双写: 单进程调试看 stderr, 集成测试读 buffer, 都不影响 DB (不像 log_step 那样)
+
+    Args:
+        task_id: 任务 ID (state.task_id)
+        node_name: 节点名 (observe/decide/execute/assert/record)
+        event_type: "enter" | "exit"
+        duration_ms: exit 时填, enter 时为 0
+        token_count: exit 时填, LLM 调用节点 (decide/assert) 的 token 数
+    """
+    event: dict[str, Any] = {
+        "task_id": task_id,
+        "node": node_name,
+        "event": event_type,
+        "duration_ms": duration_ms,
+        "token_count": token_count,
+        "ts": time.time(),
+    }
+    _node_event_log.append(event)
+    try:
+        sys.stderr.write(f"[L2_NODE_EVENT] {json.dumps(event, ensure_ascii=False)}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def get_node_events(task_id: str = "") -> list[dict[str, Any]]:
+    """V2.0 D2: 查询节点事件. task_id 为空时返回全部 (测试用)."""
+    if not task_id:
+        return list(_node_event_log)
+    return [e for e in _node_event_log if e.get("task_id") == task_id]
+
+
+def clear_node_events() -> None:
+    """V2.0 D2: 清空事件 buffer (测试用)."""
+    _node_event_log.clear()
 
 
 async def log_task_created(task_id: str, task_name: str, target_url: str, config: dict) -> None:

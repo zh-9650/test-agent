@@ -1014,6 +1014,384 @@ async def test_c5_report_builder_includes_reasoning_chain_html():
 
 
 # ---------------------------------------------------------------------------
+# V2.0 D (2026-06-02) — Observability: token tracking + node events + early-warning
+# ---------------------------------------------------------------------------
+
+# ---- D1: tiktoken upgrade ----
+
+def test_d1_count_tokens_uses_tiktoken():
+    """D1 契约: 优先走 tiktoken (cl100k_base), 不可用时回退启发式."""
+    from core.llm_client import count_tokens, _TIKTOKEN_AVAILABLE
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    msgs = [
+        SystemMessage(content="You are a tester."),
+        HumanMessage(content="Click the login button at coordinates (100, 200)"),
+    ]
+    n = count_tokens(msgs)
+    # tiktoken cl100k_base 对英文短文通常 1 token / 0.75 word, 10-30 字符 ~ 5-15 tokens
+    # 启发式: 4 chars/token, 50 字符 / 4 = 12 tokens
+    # tiktoken 应给类似或更准的值
+    assert n > 0
+    assert n < 200  # sanity check (避免 token 爆炸)
+    # 报告用的是哪个 (用 _TIKTOKEN_AVAILABLE 标志间接验证)
+    import os
+    if os.getenv("L2_FORCE_HEURISTIC") == "1":
+        # 测试用: 强制走启发式
+        pass
+    else:
+        # tiktoken 已安装, 应优先走
+        assert _TIKTOKEN_AVAILABLE, "tiktoken 应可用 (已装 0.13.0)"
+
+
+def test_d1_count_tokens_handles_multimodal():
+    """D1 契约: multimodal content (含 image_url) 应被估算 (image 固定 85 tokens)."""
+    from core.llm_client import count_tokens
+    from langchain_core.messages import HumanMessage
+
+    msgs = [
+        HumanMessage(content=[
+            {"type": "text", "text": "Look at this screenshot"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
+        ])
+    ]
+    n = count_tokens(msgs)
+    # 4 words "Look at this screenshot" + 85 image
+    assert n >= 85, f"image_url 应至少 85 tokens, 实际 {n}"
+
+
+def test_d1_count_tokens_handles_chinese():
+    """D1 契约: 中文为主的 prompt 应被正确估算 (tiktoken 准; 启发式 1.5 chars/token)."""
+    from core.llm_client import count_tokens
+    from langchain_core.messages import HumanMessage
+
+    msgs = [HumanMessage(content="你是测试工程师, 请点击登录按钮, 验证跳转 /secure")]
+    n = count_tokens(msgs)
+    # 30 字符 / 1.5 chars/token = 20 tokens (启发式)
+    # tiktoken 中文 (cl100k_base): 1 char ≈ 1-2 tokens, 30-60 tokens
+    # 我们要的是 "有合理值" (10-100 范围)
+    assert 10 <= n <= 200, f"中文 token 估算偏离, 实际 {n}"
+
+
+# ---- D1: decide_node + assert_node 写 token count 到 state ----
+
+@pytest.mark.asyncio
+async def test_d1_decide_node_writes_token_count_to_state(sample_test_case, sample_task_config):
+    """D1 契约: decide_node 完成后, state 应含 _last_token_count > 0."""
+    from agents.ui.execution_graph import decide_node
+    from langchain_core.messages import AIMessage
+
+    state = {
+        "task_id": "t1",
+        "test_plan": [sample_test_case],
+        "current_index": 0,
+        "current_step": 0,
+        "consecutive_failures": 0,
+        "page_info": {"url": "https://example.com", "title": "T", "interactive_elements": []},
+        "screenshot": "",
+        "state_before": {},
+        "state_after": {},
+        "task_config": dict(sample_task_config),
+        "session_summary": "",
+        "messages": [],
+    }
+
+    mock_llm = MagicMock()
+    mock_llm_with_tools = MagicMock()
+    async def fake_ainvoke(messages):
+        return AIMessage(content="ok", tool_calls=[])
+    mock_llm_with_tools.ainvoke = fake_ainvoke
+    mock_llm.bind_tools = MagicMock(return_value=mock_llm_with_tools)
+
+    with patch("agents.ui.execution_graph.get_llm_client", return_value=mock_llm), \
+         patch("agents.ui.execution_graph.get_execution_system_prompt", return_value="BASE_SYS_PROMPT_X" * 50), \
+         patch("agents.ui.execution_graph.get_step_prompt", return_value="STEP_X" * 20), \
+         patch("agents.ui.execution_graph._format_page_info", return_value="PAGE_X" * 30), \
+         patch("core.memory_utils.retrieve_memories", new=AsyncMock(return_value="")), \
+         patch("agents.ui.tools.set_current_task"):
+        result = await decide_node(state)
+
+    # D1 契约: 写 _last_token_count + _last_node_name + _last_node_duration_ms
+    assert "_last_token_count" in result, "D1 违反: decide_node 未写 _last_token_count"
+    assert result["_last_token_count"] > 0, f"D1 违反: _last_token_count 应 > 0, 实际 {result['_last_token_count']}"
+    assert result.get("_last_node_name") == "decide"
+    assert result.get("_last_node_duration_ms", 0) >= 0
+
+
+@pytest.mark.asyncio
+async def test_d1_assert_node_writes_token_count_to_state(sample_test_case):
+    """D1 契约: assert_node 完成后, state 应含 _last_token_count (assert 路径)."""
+    from agents.ui.execution_graph import assert_node
+    from core.interfaces import ChangeReport, AssertionResult as _AR
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    ai_msg = AIMessage(content="x", tool_calls=[{"name": "click", "args": {"target": "#1"}, "id": "c1"}])
+    tool_msg = ToolMessage(content="ok", tool_call_id="c1")
+
+    state = {
+        "task_id": "t1",
+        "test_plan": [sample_test_case],
+        "current_index": 0,
+        "current_step": 3,
+        "messages": [ai_msg, tool_msg],
+        "state_before": {},
+        "state_after": {"url": "u", "interactive_elements": []},
+        "screenshot_after": "",
+        "consecutive_failures": 0,
+        "_last_tool_calls": [{"name": "click", "args": {"target": "#1"}, "id": "c1"}],
+    }
+
+    mock_cr = ChangeReport(url_changed=True, url_before="a", url_after="b")
+    mock_result = _AR(status="pass", reasoning="通过")
+
+    with patch("agents.ui.execution_graph.detect_changes", return_value=mock_cr), \
+         patch("agents.ui.execution_graph.get_assertion_prompt", return_value="ASSERT_PROMPT_X" * 100), \
+         patch("agents.ui.execution_graph.safe_structured_invoke", new=AsyncMock(return_value=mock_result)):
+        result = await assert_node(state)
+
+    assert "_last_token_count" in result, "D1 违反: assert_node 未写 _last_token_count"
+    assert result["_last_token_count"] > 0, f"D1 违反: _last_token_count 应 > 0, 实际 {result['_last_token_count']}"
+    assert result.get("_last_node_name") == "assert"
+
+
+def test_d1_step_result_has_token_count_and_duration_fields():
+    """D1+D2 契约: StepResult 新增 token_count + duration_ms 字段."""
+    from core.interfaces import StepResult
+
+    sr = StepResult(
+        step_index=0,
+        action_type="click",
+        action_target="#1",
+        token_count=1234,
+        duration_ms=567,
+    )
+    assert sr.token_count == 1234
+    assert sr.duration_ms == 567
+
+    # 默认值
+    sr2 = StepResult(step_index=0, action_type="click")
+    assert sr2.token_count == 0
+    assert sr2.duration_ms == 0
+
+
+# ---- D2: execution_logger.log_node_event ----
+
+def test_d2_log_node_event_appends_to_buffer():
+    """D2 契约: log_node_event 写 in-memory buffer + stderr (JSON 结构)."""
+    from core.execution_logger import log_node_event, get_node_events, clear_node_events
+    import sys
+    from io import StringIO
+
+    clear_node_events()
+    log_node_event("t1", "observe", "enter", token_count=0)
+    log_node_event("t1", "observe", "exit", duration_ms=42, token_count=0)
+
+    events = get_node_events("t1")
+    assert len(events) == 2
+    assert events[0]["event"] == "enter"
+    assert events[0]["node"] == "observe"
+    assert events[1]["event"] == "exit"
+    assert events[1]["duration_ms"] == 42
+    # 字段齐全
+    for e in events:
+        assert "task_id" in e
+        assert "node" in e
+        assert "event" in e
+        assert "ts" in e
+        assert e["task_id"] == "t1"
+
+    clear_node_events()
+    assert get_node_events() == []
+
+
+def test_d2_get_node_events_filter_by_task_id():
+    """D2 契约: get_node_events(task_id) 应只返该 task 的事件."""
+    from core.execution_logger import log_node_event, get_node_events, clear_node_events
+
+    clear_node_events()
+    log_node_event("t1", "observe", "enter")
+    log_node_event("t2", "observe", "enter")
+    log_node_event("t1", "decide", "enter")
+
+    t1_events = get_node_events("t1")
+    assert len(t1_events) == 2
+    assert all(e["task_id"] == "t1" for e in t1_events)
+
+    t2_events = get_node_events("t2")
+    assert len(t2_events) == 1
+    assert t2_events[0]["node"] == "observe"
+
+    all_events = get_node_events()
+    assert len(all_events) == 3
+
+    clear_node_events()
+
+
+@pytest.mark.asyncio
+async def test_d2_observe_node_emits_enter_and_exit_events(sample_test_case):
+    """D2 集成: observe_node 跑完后, buffer 应有 enter + exit 两个事件."""
+    from agents.ui.execution_graph import observe_node
+    from core.execution_logger import get_node_events, clear_node_events
+
+    clear_node_events()
+
+    state = {
+        "task_id": "d2-task",
+        "current_step": 0,
+        "page_info": {},
+        "screenshot": "",
+        "state_before": {},
+        "state_after": {},
+    }
+
+    mock_page = MagicMock()
+    with patch("agents.ui.execution_graph.get_current_page", return_value=mock_page), \
+         patch("agents.ui.execution_graph.extract_page_semantics", new=AsyncMock(return_value={"url": "u", "title": "t", "interactive_elements": []})), \
+         patch("agents.ui.execution_graph.take_screenshot_compressed", new=AsyncMock(return_value="")), \
+         patch("agents.ui.execution_graph.update_element_map"), \
+         patch("agents.ui.tools.set_current_task"):
+        await observe_node(state)
+
+    events = get_node_events("d2-task")
+    assert len(events) == 2
+    assert events[0]["event"] == "enter"
+    assert events[0]["node"] == "observe"
+    assert events[1]["event"] == "exit"
+    assert events[1]["duration_ms"] >= 0  # 实测会 > 0, 但 >= 0 兜底
+    assert events[1]["node"] == "observe"
+
+    clear_node_events()
+
+
+# ---- D3: ReportBuilder token chart ----
+
+def test_d3_report_builder_renders_token_chart_html():
+    """D3 契约: ReportBuilder HTML 应含 Token 折线 / 柱状图 CSS 类 (l2-observability / token-bar)."""
+    from core.report_builder import ReportBuilder
+    from core.interfaces import StepResult, AssertionResult, TestResult
+
+    rb = ReportBuilder(task_id="d3-test")
+    rb.add_result(TestResult(
+        test_case_id="TC-001",
+        test_case_title="登录",
+        status="passed",
+        steps=[
+            StepResult(
+                step_index=0, action_type="click", action_target="#login",
+                token_count=500, duration_ms=200,
+                assertion=AssertionResult(status="pass", reasoning="通过"),
+            ),
+            StepResult(
+                step_index=1, action_type="input_text", action_target="#1",
+                token_count=750, duration_ms=300,
+                assertion=AssertionResult(status="pass", reasoning="通过"),
+            ),
+        ],
+    ))
+
+    html = rb.build_html(ai_summary="共 1 个用例")
+    # D3 token 柱状图
+    assert "l2-observability" in html, "D3 违反: HTML 缺 l2-observability 容器"
+    assert "token-chart" in html, "D3 违反: HTML 缺 token-chart 容器"
+    assert "token-bar-row" in html, "D3 违反: HTML 缺 token-bar-row 单元"
+    assert "500 tok" in html, "D3 违反: step 0 token_count 未渲染"
+    assert "750 tok" in html, "D3 违反: step 1 token_count 未渲染"
+    assert "本用例总 token: <strong>1250</strong>" in html, "D3 违反: 总 token 未计算"
+    assert "本用例步数: <strong>2</strong>" in html
+
+
+def test_d3_report_builder_omits_token_chart_when_no_token_data():
+    """D3 边界: 所有 step 的 token_count=0 时, 不渲染 token 图."""
+    from core.report_builder import ReportBuilder
+    from core.interfaces import StepResult, AssertionResult, TestResult
+
+    rb = ReportBuilder(task_id="d3-no-tokens")
+    rb.add_result(TestResult(
+        test_case_id="TC-001",
+        test_case_title="legacy",
+        status="passed",
+        steps=[
+            StepResult(
+                step_index=0, action_type="click", action_target="#x",
+                token_count=0,
+                assertion=AssertionResult(status="pass", reasoning="ok"),
+            ),
+        ],
+    ))
+    html = rb.build_html(ai_summary="")
+    # 无 token 数据时, D3 数据行不应出现 (用 "本用例总 token" 这个唯一标记)
+    assert "本用例总 token" not in html
+    assert "本用例步数" not in html
+
+
+# ---- D4: early-warning helper ----
+
+def test_d4_should_emit_early_warning_helper():
+    """D4 契约: _should_emit_early_warning 工具函数在 cf>=2 且未发过时返 True."""
+    from core.runtime import _should_emit_early_warning
+
+    # cf=0 → 不发
+    assert _should_emit_early_warning({"consecutive_failures": 0}, max_failures=3) is False
+    # cf=1 → 不发 (阈值 2)
+    assert _should_emit_early_warning({"consecutive_failures": 1}, max_failures=3) is False
+    # cf=2, 未发过 → 发
+    assert _should_emit_early_warning(
+        {"consecutive_failures": 2, "_early_warning_sent": False}, max_failures=3
+    ) is True
+    # cf=2, 已发过 → 不发 (限频 1/case)
+    assert _should_emit_early_warning(
+        {"consecutive_failures": 2, "_early_warning_sent": True}, max_failures=3
+    ) is False
+    # cf >= max_failures → 不发 (已触发安全阀, 不用 early-warning)
+    assert _should_emit_early_warning(
+        {"consecutive_failures": 3, "_early_warning_sent": False}, max_failures=3
+    ) is False
+    # cf=2 但 max=2 → 不发 (临界, 直接安全阀)
+    assert _should_emit_early_warning(
+        {"consecutive_failures": 2, "_early_warning_sent": False}, max_failures=2
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_d4_record_node_writes_step_token_log(sample_test_case):
+    """D3 集成: record_node 完成后, 应写 _step_token_log entry (cumulative)."""
+    from agents.ui.execution_graph import record_node
+    from langchain_core.messages import AIMessage
+    from core.interfaces import AssertionResult
+
+    ai_msg = AIMessage(
+        content="click",
+        tool_calls=[{"name": "click", "args": {"target": "#1"}, "id": "c1"}],
+    )
+    state = {
+        "messages": [ai_msg],
+        "current_step": 1,
+        "consecutive_failures": 0,
+        "_last_tool_result": "ok",
+        "_last_change_report": None,
+        "_last_assertion": AssertionResult(status="pass", reasoning="通过"),
+        "_last_token_count": 1234,  # D1: 模拟 decide_node 算好的 token
+        "_last_node_duration_ms": 567,  # D2: 模拟装饰器写的耗时
+    }
+    result = await record_node(state)
+
+    # D3: step_token_log 应含 1 个 entry
+    log = result.get("_step_token_log", [])
+    assert len(log) == 1
+    entry = log[0]
+    assert entry["step_index"] == 0  # current_step - 1
+    assert entry["token_count"] == 1234
+    assert entry["duration_ms"] == 567
+    assert entry["assertion_status"] == "pass"
+
+    # D1+D2: StepResult 字段
+    steps = result.get("_collected_steps", [])
+    assert len(steps) == 1
+    assert steps[0].token_count == 1234
+    assert steps[0].duration_ms == 567
+
+
+# ---------------------------------------------------------------------------
 # Live integration test (costs tokens, requires L2_LIVE=1)
 # ---------------------------------------------------------------------------
 
