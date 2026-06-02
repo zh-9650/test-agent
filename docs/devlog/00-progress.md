@@ -28,7 +28,8 @@
 | 18 | [Phase 2] V1.4: Use Case Scaffold | ✅ | Lead | 2026-06-01 | 2026-06-01 | 18-layer1-usecase-scaffold.md |
 | 19 | [Phase 2] V1.5: Layer 1 鲁棒性 + 报告可观测性 | ✅ | Lead | 2026-06-01 | 2026-06-01 | 19-layer1-hardening.md |
 | 20 | [Phase 2] V1.6+V1.7: L1+Phase 1.5 prompt 全面加固 + 盲点修复 + L1 收尾 | ✅ | Lead | 2026-06-01 | 2026-06-01 | 20-layer1-prompt-engineering-v17.md |
-| 21 | [Phase 2] V2.0: L2 全面加固计划 (A+B+C+D, 4 阶段, 4 commit) | 📋 Plan | Lead | 2026-06-01 | 待执行 | 21-layer2-v2.0-plan.md + `docs/layer2-v2.0-plan.md` |
+| 21 | [Phase 2] V2.0 v1: L2 全面加固计划 (A+B+C+D, 4 阶段, 4 commit) | 📋 Plan v1 → v2 | Lead | 2026-06-01 | 2026-06-01 | 21-layer2-v2.0-plan.md + `docs/layer2-v2.0-plan.md` |
+| 22 | [Phase 2] **Phase 1.6**: N2+explore+SystemMap 三件套加固 (插在 V2.0 A 之前) | 📋 Plan | Lead | 2026-06-01 | 待执行 | 21-layer2-v2.0-plan.md §3.0 |
 
 ## 队友分配
 

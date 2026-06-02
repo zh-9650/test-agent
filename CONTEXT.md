@@ -43,19 +43,31 @@
 *   **V1.5 Layer 1 鲁棒性与可观测性 (已完成)**：在 V1.3/V1.4 基础上，针对 Qwen/DeepSeek/Kimi 等 Anthropic 兼容端点对 `with_structured_output` 支持不完整的问题，在 `core/llm_client.py` 统一 `safe_structured_invoke` 入口（原生结构化 + 手动 JSON 解析双轨，覆盖 content 块列表、code fence、单层包络、list/dict/str 三态输入）。把 Node 1.7 覆盖率自检报告接入 HTML 报告，前端 `testLayer1` 增加 SSE `progress: "error"` 抛错识别，`scratch/test_layer1.py` 端到端跑通。
 *   **后续焦点**：Business Graph 数据库、Reflection 自我反思循环、跨任务的长期 Memory 沉淀、多 Agent 协同。
 
-### V2.0 计划（已落盘 2026-06-01）: L2 全面加固
+### V2.0 计划 v2（已落盘 2026-06-01, 修订版）: L2 + Phase 1.6 全面加固
 
 V1.7 完成后 L1 + Phase 1.5 8 个 skill 全部 V1.6 化。**L2 (execution_graph) 仍是 prompt 调用 hot path**（每步 1 次 LLM，典型 case 6-10 次）但工程标准远落后 L1：3 个 prompt 全是 `##` 自由文本、assert 手剥 JSON、无 L2 回归测试、context 按"条"截断撞 65K token 上限、工具失败不计入 consecutive_failures、L2 ↔ L1 业务模型几乎零耦合。
 
-V2.0 用 4 阶段让 L2 追平 L1 V1.7 同等工程标准：
-- **Phase A (1.5d)**: 安全网 + 测试基础设施（5 个 P0 漏洞修复 + `test_l2_prompts.py` + `L2_LIVE=1` 开关 + `scratch/test_l2_e2e.py`）
-- **Phase B (2.5d)**: Prompt V1.6 化（3 个 prompt 5 段 XML + pydantic `AssertionResult` + inter-node 契约 + 账号密码从 system_prompt 剥离）
-- **Phase C (1d)**: 联动 L1 业务模型（`<prd_rules>` / `<focus_areas>` / `<scenarios>` / `<risk_points>` 4 字段进 `<context>` + ReportBuilder L2 卡片显示 reasoning_chain）
-- **Phase D (1d)**: 可观测性（tiktoken token 估算 + execution_logger node_enter/exit 事件 + ReportBuilder token 折线 + WebSocket 推 node 流与告警）
+**V2.0 v2 修订依据**：2026-06-01 收到 GPT 外部评审建议，核心洞察：
+- ✅ "N2 SystemModel 是 L1 真实薄弱节点"（V1.7 报告原文 3/4 fixture 触发 fallback）—— **V2.0 v1 漏了**
+- ❌ GPT 误判"缺 SystemMap"——**V1.2 已存在并被 scenario_extractor 消费**
+- ✅ "补理论 + 真实桥梁"方向对
+- ⭐ **"建 Gap Analyzer"**（SystemModel vs SystemMap 比对）—— V2.1 候选
 
-**4 阶段独立 commit，7-8 天**。完整方案：`docs/layer2-v2.0-plan.md` + devlog 21。
+**V2.0 v2 用 5 阶段让 L2 追平 L1 V1.7 同等工程标准**（执行顺序：1.6 → A → B → C → D）：
 
-**不在 V2.0 范围**（明确）：Phase E Reflection（需 50 case 数据评估）、Business Graph、LangSmith 集成、Multi-Agent、tools.py 14 工具缺陷修复（除 evaluate_js 黑名单）、PostgreSQL checkpointer 升级。
+- **Phase 1.6 (1.5-2d, 新增，先于 A)**：N2 + planning_graph explore + SystemMap 三件套加固
+  - **1.6.1** 修 N2 SystemModel fallback（V1.7 报告点名的 P0）
+  - **1.6.2** planning_graph explore_decide / execute V1.6 化（V1.7 漏点）
+  - **1.6.3** SystemMap 采样 10/15 → 20/30 + invariant 测试
+  - **1.6.4** 文档同步（prompt-engineering §8 扩 planning_graph 章节）
+- **Phase A (1.5d)**: L2 安全网 + 测试基础设施（5 个 L2 P0 漏洞修复 + `test_l2_prompts.py` + `L2_LIVE=1` + e2e）
+- **Phase B (2.5d)**: L2 Prompt V1.6 化（3 个 prompt 5 段 XML + pydantic `AssertionResult` + inter-node 契约 + 账号密码剥离）
+- **Phase C (1d)**: 联动 L1 业务模型（`<prd_rules>` / `<focus_areas>` / `<scenarios>` / `<risk_points>` + ReportBuilder L2 卡片）
+- **Phase D (1d)**: L2 可观测性（tiktoken + node 事件 + WebSocket 告警）
+
+**5 阶段独立 commit，9-10 天**。完整方案：`docs/layer2-v2.0-plan.md` v2 + devlog 21（v2 修订版）+ handoff。
+
+**不在 V2.0 范围**（明确）：Phase E Reflection（需 50 case 评估）、Gap Analyzer（V2.1 候选）、Business Graph、LangSmith 集成、Multi-Agent、tools.py 14 工具缺陷修复（除 evaluate_js 黑名单）、PostgreSQL checkpointer 升级。
 
 ### Phase 3: 自主测试团队 (Autonomous Testing Team)
 *   完全自主接管产品迭代的回归测试。
