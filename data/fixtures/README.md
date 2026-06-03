@@ -14,6 +14,9 @@
 | `swagger_purchase.txt` | 简单 4 个接口 | 极简 Swagger 解析 |
 | `prd_adversarial.md` | 故意模糊/矛盾 | 验证 KnowledgeExtractor 标 `inferred` + use_case_coverage 鲁棒性 |
 | `prd_minimal.md` | 1 条规则 | 极小输入下 Node 1 不崩 |
+| `prd_automation_exercise.md` | 公开 e-commerce 测试站 PRD | 26 个官方 TC + 20 条业务规则 + 完整状态机 + 8 业务场景 |
+| `swagger_automation_exercise.yaml` | 公开 e-commerce 测试站 OpenAPI | 14 个 API 端点 (products/brands/accounts/search) |
+| `changelog_automation_exercise.md` | 公开 e-commerce 测试站发版日志 | v1.2.0 新增 Recommended Items / Write Your Review / 滚动按钮 |
 
 ## 用法
 

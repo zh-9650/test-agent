@@ -303,8 +303,11 @@ class Runtime:
         profile = BrowserProfile(
             record_video_dir=os.path.join(data_dir, "videos"),
         )
-        print("DEBUG: Creating BrowserSession")
-        self.browser_session = BrowserSession(headless=True, browser_profile=profile)
+        # V2.0 D+ 调试支持: BROWSER_HEADED=true 启动有头浏览器便于人工观察
+        # 默认 headless=true (CI 友好); dev/scratch 脚本可设 BROWSER_HEADED=1
+        _headed_env = os.getenv("BROWSER_HEADED", "false").lower() in ("true", "1", "yes")
+        print(f"DEBUG: Creating BrowserSession headless={not _headed_env}")
+        self.browser_session = BrowserSession(headless=not _headed_env, browser_profile=profile)
         print("DEBUG: Starting BrowserSession")
         await self.browser_session.start()
 
@@ -383,6 +386,7 @@ class Runtime:
             "_step_token_log": [],
             "task_id": self.task_id,
             "task_config": self.task_config,
+            "_locator_stats": {"total": 0, "failed": 0},
         }
 
     async def _run_planning(self) -> tuple[list[TestCase], dict[str, Setup]]:
@@ -414,19 +418,32 @@ class Runtime:
         """Execute a single test case."""
         start_time = time.time()
 
-        # Reset browser state to prevent cross-test contamination
+        # B1.5: 增强型浏览器状态重置 — 防止测试用例间状态污染
         try:
             if getattr(self, "context", None):
                 await self.context.clear_cookies()
             if getattr(self, "page", None):
                 try:
                     await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
-                    await self.page.goto("about:blank")
+                    # 等待页面完全卸载
+                    await self.page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
                 except Exception:
                     pass
-                await self.page.goto(self.target_url, wait_until="load", timeout=30000)
+                # 重新导航到目标 URL, 等待 networkidle + DOM 稳定
+                await self.page.goto(self.target_url, wait_until="networkidle", timeout=30000)
+                # 等待额外稳定时间, 确保异步渲染完成
+                from agents.ui.tools import _wait_for_stable
+                try:
+                    await _wait_for_stable(self.page, timeout=3000, poll_interval=300)
+                except Exception:
+                    pass
+                # 验证是否确实到达目标 URL
+                current_url = self.page.url
+                if not current_url.startswith(self.target_url.rstrip("/")):
+                    print(f"[Runtime] 状态重置后 URL 不匹配: {current_url} != {self.target_url}, 重试一次")
+                    await self.page.goto(self.target_url, wait_until="load", timeout=30000)
         except Exception as e:
-            print(f"[Runtime] Failed to reset browser state: {e}")
+            print(f"[Runtime] 增强状态重置失败: {e}")
 
         # Execute setups if needed
         setup_results: list[Any] = []
@@ -552,19 +569,28 @@ class Runtime:
         """
         start_time = time.time()
 
-        # Reset browser state to prevent cross-test contamination
+        # B1.5: 增强型浏览器状态重置
         try:
             if getattr(self, "context", None):
                 await self.context.clear_cookies()
             if getattr(self, "page", None):
                 try:
                     await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
-                    await self.page.goto("about:blank")
+                    await self.page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
                 except Exception:
                     pass
-                await self.page.goto(self.target_url, wait_until="load", timeout=30000)
+                await self.page.goto(self.target_url, wait_until="networkidle", timeout=30000)
+                from agents.ui.tools import _wait_for_stable
+                try:
+                    await _wait_for_stable(self.page, timeout=3000, poll_interval=300)
+                except Exception:
+                    pass
+                current_url = self.page.url
+                if not current_url.startswith(self.target_url.rstrip("/")):
+                    print(f"[Runtime] 状态重置后 URL 不匹配: {current_url} != {self.target_url}, 重试一次")
+                    await self.page.goto(self.target_url, wait_until="load", timeout=30000)
         except Exception as e:
-            print(f"[Runtime] Failed to reset browser state: {e}")
+            print(f"[Runtime] 增强状态重置失败: {e}")
 
         # Execute setups if needed
         for precondition_id in test_case.preconditions:

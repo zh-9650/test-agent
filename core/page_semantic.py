@@ -224,6 +224,101 @@ async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
     return elements
 
 
+async def _get_element_role(el: Any, el_type: str, tag: str = "") -> str:
+    """Get the ARIA role for an element."""
+    try:
+        role = await el.get_attribute("role")
+        if role:
+            return role
+    except Exception:
+        pass
+    role_map = {
+        "button": "button",
+        "link": "link",
+        "checkbox": "checkbox",
+        "radio": "radio",
+        "select": "combobox",
+        "input": "textbox" if tag != "submit" else "button",
+    }
+    return role_map.get(el_type, tag or el_type)
+
+
+async def _get_element_semantics(el: Any, el_type: str, page: Any = None) -> dict[str, Any]:
+    """Phase 2.0A Sprint 4: 获取元素的可见/启用/交互/只读/选中等语义状态。"""
+    visible = False
+    enabled = False
+    readonly = False
+    checked = None
+    selected = False
+
+    try:
+        visible = await el.is_visible()
+    except Exception:
+        pass
+
+    try:
+        enabled = await el.is_enabled()
+    except Exception:
+        pass
+
+    try:
+        ro = await el.get_attribute("readonly")
+        readonly = ro is not None
+    except Exception:
+        pass
+
+    if el_type in ("checkbox", "radio"):
+        try:
+            checked = await el.is_checked()
+        except Exception:
+            pass
+        if checked is None:
+            try:
+                aria = await el.get_attribute("aria-checked")
+                if aria is not None:
+                    checked = aria.lower() == "true"
+            except Exception:
+                pass
+        if checked is None:
+            checked = False
+    elif el_type == "input":
+        try:
+            it = await el.get_attribute("type") or "text"
+            if it in ("checkbox", "radio"):
+                try:
+                    checked = await el.is_checked()
+                except Exception:
+                    pass
+                if checked is None:
+                    checked = False
+        except Exception:
+            pass
+
+    try:
+        selected_attr = await el.get_attribute("selected")
+        selected = selected_attr is not None
+    except Exception:
+        pass
+
+    tag = ""
+    try:
+        tag = await el.evaluate("el => el.tagName.toLowerCase()")
+    except Exception:
+        pass
+
+    role = await _get_element_role(el, el_type, tag)
+
+    return {
+        "visible": visible,
+        "enabled": enabled,
+        "interactable": visible and enabled,
+        "readonly": readonly,
+        "checked": checked,
+        "selected": selected,
+        "role": role,
+    }
+
+
 async def _extract_input(page: Any, el: Any, counter: int) -> dict[str, Any] | None:
     """Extract info from an input element."""
     input_type = await el.get_attribute("type") or "text"
@@ -245,6 +340,8 @@ async def _extract_input(page: Any, el: Any, counter: int) -> dict[str, Any] | N
     else:
         value = "***"
 
+    semantics = await _get_element_semantics(el, "input", page)
+
     return {
         "id": f"#{counter}",
         "type": "input",
@@ -254,6 +351,7 @@ async def _extract_input(page: Any, el: Any, counter: int) -> dict[str, Any] | N
         "required": required,
         "disabled": disabled,
         "value": value,
+        **semantics,
     }
 
 
@@ -267,12 +365,15 @@ async def _extract_button(el: Any, counter: int) -> dict[str, Any] | None:
     except Exception:
         pass
 
+    semantics = await _get_element_semantics(el, "button")
+
     return {
         "id": f"#{counter}",
         "type": "button",
         "text": text.strip(),
         "button_type": button_type,
         "disabled": disabled,
+        **semantics,
     }
 
 
@@ -281,11 +382,14 @@ async def _extract_link(el: Any, counter: int) -> dict[str, Any] | None:
     text = await el.text_content() or ""
     href = await el.get_attribute("href") or ""
 
+    semantics = await _get_element_semantics(el, "link")
+
     return {
         "id": f"#{counter}",
         "type": "link",
         "text": text.strip(),
         "href": href,
+        **semantics,
     }
 
 
@@ -296,37 +400,68 @@ async def _extract_select(page: Any, el: Any, counter: int) -> dict[str, Any] | 
         el => Array.from(el.options).map(o => o.text.trim())
     """)
 
+    semantics = await _get_element_semantics(el, "select", page)
+
     return {
         "id": f"#{counter}",
         "type": "select",
         "label": label,
         "options": options or [],
+        **semantics,
     }
 
 
 async def _extract_checkbox(page: Any, el: Any, counter: int) -> dict[str, Any] | None:
     """Extract info from a checkbox element."""
     label = await _find_label(page, el)
-    checked = await el.is_checked() if hasattr(el, "is_checked") else False
+    checked = False
+    try:
+        checked = await el.is_checked()
+    except Exception:
+        pass
+    if not checked:
+        try:
+            aria = await el.get_attribute("aria-checked")
+            if aria is not None:
+                checked = aria.lower() == "true"
+        except Exception:
+            pass
+
+    semantics = await _get_element_semantics(el, "checkbox", page)
 
     return {
         "id": f"#{counter}",
         "type": "checkbox",
         "label": label,
         "checked": checked,
+        **semantics,
     }
 
 
 async def _extract_radio(page: Any, el: Any, counter: int) -> dict[str, Any] | None:
     """Extract info from a radio button element."""
     label = await _find_label(page, el)
-    checked = await el.is_checked() if hasattr(el, "is_checked") else False
+    checked = False
+    try:
+        checked = await el.is_checked()
+    except Exception:
+        pass
+    if not checked:
+        try:
+            aria = await el.get_attribute("aria-checked")
+            if aria is not None:
+                checked = aria.lower() == "true"
+        except Exception:
+            pass
+
+    semantics = await _get_element_semantics(el, "radio", page)
 
     return {
         "id": f"#{counter}",
         "type": "radio",
         "label": label,
         "checked": checked,
+        **semantics,
     }
 
 

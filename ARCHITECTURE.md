@@ -73,6 +73,15 @@
 ### 2. 导航防火墙 (Navigate Firewall)
 在探索阶段严禁 LLM 凭空伪造跳转路由。跳转目标必须存在于页面的实际 DOM 元素（href）或系统模型的已知边界内，极大降低幻觉造成的死循环。
 
+### 3. L2 执行环路升级 (Phase 2.0A 升级)
+为提升执行成功率，L2 执行环路由简单的 ReAct V1 (`Observe → Decide → Execute → Assert`) 升级为**强状态驱动与失败反馈环路**：
+- **Goal Reminder (任务持久化守卫)**：置顶注入用例核心目标与预期结果，杜绝长步骤下的幻觉跑偏。
+- **ActionResult 标准化与断言精简**：动作统一返回带有 before/after 状态与真实 `page_changed` 状态的 `ActionResult` 反馈，Assert 阶段直接复用此结果，减少冗余开销。
+- **工具级等待下沉**：不加图节点，在 `tools.py` 内部动作尾部等待沉淀。网络空闲 `networkidle` 降级为 2s 超时包裹兜底，主要依赖 `${elCount}_${htmlLen}_${textLen}` 三维指纹的 DOM 稳定判定及动画缓冲。
+- **DOM 感知状态增强**：扩展 `visible/enabled/interactable/readonly/required/checked/selected/role` 属性，并将 Prompt 格式切换为紧凑的索引列表。
+- **Failure Memory 失败动作记忆**：使用 `deque(maxlen=3)` 滑动队列滚动淘汰失败动作，防同一元素死磕。
+- **Loop Detection 死循环拦截**：动作一级类型交替重复检测（支持 AAA / ABAB 交替死循环判定），触发 Micro-Replan 微观重规划。
+
 ---
 
 ## 第三层：证据链断言层 (Layer 3)

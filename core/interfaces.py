@@ -120,6 +120,23 @@ class Setup(BaseModel):
     description: str = Field(description="Setup 描述，给 LLM 看的任务说明")
 
 
+class ActionResult(BaseModel):
+    """Phase 2.0A Sprint 2: 标准化动作执行结果。
+
+    所有工具函数统一返回此模型，包含执行前后的状态对比。
+    """
+
+    action: str = Field(description="动作名称: click / input_text / navigate / scroll / ...")
+    target: str | int | None = Field(default=None, description="动作目标 (元素索引或描述)")
+    success: bool = Field(description="动作是否成功执行")
+    error: str | None = Field(default=None, description="错误信息，成功时为 None")
+    before_url: str = Field(default="", description="动作执行前的 URL")
+    after_url: str = Field(default="", description="动作执行后的 URL")
+    page_changed: bool = Field(default=False, description="DOM 指纹发生了变化")
+    url_changed: bool = Field(default=False, description="URL 发生了变化")
+    filled_value: str = Field(default="", description="B1.3: input_text 实际填入的值, 密码脱敏为前2位+****")
+
+
 class StepResult(BaseModel):
     """单步执行结果。每一步（observe→decide→execute→assert）产生一个 StepResult。"""
 
@@ -216,6 +233,20 @@ class TestState(MessagesState):
     _last_tool_calls: list[dict[str, Any]]  # V2.0-A (2026-06-02): execute_node 传给 assert_node 的工具调用列表 (供 Rule 0.5 mark_task_complete 使用)
     _last_change_report: Optional[ChangeReport]  # assert_node 设置的变化报告
     _last_assertion: Optional[AssertionResult]  # assert_node 设置的断言结果
+
+    # Phase 2.0A Sprint 2: 标准化动作执行结果 (execute_node 写入, assert_node 读取)
+    _last_action_result: Optional[ActionResult]  # 上一步工具的结构化执行结果
+    _last_action_result_text: str  # 上一步工具的可读文本 (用于 ToolMessage)
+
+    # Phase 2.0A Sprint 5: Failure Memory 失败动作记忆
+    recent_failures: list[dict[str, Any]] = Field(default_factory=list, description="滑动队列, 最大 3 条, 按 deque 淘汰")
+
+    # B3.2: Locator 失败率统计
+    _locator_stats: dict[str, int] = Field(default_factory=lambda: {"total": 0, "failed": 0}, description="locator 解析统计")
+
+    # Phase 2.0A Sprint 6: Loop Detection 动作历史
+    action_history: list[dict[str, Any]] = Field(default_factory=list, description="最近 6 步动作一级分类记录")
+    need_replan: bool = Field(default=False, description="Loop Detection 触发后标记, decide_node 据此注入 [SYSTEM INTERRUPT]")
 
     # V2.0 D 可观测性 (2026-06-02)
     _last_token_count: int  # D1: 上一次 LLM 调用 (decide/assert) 的 token 数

@@ -189,6 +189,7 @@ def get_assertion_prompt(
     expected: str,
     current_step_text: str,
     page_info: dict[str, Any] | None = None,
+    filled_value: str = "",
 ) -> str:
     """V1.6 5 段 XML assertion prompt (B2, 2026-06-02).
 
@@ -239,6 +240,8 @@ def get_assertion_prompt(
     if page_info:
         page_state_text = "\n<page_state>\n" + _format_page_info(page_info) + "\n</page_state>\n"
 
+    filled_value_block = f"\n<filled_value>\n{filled_value}\n</filled_value>\n" if filled_value else ""
+
     return f"""<role>
 你是 UI 自动化测试断言专家 (Test Assertion Judge).
 你的唯一职责是基于【已执行的操作 + 页面变化 + 上游已判过的错误】, 判断该步骤是否达成测试用例的【最终预期结果】.
@@ -257,6 +260,8 @@ def get_assertion_prompt(
 <current_step_text>
 {current_step_text}
 </current_step_text>
+
+{filled_value_block}
 
 <change_report>
 {change_text}
@@ -352,19 +357,32 @@ already_judged: (无)
 
 
 def _format_page_info(page_info: dict[str, Any]) -> str:
-    """V1.6 5 段 XML-compatible page info (B4, 2026-06-02).
+    """Phase 2.0A Sprint 4: Compact index format with semantic properties.
 
-    Token-aware truncation:
-    - 单个 element text/label > 50 字符 → 截断到 50 + 省略号
-    - interactive_elements > 30 → 截断到 30 + 提示省略数
-    - error_messages > 5 → 截断到 5
-    - 总输出按 L2_PAGE_INFO_TOKEN_BUDGET (默认 2000) 估算截断
+    Format: [index] type "text" (prop1, prop2, ...)
+    Example: [3] button "登录" (visible=true, enabled=true)
 
-    估算规则: 1 token ≈ 1.5 字符 (中英文混合); 按字符预算 = token_budget * 1.5.
+    Token-aware truncation retained from V1.6 B4.
     """
     import os as _os
-    char_budget = int(_os.getenv("L2_PAGE_INFO_CHAR_BUDGET", "3000"))  # 2000 token ≈ 3000 char
+    char_budget = int(_os.getenv("L2_PAGE_INFO_CHAR_BUDGET", "3000"))
     parts: list[str] = []
+
+    # Phase 2.0A Sprint 5: Failure Memory 告警注入 (最顶部)
+    failure_warning = page_info.get("_failure_warnings", "")
+    if failure_warning:
+        parts.append(failure_warning)
+
+    # B2.1: 脱轨纠正告警
+    corrective = page_info.get("_corrective_warning", "")
+    if corrective:
+        parts.append(f"\n[CORRECTIVE] {corrective}\n")
+
+    # B2.4: 死循环检测
+    loop = page_info.get("_loop_detected", "")
+    if loop:
+        parts.append(f"\n[SYSTEM INTERRUPT] 检测到动作死循环: {loop}\n")
+
     parts.append(f"URL: {page_info.get('url', 'N/A')}")
     parts.append(f"标题: {page_info.get('title', 'N/A')}")
 
@@ -374,15 +392,43 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
         truncated_elements = elements[:max_el]
         parts.append(f"\n交互元素 (前 {len(truncated_elements)}/{len(elements)} 个):")
         for el in truncated_elements:
-            desc = f"  {el['id']}: {el['type']}"
-            for key in ("label", "text", "placeholder"):
-                v = el.get(key)
-                if v:
-                    v_str = str(v)
-                    if len(v_str) > 50:
-                        v_str = v_str[:50] + "..."
-                    desc += f" - {v_str}" if key != "placeholder" else f" (placeholder: {v_str})"
-            parts.append(desc)
+            # Phase 2.0A Sprint 4: 紧凑索引格式
+            el_id = el.get("id", "")
+            idx = el_id.lstrip("#") if el_id else "?"
+            el_type = el.get("type", "element")
+            el_text = el.get("text") or el.get("label") or el.get("placeholder", "")
+            if len(el_text) > 50:
+                el_text = el_text[:50] + "..."
+
+            # 语义属性
+            props = []
+            visible = el.get("visible")
+            if visible is True:
+                props.append("visible")
+            elif visible is False:
+                props.append("hidden")
+            enabled = el.get("enabled")
+            if enabled is False:
+                props.append("disabled")
+            readonly = el.get("readonly")
+            if readonly is True:
+                props.append("readonly")
+            required = el.get("required")
+            if required is True:
+                props.append("required")
+            checked = el.get("checked")
+            if checked is True:
+                props.append("checked")
+            elif checked is False and el_type in ("checkbox", "radio"):
+                props.append("unchecked")
+            role = el.get("role")
+            if role and role != el_type:
+                props.append(f"role={role}")
+
+            if el_text:
+                parts.append(f'  [{idx}] {el_type} "{el_text}" ({", ".join(props)})' if props else f'  [{idx}] {el_type} "{el_text}"')
+            else:
+                parts.append(f'  [{idx}] {el_type} ({", ".join(props)})' if props else f'  [{idx}] {el_type}')
         if len(elements) > max_el:
             parts.append(f"  ... 还有 {len(elements) - max_el} 个元素省略")
 

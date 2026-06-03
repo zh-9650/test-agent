@@ -76,3 +76,8 @@ found.txt
 summary*.txt
 tail.txt
 *.db
+
+# Debug/scratch scripts (contain hardcoded test credentials)
+scratch/
+logs/
+
