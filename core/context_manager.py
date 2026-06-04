@@ -98,7 +98,7 @@ def should_compact(state: dict[str, Any]) -> bool:
         return False
     # token 阈值检查
     try:
-        from core.interfaces import count_tokens
+        from core.llm_client import count_tokens
         total_tokens = count_tokens(messages)
         if total_tokens is None:
             total_tokens = 0
@@ -167,7 +167,7 @@ async def compact_history(
     state: dict[str, Any],
     *,
     summary: str | None = None,
-) -> list[RemoveMessage]:
+) -> tuple[list[RemoveMessage], str | None]:
     """压缩 state 中的 messages。
 
     策略:
@@ -181,11 +181,13 @@ async def compact_history(
         summary: 可选, 外部预生成的摘要 (用于测试). 传 None 则调用 LLM.
 
     Returns:
-        list[RemoveMessage]: 应从 state 中删除的消息 ID 列表
+        (RemoveMessages, compaction_summary):
+          - RemoveMessages: 应从 state 中删除的消息 ID 列表
+          - compaction_summary: LLM 生成的摘要 (用于注入下一轮 decide prompt)
     """
     messages = list(state.get("messages", []))
     if len(messages) <= COMPACT_KEEP_LAST + 1:
-        return []
+        return [], None
 
     # 1. 找 system message (head)
     head = messages[:1]  # 假设第一条是 system
@@ -193,7 +195,7 @@ async def compact_history(
     middle = messages[1:-COMPACT_KEEP_LAST]
 
     if not middle:
-        return []
+        return [], None
 
     # 2. 生成摘要 (外部传入 or LLM 调用)
     if summary is None:
@@ -202,7 +204,7 @@ async def compact_history(
 
     if summary is None:
         # 降级: 物理截断
-        return _truncate_physically(messages)
+        return _truncate_physically(messages), None
 
     # 3. 构造 RemoveMessage 列表
     to_remove: list[RemoveMessage] = []
@@ -214,9 +216,7 @@ async def compact_history(
             fake_id = hashlib.md5(repr(m).encode()).hexdigest()
             to_remove.append(RemoveMessage(id=fake_id))
 
-    # 4. 把摘要作为一条新 SystemMessage 插入 (调用方负责)
-    # 这里不直接修改 state.messages, 而是通过返回值让 caller 知道
-    return to_remove
+    return to_remove, summary
 
 
 def build_compact_summary_message(summary: str) -> SystemMessage:

@@ -408,26 +408,12 @@ async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
                 COMPACTION_ENABLED,
             )
             if COMPACTION_ENABLED and should_compact({**state, "messages": messages}):
-                # Phase 2.0D: LLM 语义压缩
+                # Phase 2.0D: LLM 语义压缩 (compact_history 内部调 1 次 LLM, 不再二次调用)
                 try:
-                    messages_to_remove = await compact_history({**state, "messages": messages})
-                    # 摘要消息作为 state 字段返回, 由 record_node 注入 messages list
-                    # 这里暂存, 调用方负责实际插入
-                    # 简化: 直接构造摘要插入到 head 后
-                    from core.llm_client import get_llm_client
-                    from core.context_manager import _messages_to_text, _invoke_compact_llm
-                    middle = messages[1:-int(os.getenv("L2_COMPACT_KEEP_LAST", "6"))]
-                    if middle:
-                        history_text = _messages_to_text(middle)
-                        summary_text = await _invoke_compact_llm(history_text)
-                        if summary_text:
-                            compaction_summary = summary_text
-                        else:
-                            # 降级: 物理截断 (compact_history 内部已 fallback)
-                            pass
+                    messages_to_remove, compaction_summary = await compact_history({**state, "messages": messages})
                 except Exception as e:
                     # 任何异常 → 物理截断兜底
-                    pass
+                    messages_to_remove, compaction_summary = [], None
 
             if not messages_to_remove:
                 # 回退: 原物理截断逻辑 (L2_COMPACTION=0 或 LLM 失败)
@@ -525,6 +511,16 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
             )
         else:
             system_prompt = base_system_prompt
+
+        # B2 fix (2026-06-04 audit): 注入 compaction_summary (上下文压缩摘要)
+        # 之前: _compaction_summary 存到 state 但从未注入 messages → LLM 看不到被压缩的历史
+        # 现在: 拼到 system_prompt 顶部, 跟 session_summary 一样的注入方式
+        compaction_summary = state.get("_compaction_summary")
+        if compaction_summary:
+            system_prompt = (
+                f"<compaction_summary>\n{compaction_summary}\n</compaction_summary>\n\n"
+                f"{system_prompt}"
+            )
 
         current_step = state.get("current_step", 0)
         step_prompt = get_step_prompt(current_step, current_test_case)
@@ -757,9 +753,6 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
 
     # Phase 2.0A Sprint 2: 将结构化 ActionResult 传给 assert_node
     action_result_text = "\n".join(results)
-
-    import asyncio
-    await asyncio.sleep(2) # Throttle to avoid LLM rate limit (429)
 
     return {
         "messages": tool_messages,

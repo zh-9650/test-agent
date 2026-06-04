@@ -153,8 +153,9 @@ async def test_compact_history_with_summary():
     """传入 summary 时不调用 LLM"""
     msgs = [SystemMessage(content="s")] + [HumanMessage(content=f"m{i}") for i in range(20)]
     state = {"messages": msgs}
-    removed = await compact_history(state, summary="已压缩: 完成登录")
+    removed, comp_summary = await compact_history(state, summary="已压缩: 完成登录")
     assert len(removed) == len(msgs) - 1 - COMPACT_KEEP_LAST
+    assert comp_summary == "已压缩: 完成登录"
 
 
 @pytest.mark.asyncio
@@ -165,9 +166,10 @@ async def test_compact_history_llm_failure_fallback():
 
     # 模拟 LLM 失败
     with patch.object(context_manager, "_invoke_compact_llm", AsyncMock(return_value=None)):
-        removed = await compact_history(state, summary=None)
+        removed, comp_summary = await compact_history(state, summary=None)
         # 降级到物理截断: head + 5 保留
         assert len(removed) == len(msgs) - 1 - 5
+        assert comp_summary is None
 
 
 @pytest.mark.asyncio
@@ -175,8 +177,9 @@ async def test_compact_history_short_messages():
     """消息少 → 返回空"""
     msgs = [SystemMessage(content="s"), HumanMessage(content="h1")]
     state = {"messages": msgs}
-    removed = await compact_history(state, summary=None)
+    removed, comp_summary = await compact_history(state, summary=None)
     assert removed == []
+    assert comp_summary is None
 
 
 # ============================================================================
