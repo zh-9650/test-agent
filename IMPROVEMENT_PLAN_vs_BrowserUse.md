@@ -1,7 +1,14 @@
 # TestAgent 改进方案 | 对标 Browser-Use 架构
 
-> 诊断完成时间: 2026-06-03  
-> 基于 Browser-Use v0.12.9 架构设计对标
+> **⚠️ SUPERSEDED 2026-06-04** — 本文档基于 4 个具体问题诊断 + Browser-Use v0.12.9。
+>
+> 替代文档：
+> - [`INDUSTRY_COMPARISON_2026.md`](INDUSTRY_COMPARISON_2026.md) 第 5/6 节 — 优先级 P0-P3 改进路线
+> - [`DEEP_DIVE_L2_VS_BROWSERUSE.md`](DEEP_DIVE_L2_VS_BROWSERUSE.md) 第 9 节 — 10 项改进项 + 优先级
+>
+> 部分建议已在 2.0A/2.0B/2.0C 中实现（如 Failure Memory 注入、CDP 路径、Step Context）。
+
+---
 
 ## 📋 你遇到的 4 个问题诊断
 

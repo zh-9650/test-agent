@@ -1,7 +1,13 @@
 # Browser-Use vs 你的项目 - 代码对比与改进方案
 
-> 实战代码示例  
-> 帮你快速应用 Browser-Use 的设计模式
+> **⚠️ SUPERSEDED 2026-06-04** — 本文档是 Gemini/早期研究的代码示例。
+>
+> 替代文档：
+> - [`DEEP_DIVE_L2_VS_BROWSERUSE.md`](DEEP_DIVE_L2_VS_BROWSERUSE.md) — 4-9 节给出对应实现位置（已含 2.0C 代码引用）
+>
+> 部分建议已被 2.0A/2.0B 实现（CDP 优先、Failure Memory、CORRECTIVE、AAA/ABAB 检测）。
+
+---
 
 ---
 

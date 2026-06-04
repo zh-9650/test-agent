@@ -1,6 +1,11 @@
 # 全面对比：我们的项目 vs browser-use v0.12.9
 
-覆盖 12 个维度的架构、设计权衡和实施差异。
+> **⚠️ SUPERSEDED 2026-06-04** — 本文档基于 2.0C 之前的版本（Playwright Locator 路径）。
+> 替代文档：
+> - [`INDUSTRY_COMPARISON_2026.md`](INDUSTRY_COMPARISON_2026.md) — 行业广度 + 我们的定位
+> - [`DEEP_DIVE_L2_VS_BROWSERUSE.md`](DEEP_DIVE_L2_VS_BROWSERUSE.md) — 架构深度对比（修订自 Gemini 报告）
+>
+> 以下内容仅作历史参考，部分感知/执行描述与 2.0C 后的 CDP 路径不符。
 
 ---
 
