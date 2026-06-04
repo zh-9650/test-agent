@@ -557,7 +557,7 @@ async def _find_label(page: Any, el: Any) -> str:
 
     # 5. Fall back to tag name
     try:
-        tag_name = await el.evaluate("el => el.tagName.toLower()")
+        tag_name = await el.evaluate("el => el.tagName.toLowerCase()")
         if tag_name:
             return tag_name
     except Exception:

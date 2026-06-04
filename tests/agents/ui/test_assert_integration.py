@@ -207,3 +207,46 @@ async def test_status_failure_passes_through_fast_assert():
     # _fast_assert 路径不更新 consecutive_failures (由 record_node 负责)
     assert result["_last_assertion"].status == "fail"
     assert "err" in result["_last_assertion"].reasoning
+
+
+# =============================================================================
+# BUG-01 regression (2026-06-04 audit):
+# should_skip_assert 路由到 "skip_assert" → record_node 时,
+# edge function 计算的 _fast_assert 结果被丢弃 (edge function 不能写 state).
+# record_node 必须从 _last_action_result + _last_tool_calls 兜底恢复 _last_assertion,
+# 否则 step_result.assertion 携带的是上一步的 stale 值.
+# =============================================================================
+@pytest.mark.asyncio
+async def test_record_node_recovers_fast_assert_on_skip_path():
+    """skip_assert 路径下, _last_assertion=None, record_node 必须自己跑 _fast_assert."""
+    from core.interfaces import ActionResult
+    from langchain_core.messages import AIMessage, SystemMessage
+    from agents.ui.execution_graph import record_node
+
+    ar = ActionResult(
+        action="click", target="#btn", success=False, status="failure",
+        error="element not interactable",
+    )
+    state = {
+        "messages": [
+            SystemMessage(content="system"),
+            AIMessage(content="click", tool_calls=[{"id": "call_1", "name": "click", "args": {"target": "#btn"}}]),
+        ],
+        "_last_action_result": ar,
+        "_last_tool_calls": [{"name": "click", "args": {"target": "#btn"}}],
+        "_last_assertion": None,
+        "_last_change_report": None,
+        "current_step": 1,
+        "page_info": {"url": "https://x.com"},
+        "test_plan": [],
+        "current_index": 0,
+    }
+
+    with patch("agents.ui.tools.get_current_page", new=AsyncMock()) as mock_page:
+        result = await record_node(state)
+
+    assert result["_last_assertion"] is not None
+    assert result["_last_assertion"].status == "fail"
+    assert "not interactable" in result["_last_assertion"].reasoning
+    assert len(result["_collected_steps"]) == 1
+    assert result["_collected_steps"][0].assertion.status == "fail"

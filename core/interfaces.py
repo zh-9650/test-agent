@@ -190,7 +190,9 @@ class AssertionResult(BaseModel):
     """断言结果。LLM 语义判断的输出。"""
 
     status: str = Field(description="pass / fail / inconclusive")
-    reasoning: str = Field(description="判断理由")
+    reasoning: str = Field(default="", description="判断理由 (LLM 必填, 但 B3.1 fast_assert / record 兜底时允许空)")
+    # BUG-02 fix (2026-06-04 audit): default="" 防止 LLM 漏传 reasoning 触发 Pydantic ValidationError
+    # 之前: reasoning 必填 → 漏传 → ValidationError → 走兜底分支 → 第二次 LLM 调用 (浪费)
 
 
 class ChangeReport(BaseModel):

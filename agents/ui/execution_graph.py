@@ -1061,6 +1061,17 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
     - 依据: Anthropic Context Engineering 2025-09 + Microsoft Compaction 2026
     """
     # Determine if this is a normal step (path from assert) or completion (path from decide)
+    # BUG-01 fix (2026-06-04 audit): should_skip_assert 计算了 _fast_assert 但 edge function
+    # 无法写 state, "skip_assert" 路径下 _last_assertion 是上一步的 stale 值
+    # 兜底: record_node 入口处如果 _last_assertion 缺失, 重新跑 _fast_assert 补救
+    # 写到 state (本步 step_result 用) + 通过 result 透传 (下一步 record 也能拿到)
+    _fast_recover_result: dict[str, Any] = {}
+    if not state.get("_last_assertion"):
+        fast_recover = _fast_assert(state)
+        if fast_recover:
+            for k, v in fast_recover.items():
+                state[k] = v
+            _fast_recover_result = fast_recover
     messages = list(state.get("messages", []))
     last_ai_msg = None
     for msg in reversed(messages):
@@ -1179,6 +1190,10 @@ async def record_node(state: dict[str, Any]) -> dict[str, Any]:
     if has_tool_call:
         result["action_history"] = action_history
         # need_replan 由 observe_node 管理，record 不再覆盖
+
+    # BUG-01 fix: 把 _fast_assert 恢复值透传给下一步 record (state 已被本步消费, result 才能延续)
+    if _fast_recover_result:
+        result.update(_fast_recover_result)
 
     return result
 
