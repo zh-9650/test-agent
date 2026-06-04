@@ -132,11 +132,4 @@ async def _handle_stop(websocket: WebSocket, task_id: str) -> None:
     manager.disconnect(websocket, task_id)
 
 
-async def stream_runtime_updates(runtime, task_id: str):
-    """Stream Runtime updates to WebSocket clients.
 
-    Called by the background task runner when a test session starts.
-    Converts Runtime's run_stream() output to WebSocket messages.
-    """
-    async for update in runtime.run_stream():
-        await manager.send_message(task_id, update)

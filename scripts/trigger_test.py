@@ -1,7 +1,7 @@
 import requests
 import json
 
-url = "http://localhost:8000/api/tasks"
+url = "http://localhost:8002/api/tasks"
 payload = {
     "task_name": "Phase 1.5 Integration Test",
     "target_url": "https://www.saucedemo.com/",

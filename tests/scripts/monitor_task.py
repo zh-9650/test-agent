@@ -3,8 +3,8 @@ import time
 import sys
 
 task_id = 11
-url = f"http://localhost:8000/api/tasks/{task_id}"
-report_url = f"http://localhost:8000/api/tasks/{task_id}/report"
+url = f"http://localhost:8002/api/tasks/{task_id}"
+report_url = f"http://localhost:8002/api/tasks/{task_id}/report"
 
 print(f"Monitoring task {task_id}...")
 

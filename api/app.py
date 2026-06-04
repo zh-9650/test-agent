@@ -31,7 +31,7 @@ from api.schemas import (
     AgentMemoryItem,
     MemoryListResponse
 )
-from api.websocket import manager as websocket_manager, stream_runtime_updates, websocket_endpoint
+from api.websocket import manager as websocket_manager, websocket_endpoint
 from database.connection import async_session, init_database
 from database.models import Report, Task, TaskStep, AgentMemory
 from core.execution_logger import _task_id_map
@@ -393,32 +393,25 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
             from core.skills.use_case_modeler import generate_use_case_model
             from core.skills.use_case_coverage import check_use_case_coverage
             
-            print("DEBUG L1: starting retrieve_memories")
             memory_context = await retrieve_memories(target_url)
-            print("DEBUG L1: completed retrieve_memories, starting parse_and_fetch_links")
             enriched_config = await parse_and_fetch_links(config or {})
             
             # Node 1: Knowledge Extraction
-            print("DEBUG L1: starting extract_knowledge")
             knowledge = await extract_knowledge(
                 prd_content=enriched_config.get("prd", ""),
                 api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
                 changelog_content=enriched_config.get("changelog", "")
             )
-            print("DEBUG L1: completed extract_knowledge, starting generate_use_case_model")
             enriched_config["_knowledge_base"] = knowledge.model_dump()
             
             # Node 1.5 + 1.7: Use Case Modeling & Coverage
             use_case_model = await generate_use_case_model(knowledge)
-            print("DEBUG L1: completed generate_use_case_model, starting check_use_case_coverage")
             use_case_model, coverage_report = await check_use_case_coverage(knowledge, use_case_model)
-            print("DEBUG L1: completed check_use_case_coverage, starting generate_system_model")
             enriched_config["_use_case_model"] = use_case_model.model_dump()
             enriched_config["_coverage_report"] = coverage_report.model_dump()
             
             # Node 2: System Modeling (State Machine)
             system_model = await generate_system_model(knowledge, use_case_model)
-            print("DEBUG L1: completed generate_system_model, updating task config in DB")
             enriched_config["_system_model"] = system_model.model_dump()
             
             async with async_session() as session:
@@ -426,10 +419,8 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
                 if task:
                     task.config = enriched_config
                     await session.commit()
-            print("DEBUG L1: updated task config in DB, starting Runtime initialization")
             
             runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, "memory_context": memory_context, **enriched_config})
-            print("DEBUG L1: Runtime initialized, starting run_stream")
             
             async for update in runtime.run_stream():
                 # Detect error messages yielded by the runtime
