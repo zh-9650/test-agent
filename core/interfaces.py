@@ -217,11 +217,22 @@ class TestResult(BaseModel):
     """单个测试用例的执行结果。包含该用例所有步骤的 StepResult。"""
 
     test_case_id: str = Field(description="对应的 TestCase.id")
-    status: str = Field(description="passed / failed / skipped / incomplete")
+    status: str = Field(
+        description="passed / failed / skipped / incomplete / human_review_required"
+    )
     steps: list[StepResult] = Field(default_factory=list)
     summary: str = Field(default="", description="执行摘要")
     duration_seconds: float = Field(default=0.0)
     setup_results: list[StepResult] = Field(default_factory=list, description="前置条件执行步骤")
+    retry_count: int = Field(
+        default=0,
+        description="2026-06-04 retry policy: 0=首次成功, 1-2=重试次数, 3=用尽 (human_review_required)"
+    )
+    failure_context: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="2026-06-04 retry policy: 每次失败尝试的 context (screenshot/a11y/assertion), "
+        "保留用于后续人工 review 或 AI 修复"
+    )
 
 
 # =============================================================================

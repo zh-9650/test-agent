@@ -11,6 +11,7 @@ Lifecycle:
 
 from __future__ import annotations
 
+import json
 import os
 import time
 import uuid
@@ -419,36 +420,38 @@ class Runtime:
         result = await planning_graph.ainvoke(self._build_initial_state())
         return result.get("test_plan", []), result.get("setups", {})
 
-    async def _execute_test_case(
-        self,
-        index: int,
-        test_case: TestCase,
-        test_plan: list[TestCase],
-        setups: dict[str, Setup],
-    ) -> TestResult:
-        """Execute a single test case."""
-        start_time = time.time()
+    # ========================================================================
+    # 2026-06-04 retry policy (同行反馈): 用例级重试 + 失败 context 注入
+    # ========================================================================
 
-        # B1.5: 增强型浏览器状态重置 — 防止测试用例间状态污染
+    async def _reset_browser_state(self) -> None:
+        """B1.5: 浏览器状态完全重置 — 防止测试用例间/重试间状态污染.
+
+        重置内容:
+        - 清 cookies (context.clear_cookies)
+        - 清 localStorage + sessionStorage
+        - 跳转 about:blank 等待 domcontentloaded
+        - 重新导航到 target_url 等 networkidle
+        - 等待 DOM 稳定 (_wait_for_stable)
+        - 验证 URL 匹配, 不匹配再重试一次
+
+        复用自 _execute_test_case / _execute_test_case_stream 的内联代码 (2026-06-04 抽取).
+        """
         try:
             if getattr(self, "context", None):
                 await self.context.clear_cookies()
             if getattr(self, "page", None):
                 try:
                     await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
-                    # 等待页面完全卸载
                     await self.page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
                 except Exception:
                     pass
-                # 重新导航到目标 URL, 等待 networkidle + DOM 稳定
                 await self.page.goto(self.target_url, wait_until="networkidle", timeout=30000)
-                # 等待额外稳定时间, 确保异步渲染完成
                 from agents.ui.tools import _wait_for_stable
                 try:
                     await _wait_for_stable(self.page, timeout=3000, poll_interval=300)
                 except Exception:
                     pass
-                # 验证是否确实到达目标 URL
                 current_url = self.page.url
                 if not current_url.startswith(self.target_url.rstrip("/")):
                     print(f"[Runtime] 状态重置后 URL 不匹配: {current_url} != {self.target_url}, 重试一次")
@@ -456,88 +459,300 @@ class Runtime:
         except Exception as e:
             print(f"[Runtime] 增强状态重置失败: {e}")
 
-        # Execute setups if needed
-        setup_results: list[Any] = []
-        for precondition_id in test_case.preconditions:
-            if precondition_id in setups:
-                setup = setups[precondition_id]
-                base_state = self._build_initial_state()
-                base_state["test_plan"] = test_plan
-                base_state["setups"] = setups
-                base_state["current_index"] = index
-                setup_result = await execute_setup(setup, base_state)
-                setup_results.append(setup_result)
+    async def _capture_failure_context(
+        self,
+        page: Any | None,
+        collected_steps: list[StepResult],
+        attempt: int,
+    ) -> dict[str, Any]:
+        """捕获上一次失败尝试的 context, 注入下一次重试的 prompt.
 
-        # Build execution state
+        包含字段:
+        - attempt: 1-indexed 失败尝试编号 (给人类读)
+        - failed_step_index / failed_action / failed_action_target / failed_action_args
+        - assertion_status / assertion_reasoning (为什么 fail)
+        - screenshot_path: 失败时的截图 (落地到 data/screenshots/{task_id}/)
+        - url_after: 失败时的 URL
+        - a11y_tree: page.accessibility.snapshot() 序列化, 截断到 10KB (保护 L2_TOKEN_BUDGET)
+
+        如果 page 为 None 或 captured 失败, 仍返回基础 dict (without screenshot/a11y).
+        """
+        # 找最后一个失败步骤
+        last_step: StepResult | None = None
+        for s in reversed(collected_steps):
+            if s.assertion and s.assertion.status == "fail":
+                last_step = s
+                break
+        if last_step is None and collected_steps:
+            last_step = collected_steps[-1]
+
+        if last_step is None:
+            return {
+                "attempt": attempt,
+                "no_step": True,
+                "reason": "no steps collected before failure",
+            }
+
+        # 截屏
+        screenshot_path = ""
+        if page is not None:
+            try:
+                dir_path = f"data/screenshots/{self.task_id}"
+                os.makedirs(dir_path, exist_ok=True)
+                screenshot_path = f"{dir_path}/retry{attempt}_step{last_step.step_index}.png"
+                await page.screenshot(path=screenshot_path, full_page=False, timeout=5000)
+            except Exception as e:
+                print(f"[Runtime] 重试 context 截图失败: {e}")
+                screenshot_path = ""
+
+        # a11y 树 (截断到 10KB)
+        a11y_tree = ""
+        if page is not None:
+            try:
+                snap = await page.accessibility.snapshot()
+                a11y_tree = json.dumps(snap, ensure_ascii=False, default=str)
+                if len(a11y_tree) > 10240:  # 10KB 硬截断, 留 20% L2 budget 缓冲
+                    a11y_tree = a11y_tree[:10240] + "\n... (a11y tree truncated to 10KB)"
+            except Exception as e:
+                print(f"[Runtime] 重试 context a11y 树失败: {e}")
+                a11y_tree = ""
+
+        # URL
+        url_after = ""
+        if page is not None:
+            try:
+                url_after = page.url
+            except Exception:
+                url_after = ""
+
+        assertion = last_step.assertion
+        return {
+            "attempt": attempt,
+            "failed_step_index": last_step.step_index,
+            "failed_action": last_step.action_type,
+            "failed_action_target": str(last_step.action_target) if last_step.action_target else "",
+            "failed_action_args": last_step.action_args or {},
+            "assertion_status": assertion.status if assertion else "unknown",
+            "assertion_reasoning": assertion.reasoning if assertion else "",
+            "screenshot_path": screenshot_path,
+            "url_after": url_after,
+            "a11y_tree": a11y_tree,
+        }
+
+    def _format_failure_context_message(
+        self,
+        failure_context: dict[str, Any],
+        test_case: TestCase,
+    ) -> str:
+        """把 failure_context 格式化成 SystemMessage 内容, 注入下一次重试.
+
+        注入位置: messages[0] (前置, 跟现有 previous_context 风格一致).
+        内容顺序: 失败摘要 → 步骤详情 → 断言 → 截图 → a11y 树 → 建议.
+        """
+        if failure_context.get("no_step"):
+            return (
+                f"开始执行测试用例: {test_case.id} - {test_case.title}\n\n"
+                f"[上一次尝试 #{failure_context['attempt']} 失败] 原因: {failure_context.get('reason', '未知')}\n"
+                f"请重试."
+            )
+
+        lines = [
+            f"开始执行测试用例: {test_case.id} - {test_case.title}",
+            "",
+            f"[上一次尝试 #{failure_context['attempt']} 失败 — 请换策略重试]",
+            f"- 失败步骤: step {failure_context['failed_step_index']} — "
+            f"{failure_context['failed_action']}('{failure_context['failed_action_target']}')",
+        ]
+        if failure_context.get("failed_action_args"):
+            lines.append(f"  args: {failure_context['failed_action_args']}")
+        lines.append(
+            f"- 断言结果: {failure_context['assertion_status']} — {failure_context['assertion_reasoning']}"
+        )
+        if failure_context.get("url_after"):
+            lines.append(f"- 当前 URL: {failure_context['url_after']}")
+        if failure_context.get("screenshot_path"):
+            lines.append(f"- 失败截图: {failure_context['screenshot_path']}")
+        if failure_context.get("a11y_tree"):
+            lines.append(
+                f"- 页面结构 (a11y tree, 截断到 10KB):\n{failure_context['a11y_tree']}"
+            )
+        lines.append(
+            "\n请重试, 建议考虑: 换 selector / 加 wait / 先关闭弹窗 / 调整执行顺序"
+        )
+        return "\n".join(lines)
+
+    def _build_execution_state(
+        self,
+        test_case: TestCase,
+        test_plan: list[TestCase],
+        setups: dict[str, Setup],
+        index: int,
+        failure_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """构造 execution_state, 注入 session_summary + (可选) failure_context SystemMessage.
+
+        抽取自 _execute_test_case / _execute_test_case_stream 的内联代码 (2026-06-04).
+        failure_context 不为 None 时, 把上一轮失败信息拼到 messages[0] 顶部, 跟现有
+        previous_context 风格一致.
+        """
         execution_state = self._build_initial_state()
+        execution_state["test_plan"] = test_plan
+        execution_state["setups"] = setups
+        execution_state["current_index"] = index
+
+        # V2.0 A3: 前序 case 摘要 (跨用例 context)
         previous_context = ""
         if self._case_summaries:
             summaries_text = "\n".join(
                 f"- {s['case_id']}: {s.get('summary', '')}" for s in self._case_summaries
             )
             previous_context = f"\n\n前面已完成的测试用例摘要:\n{summaries_text}"
-        execution_state["messages"] = [
-            SystemMessage(
-                content=f"开始执行测试用例: {test_case.id} - {test_case.title}{previous_context}"
-            ),
-        ]
-        # V2.0 A3 (2026-06-02): 把前序 case 摘要作为独立 state 字段, 让 decide_node 拼到 system_prompt
-        # 解决 V1.7 漏点: decide_node insert(0, SystemMessage(...)) 每步覆盖前 case summary
-        if self._case_summaries:
-            summaries_text_2 = "\n".join(
+        execution_state["session_summary"] = (
+            "\n".join(
                 f"- {s['case_id']}: {s.get('summary', '')}" for s in self._case_summaries
             )
-            execution_state["session_summary"] = summaries_text_2
+            if self._case_summaries
+            else ""
+        )
+
+        # messages[0] — 起始 SystemMessage
+        if failure_context is not None:
+            content = self._format_failure_context_message(failure_context, test_case)
         else:
-            execution_state["session_summary"] = ""
-        execution_state["test_plan"] = test_plan
-        execution_state["setups"] = setups
-        execution_state["current_index"] = index
+            content = f"开始执行测试用例: {test_case.id} - {test_case.title}{previous_context}"
 
-        # Run execution subgraph
-        execution_graph = build_execution_graph()
+        execution_state["messages"] = [SystemMessage(content=content)]
+        return execution_state
 
-        try:
-            result_state = await execution_graph.ainvoke(execution_state)
-        except Exception:
-            # Browser crash — try to recover
-            result_state = await self._handle_browser_crash(test_case, execution_state)
-
-        duration = time.time() - start_time
-
-        # Determine overall status
-        steps = result_state.get("_collected_steps", [])
+    def _determine_status(
+        self,
+        final_state: dict[str, Any],
+        collected_steps: list[StepResult],
+    ) -> str:
+        """判定用例最终状态. 跟原内联逻辑一致, 抽取成方法便于复用."""
         max_failures = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "3"))
         max_steps = int(os.getenv("MAX_STEPS_PER_CASE", "15"))
 
-        if result_state.get("consecutive_failures", 0) >= max_failures:
-            status = "failed"
-        elif result_state.get("current_step", 0) >= max_steps:
-            status = "incomplete"
-        elif any(
-            s.assertion and s.assertion.status == "fail" for s in steps if hasattr(s, "assertion")
+        if final_state.get("consecutive_failures", 0) >= max_failures:
+            return "failed"
+        if final_state.get("current_step", 0) >= max_steps:
+            return "incomplete"
+        if any(
+            s.assertion and s.assertion.status == "fail"
+            for s in collected_steps
+            if hasattr(s, "assertion")
         ):
-            status = "failed"
-        elif any(
-            s.assertion and s.assertion.status == "pass" for s in steps if hasattr(s, "assertion")
+            return "failed"
+        if any(
+            s.assertion and s.assertion.status == "pass"
+            for s in collected_steps
+            if hasattr(s, "assertion")
         ):
-            status = "passed"
-        else:
-            status = "incomplete"
+            return "passed"
+        return "incomplete"
+
+    async def _execute_test_case(
+        self,
+        index: int,
+        test_case: TestCase,
+        test_plan: list[TestCase],
+        setups: dict[str, Setup],
+    ) -> TestResult:
+        """Execute a single test case, with case-level retry on failure (2026-06-04 同行反馈).
+
+        重试策略 (env: MAX_TEST_CASE_RETRIES, 默认 2 → 总 3 次尝试):
+        1. 第 1 次失败 → 抓 failure_context (screenshot + a11y tree + assertion)
+        2. 重置 browser state
+        3. 用 failure_context 注入 SystemMessage 顶部, 整个用例从头跑
+        4. 第 2 次失败 → 同样流程, 但 capture 新的 failure_context
+        5. 第 3 次仍 fail → status="human_review_required", 保留所有 failure_contexts
+
+        兼容: 当 MAX_TEST_CASE_RETRIES=0 时, 退化为旧行为 (单次尝试).
+        """
+        start_time = time.time()
+        max_retries = int(os.getenv("MAX_TEST_CASE_RETRIES", "2"))
+        failure_contexts: list[dict[str, Any]] = []
+        final_status = "incomplete"
+        final_steps: list[StepResult] = []
+        attempts_used = 0
+
+        for attempt in range(max_retries + 1):
+            attempts_used = attempt + 1
+
+            # 重试时: 重置 browser state
+            if attempt > 0:
+                await self._reset_browser_state()
+
+            # Execute setups (每次重试都重新跑, 假设 setup 可能被前次失败污染)
+            setup_results: list[Any] = []
+            for precondition_id in test_case.preconditions:
+                if precondition_id in setups:
+                    setup = setups[precondition_id]
+                    base_state = self._build_initial_state()
+                    base_state["test_plan"] = test_plan
+                    base_state["setups"] = setups
+                    base_state["current_index"] = index
+                    setup_result = await execute_setup(setup, base_state)
+                    setup_results.append(setup_result)
+
+            # Build execution state — retry 时注入 failure_context
+            failure_ctx = failure_contexts[-1] if failure_contexts else None
+            execution_state = self._build_execution_state(
+                test_case, test_plan, setups, index, failure_context=failure_ctx
+            )
+
+            # Run execution subgraph
+            execution_graph = build_execution_graph()
+            try:
+                result_state = await execution_graph.ainvoke(execution_state)
+            except Exception:
+                # Browser crash — try to recover
+                result_state = await self._handle_browser_crash(test_case, execution_state)
+
+            steps = result_state.get("_collected_steps", [])
+            status = self._determine_status(result_state, steps)
+
+            if status != "failed" or attempt >= max_retries:
+                final_status = status
+                final_steps = steps
+                break
+
+            # Failed 且还有重试机会: 抓 failure_context, 准备下一轮
+            try:
+                fc = await self._capture_failure_context(
+                    getattr(self, "page", None), steps, attempt + 1
+                )
+            except Exception as e:
+                print(f"[Runtime] 抓 failure_context 失败: {e}")
+                fc = {"attempt": attempt + 1, "no_step": True, "reason": str(e)}
+            failure_contexts.append(fc)
+            final_steps = steps  # 保留最后一次失败的 steps, 用于报告
+            print(
+                f"[Runtime] 用例 {test_case.id} 第 {attempt + 1}/{max_retries + 1} 次失败, "
+                f"准备重试 (断言: {fc.get('assertion_status', '?')})"
+            )
+
+        duration = time.time() - start_time
+
+        # 3 次都失败 → human_review_required
+        if final_status == "failed" and attempts_used >= max_retries + 1 and failure_contexts:
+            final_status = "human_review_required"
 
         test_result = TestResult(
             test_case_id=test_case.id,
-            status=status,
-            steps=steps,
-            summary=f"{'通过' if status == 'passed' else '失败'}: {test_case.title}",
+            status=final_status,
+            steps=final_steps,
+            summary=f"{'通过' if final_status == 'passed' else '失败' if final_status == 'failed' else '需人工'}: {test_case.title}",
             duration_seconds=duration,
             setup_results=[],
+            retry_count=attempts_used - 1,  # 0=首次成功, 1-2=重试次数
+            failure_context=failure_contexts,
         )
 
         # Generate session summary for cross-case context
         try:
             urls = set()
-            for s in steps:
+            for s in final_steps:
                 if s.change_report:
                     if s.change_report.url_before: urls.add(s.change_report.url_before)
                     if s.change_report.url_after: urls.add(s.change_report.url_after)
@@ -551,8 +766,8 @@ class Runtime:
             summary = await generate_case_summary(
                 test_case_id=test_case.id,
                 test_case_title=test_case.title,
-                status=status,
-                steps=steps,
+                status=final_status,
+                steps=final_steps,
                 page_urls=page_urls,
             )
             self._case_summaries.append(summary)
@@ -568,7 +783,7 @@ class Runtime:
         test_plan: list[TestCase],
         setups: dict[str, Setup],
     ) -> AsyncGenerator[dict[str, Any], None]:
-        """Execute a test case, yielding per-step streaming updates via astream().
+        """Execute a test case with case-level retry on failure (2026-06-04 同行反馈).
 
         Emits WebSocket events for each node in the execution graph:
         - observe  → page_update (url, title)
@@ -576,250 +791,241 @@ class Runtime:
         - execute  → action_result (tool_name, tool_args, result)
         - assert   → assertion_result (change_report, assertion)
         - record   → (internal, no event)
-        Finally emits test_case_complete.
+        - test_case_retry → (before each retry, 1-indexed attempt info)
+        Finally emits test_case_complete (once, after all attempts).
+
+        重试策略 (env: MAX_TEST_CASE_RETRIES, 默认 2 → 总 3 次尝试):
+        失败 → capture failure_context → 重置 browser → 注入 SystemMessage → 从头重跑.
+        3 次都 fail → status="human_review_required".
         """
         start_time = time.time()
+        max_retries = int(os.getenv("MAX_TEST_CASE_RETRIES", "2"))
+        failure_contexts: list[dict[str, Any]] = []
+        final_status = "incomplete"
+        final_steps: list[StepResult] = []
+        final_state: dict[str, Any] = {}
+        attempts_used = 0
 
-        # B1.5: 增强型浏览器状态重置
-        try:
-            if getattr(self, "context", None):
-                await self.context.clear_cookies()
-            if getattr(self, "page", None):
-                try:
-                    await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
-                    await self.page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
-                except Exception:
-                    pass
-                await self.page.goto(self.target_url, wait_until="networkidle", timeout=30000)
-                from agents.ui.tools import _wait_for_stable
-                try:
-                    await _wait_for_stable(self.page, timeout=3000, poll_interval=300)
-                except Exception:
-                    pass
-                current_url = self.page.url
-                if not current_url.startswith(self.target_url.rstrip("/")):
-                    print(f"[Runtime] 状态重置后 URL 不匹配: {current_url} != {self.target_url}, 重试一次")
-                    await self.page.goto(self.target_url, wait_until="load", timeout=30000)
-        except Exception as e:
-            print(f"[Runtime] 增强状态重置失败: {e}")
+        for attempt in range(max_retries + 1):
+            attempts_used = attempt + 1
 
-        # Execute setups if needed
-        for precondition_id in test_case.preconditions:
-            if precondition_id in setups:
-                setup = setups[precondition_id]
+            # ── 重试: yield 事件 + 重置浏览器 ──────────────────────────
+            if attempt > 0:
+                last_fc = failure_contexts[-1]
                 yield {
-                    "type": "setup_progress",
+                    "type": "test_case_retry",
                     "test_case_id": test_case.id,
                     "step_index": 0,
-                    "data": {"status": "starting", "description": setup.description},
+                    "data": {
+                        "attempt": attempt + 1,  # 1-indexed for human
+                        "max_retries": max_retries + 1,
+                        "previous_status": last_fc.get("assertion_status", "unknown"),
+                        "previous_reasoning": last_fc.get("assertion_reasoning", ""),
+                        "screenshot_path": last_fc.get("screenshot_path", ""),
+                    },
                     "timestamp": _now_iso(),
                 }
-                base_state = self._build_initial_state()
-                base_state["test_plan"] = test_plan
-                base_state["setups"] = setups
-                base_state["current_index"] = index
-                await execute_setup(setup, base_state)
-                yield {
-                    "type": "setup_progress",
-                    "test_case_id": test_case.id,
-                    "step_index": 0,
-                    "data": {"status": "completed", "description": setup.description},
-                    "timestamp": _now_iso(),
-                }
+                await self._reset_browser_state()
 
-        # Build execution state
-        execution_state = self._build_initial_state()
-        previous_context = ""
-        if self._case_summaries:
-            summaries_text = "\n".join(
-                f"- {s['case_id']}: {s.get('summary', '')}" for s in self._case_summaries
+            # ── Execute setups ───────────────────────────────────────────
+            for precondition_id in test_case.preconditions:
+                if precondition_id in setups:
+                    setup = setups[precondition_id]
+                    yield {
+                        "type": "setup_progress",
+                        "test_case_id": test_case.id,
+                        "step_index": 0,
+                        "data": {"status": "starting", "description": setup.description},
+                        "timestamp": _now_iso(),
+                    }
+                    base_state = self._build_initial_state()
+                    base_state["test_plan"] = test_plan
+                    base_state["setups"] = setups
+                    base_state["current_index"] = index
+                    await execute_setup(setup, base_state)
+                    yield {
+                        "type": "setup_progress",
+                        "test_case_id": test_case.id,
+                        "step_index": 0,
+                        "data": {"status": "completed", "description": setup.description},
+                        "timestamp": _now_iso(),
+                    }
+
+            # ── Build execution state (retry 时注入 failure_context) ────
+            failure_ctx = failure_contexts[-1] if failure_contexts else None
+            execution_state = self._build_execution_state(
+                test_case, test_plan, setups, index, failure_context=failure_ctx
             )
-            previous_context = f"\n\n前面已完成的测试用例摘要:\n{summaries_text}"
-        execution_state["messages"] = [
-            SystemMessage(
-                content=f"开始执行测试用例: {test_case.id} - {test_case.title}{previous_context}"
-            ),
-        ]
-        # V2.0 A3 (2026-06-02): 把前序 case 摘要作为独立 state 字段, 让 decide_node 拼到 system_prompt
-        # 解决 V1.7 漏点: decide_node insert(0, SystemMessage(...)) 每步覆盖前 case summary
-        if self._case_summaries:
-            summaries_text_2 = "\n".join(
-                f"- {s['case_id']}: {s.get('summary', '')}" for s in self._case_summaries
-            )
-            execution_state["session_summary"] = summaries_text_2
-        else:
-            execution_state["session_summary"] = ""
-        execution_state["test_plan"] = test_plan
-        execution_state["setups"] = setups
-        execution_state["current_index"] = index
 
-        # Run execution subgraph with streaming
-        execution_graph = build_execution_graph()
-        collected_steps: list[StepResult] = []
-        final_state = dict(execution_state)
+            # ── Run execution subgraph with streaming ────────────────────
+            execution_graph = build_execution_graph()
+            collected_steps: list[StepResult] = []
+            final_state = dict(execution_state)
 
-        try:
-            async for stream_update in execution_graph.astream(execution_state):
-                print(f"[DEBUG_STREAM] {stream_update.keys() if isinstance(stream_update, dict) else type(stream_update)}")
-                for node_name, state_update in _stream_items(stream_update):
-                    # Accumulate state from each node
-                    final_state.update(state_update)
+            try:
+                async for stream_update in execution_graph.astream(execution_state):
+                    for node_name, state_update in _stream_items(stream_update):
+                        # Accumulate state from each node
+                        final_state.update(state_update)
 
-                    # V2.0 D2 (2026-06-02): 节点级 observability — 推 node_event WebSocket
-                    # 每个节点完成后发一个事件, 含节点名/耗时/token 数
-                    # (在 observe/decide/execute/assert/record 各 case 之后, 保证一定有数据)
-                    if "_last_node_name" in state_update:
-                        yield {
-                            "type": "node_event",
-                            "test_case_id": test_case.id,
-                            "step_index": final_state.get("current_step", 0),
-                            "data": {
-                                "node": state_update.get("_last_node_name", node_name),
-                                "duration_ms": state_update.get("_last_node_duration_ms", 0),
-                                "token_count": state_update.get("_last_token_count", 0),
-                            },
-                            "timestamp": _now_iso(),
-                        }
-
-                    # V2.0 D4 (2026-06-02): consecutive_failures >= 2 early-warning
-                    # 限频 1/case (用 _early_warning_sent 标志), WebSocket 推 "early_warning" 事件
-                    max_failures_now = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "3"))
-                    if _should_emit_early_warning(final_state, max_failures_now):
-                        cf = final_state.get("consecutive_failures", 0)
-                        final_state["_early_warning_sent"] = True
-                        yield {
-                            "type": "early_warning",
-                            "test_case_id": test_case.id,
-                            "step_index": final_state.get("current_step", 0),
-                            "data": {
-                                "consecutive_failures": cf,
-                                "threshold": 2,
-                                "max": max_failures_now,
-                                "message": f"⚠️ 连续失败 {cf} 次, 即将触发安全阀 (上限 {max_failures_now})",
-                            },
-                            "timestamp": _now_iso(),
-                        }
-
-                    if node_name == "observe":
-                        page_info = state_update.get("page_info", {})
-                        yield {
-                            "type": "page_update",
-                            "test_case_id": test_case.id,
-                            "step_index": final_state.get("current_step", 0),
-                            "data": {
-                                "url": page_info.get("url", ""),
-                                "title": page_info.get("title", ""),
-                                "screenshot": state_update.get("screenshot", ""),
-                            },
-                            "timestamp": _now_iso(),
-                        }
-
-                    elif node_name == "decide":
-                        messages = state_update.get("messages", [])
-                        if messages:
-                            last_msg = messages[-1]
-                            content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
-                            from core.llm_client import extract_tool_calls_from_message
-                            tool_calls = extract_tool_calls_from_message(last_msg)
-                            final_state["_last_tool_calls"] = tool_calls
+                        # V2.0 D2: 节点级 observability
+                        if "_last_node_name" in state_update:
                             yield {
-                                "type": "ai_thinking",
+                                "type": "node_event",
                                 "test_case_id": test_case.id,
                                 "step_index": final_state.get("current_step", 0),
                                 "data": {
-                                    "thought": content,
-                                    "tool_calls": [
-                                        {"name": tc.get("name", ""), "args": tc.get("args", {})}
-                                        for tc in tool_calls
-                                    ],
+                                    "node": state_update.get("_last_node_name", node_name),
+                                    "duration_ms": state_update.get("_last_node_duration_ms", 0),
+                                    "token_count": state_update.get("_last_token_count", 0),
                                 },
                                 "timestamp": _now_iso(),
                             }
 
-                    elif node_name == "execute":
-                        tool_calls = final_state.get("_last_tool_calls", [])
-                        tool_name = tool_calls[0].get("name", "") if tool_calls else ""
-                        tool_args = tool_calls[0].get("args", {}) if tool_calls else {}
-                        result_text = state_update.get("_last_tool_result", "")
+                        # V2.0 D4: consecutive_failures >= 2 early-warning
+                        max_failures_now = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "3"))
+                        if _should_emit_early_warning(final_state, max_failures_now):
+                            cf = final_state.get("consecutive_failures", 0)
+                            final_state["_early_warning_sent"] = True
+                            yield {
+                                "type": "early_warning",
+                                "test_case_id": test_case.id,
+                                "step_index": final_state.get("current_step", 0),
+                                "data": {
+                                    "consecutive_failures": cf,
+                                    "threshold": 2,
+                                    "max": max_failures_now,
+                                    "message": f"⚠️ 连续失败 {cf} 次, 即将触发安全阀 (上限 {max_failures_now})",
+                                },
+                                "timestamp": _now_iso(),
+                            }
 
-                        yield {
-                            "type": "action_result",
-                            "test_case_id": test_case.id,
-                            "step_index": state_update.get("current_step", 0),
-                            "data": {
-                                "tool_name": tool_name or "未知",
-                                "tool_args": tool_args,
-                                "result": result_text or "操作已执行，但无返回结果",
-                            },
-                            "timestamp": _now_iso(),
-                        }
+                        if node_name == "observe":
+                            page_info = state_update.get("page_info", {})
+                            yield {
+                                "type": "page_update",
+                                "test_case_id": test_case.id,
+                                "step_index": final_state.get("current_step", 0),
+                                "data": {
+                                    "url": page_info.get("url", ""),
+                                    "title": page_info.get("title", ""),
+                                    "screenshot": state_update.get("screenshot", ""),
+                                },
+                                "timestamp": _now_iso(),
+                            }
 
-                    elif node_name == "assert":
-                        yield {
-                            "type": "assertion_result",
-                            "test_case_id": test_case.id,
-                            "step_index": final_state.get("current_step", 0),
-                            "data": {
-                                "change_report": state_update.get("_last_change_report").model_dump() if state_update.get("_last_change_report") else None,
-                                "assertion": state_update.get("_last_assertion").model_dump() if state_update.get("_last_assertion") else None,
-                            },
-                            "timestamp": _now_iso(),
-                        }
+                        elif node_name == "decide":
+                            messages = state_update.get("messages", [])
+                            if messages:
+                                last_msg = messages[-1]
+                                content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+                                from core.llm_client import extract_tool_calls_from_message
+                                tool_calls = extract_tool_calls_from_message(last_msg)
+                                final_state["_last_tool_calls"] = tool_calls
+                                yield {
+                                    "type": "ai_thinking",
+                                    "test_case_id": test_case.id,
+                                    "step_index": final_state.get("current_step", 0),
+                                    "data": {
+                                        "thought": content,
+                                        "tool_calls": [
+                                            {"name": tc.get("name", ""), "args": tc.get("args", {})}
+                                            for tc in tool_calls
+                                        ],
+                                    },
+                                    "timestamp": _now_iso(),
+                                }
 
-                    elif node_name == "record":
-                        new_steps = state_update.get("_collected_steps", [])
-                        if new_steps:
-                            collected_steps.extend(new_steps)
-                            for step in new_steps:
-                                await log_step(self.task_id, test_case.id, step)
+                        elif node_name == "execute":
+                            tool_calls = final_state.get("_last_tool_calls", [])
+                            tool_name = tool_calls[0].get("name", "") if tool_calls else ""
+                            tool_args = tool_calls[0].get("args", {}) if tool_calls else {}
+                            result_text = state_update.get("_last_tool_result", "")
 
-        except Exception as e:
-            # Browser crash — try to recover
-            import traceback
-            traceback.print_exc()
-            print(f"[DEBUG] _execute_test_case_stream crashed with: {e}")
-            final_state = await self._handle_browser_crash(test_case, execution_state)
-            collected_steps = final_state.get("_collected_steps", [])
+                            yield {
+                                "type": "action_result",
+                                "test_case_id": test_case.id,
+                                "step_index": state_update.get("current_step", 0),
+                                "data": {
+                                    "tool_name": tool_name or "未知",
+                                    "tool_args": tool_args,
+                                    "result": result_text or "操作已执行，但无返回结果",
+                                },
+                                "timestamp": _now_iso(),
+                            }
+
+                        elif node_name == "assert":
+                            yield {
+                                "type": "assertion_result",
+                                "test_case_id": test_case.id,
+                                "step_index": final_state.get("current_step", 0),
+                                "data": {
+                                    "change_report": state_update.get("_last_change_report").model_dump() if state_update.get("_last_change_report") else None,
+                                    "assertion": state_update.get("_last_assertion").model_dump() if state_update.get("_last_assertion") else None,
+                                },
+                                "timestamp": _now_iso(),
+                            }
+
+                        elif node_name == "record":
+                            new_steps = state_update.get("_collected_steps", [])
+                            if new_steps:
+                                collected_steps.extend(new_steps)
+                                for step in new_steps:
+                                    await log_step(self.task_id, test_case.id, step)
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"[DEBUG] _execute_test_case_stream attempt {attempt + 1} crashed: {e}")
+                final_state = await self._handle_browser_crash(test_case, execution_state)
+                collected_steps = final_state.get("_collected_steps", [])
+
+            # ── 判定本次 attempt 状态 ──────────────────────────────────
+            status = self._determine_status(final_state, collected_steps)
+
+            # 成功或达到最大重试次数 → 结束循环
+            if status != "failed" or attempt >= max_retries:
+                final_status = status
+                final_steps = collected_steps
+                break
+
+            # 失败且还有重试机会 → 抓 failure_context, 准备下一轮
+            try:
+                fc = await self._capture_failure_context(
+                    getattr(self, "page", None), collected_steps, attempt + 1
+                )
+            except Exception as e:
+                print(f"[Runtime] 抓 failure_context 失败: {e}")
+                fc = {"attempt": attempt + 1, "no_step": True, "reason": str(e)}
+            failure_contexts.append(fc)
+            final_steps = collected_steps
+            print(
+                f"[Runtime] 用例 {test_case.id} 第 {attempt + 1}/{max_retries + 1} 次失败, "
+                f"准备重试 (断言: {fc.get('assertion_status', '?')})"
+            )
+
+        # ── 循环结束, 构建最终 TestResult ──────────────────────────────
+        if final_status == "failed" and attempts_used >= max_retries + 1 and failure_contexts:
+            final_status = "human_review_required"
 
         duration = time.time() - start_time
 
-        # Determine overall status
-        max_failures = int(os.getenv("MAX_CONSECUTIVE_FAILURES", "3"))
-        max_steps = int(os.getenv("MAX_STEPS_PER_CASE", "15"))
-
-        if final_state.get("consecutive_failures", 0) >= max_failures:
-            status = "failed"
-        elif final_state.get("current_step", 0) >= max_steps:
-            status = "incomplete"
-        elif any(
-            s.assertion and s.assertion.status == "fail"
-            for s in collected_steps
-            if hasattr(s, "assertion")
-        ):
-            status = "failed"
-        elif any(
-            s.assertion and s.assertion.status == "pass"
-            for s in collected_steps
-            if hasattr(s, "assertion")
-        ):
-            status = "passed"
-        else:
-            status = "incomplete"
-
         result = TestResult(
             test_case_id=test_case.id,
-            status=status,
-            steps=collected_steps,
-            summary=f"{'通过' if status == 'passed' else '失败'}: {test_case.title}",
+            status=final_status,
+            steps=final_steps,
+            summary=f"{'通过' if final_status == 'passed' else '失败' if final_status == 'failed' else '需人工'}: {test_case.title}",
             duration_seconds=duration,
             setup_results=[],
+            retry_count=attempts_used - 1,
+            failure_context=failure_contexts,
         )
         self._stream_results.append(result)
 
         # Generate session summary for cross-case context
         try:
             urls = set()
-            for s in collected_steps:
+            for s in final_steps:
                 if s.change_report:
                     if s.change_report.url_before: urls.add(s.change_report.url_before)
                     if s.change_report.url_after: urls.add(s.change_report.url_after)
@@ -833,8 +1039,8 @@ class Runtime:
             summary = await generate_case_summary(
                 test_case_id=test_case.id,
                 test_case_title=test_case.title,
-                status=status,
-                steps=collected_steps,
+                status=final_status,
+                steps=final_steps,
                 page_urls=page_urls,
             )
             self._case_summaries.append(summary)
@@ -851,6 +1057,7 @@ class Runtime:
                 "status": result.status,
                 "summary": result.summary,
                 "duration": result.duration_seconds,
+                "retry_count": result.retry_count,
             },
             "timestamp": _now_iso(),
         }
