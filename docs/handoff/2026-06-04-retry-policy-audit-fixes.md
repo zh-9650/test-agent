@@ -3,18 +3,20 @@
 ## 概要
 
 - **分支**: `dev/phase1-implementation`
-- **Commits**: 5 个 (30b2312 → 7186537)
+- **Commits**: 7 个 (b79ba94 → cc3cb9c)
 - **触发**: 同行反馈 (用例失败 3 次才算失败) + Opus 全项目审计
 
 ## Commit 清单
 
 | # | Hash | 类型 | 内容 |
 |---|------|------|------|
-| 1 | 30b2312 | feat(retry) | 用例级 3 次重试 + human_review_required |
-| 2 | 5ab3e19 | fix(audit) | Phase 2 perf — compaction 二次 LLM / sleep / count_tokens |
-| 3 | 9a10220 | fix(audit) | Phase 3 stability — requirements / return types / Input 计数 / 密码脱敏 |
-| 4 | 7186537 | chore(audit) | Phase 4 hygiene — 删脏文件 / 清空目录 / 端口统一 |
-| 5 | b79ba94 | fix(audit) | Phase 1 blockers — BUG-01/02/08 (已在之前 commit) |
+| 1 | b79ba94 | fix(audit) | Phase 1 blockers — BUG-01/02/08 |
+| 2 | 30b2312 | feat(retry) | 用例级 3 次重试 + human_review_required |
+| 3 | 5ab3e19 | fix(audit) | Phase 2 perf — compaction 二次 LLM / sleep / count_tokens |
+| 4 | 9a10220 | fix(audit) | Phase 3 stability — requirements / return types / Input 计数 / 密码脱敏 |
+| 5 | 7186537 | chore(audit) | Phase 4 hygiene — 删脏文件 / 清空目录 / 端口统一 |
+| 6 | 9fa8c56 | docs(handoff) | 交接文档 |
+| 7 | cc3cb9c | docs | 更新 CONTEXT.md + CLAUDE.md |
 
 ## Part A: 用例级重试 (核心新功能)
 
