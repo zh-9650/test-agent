@@ -30,28 +30,43 @@ async def get_cdp_session(page: Any, task_id: str = "") -> Any | None:
 
     Returns None if CDP is unavailable (Firefox, WebKit, or error).
     """
+    cdp_session = None
     if task_id and task_id in _cdp_sessions:
-        return _cdp_sessions[task_id]
+        cdp_session = _cdp_sessions[task_id]
 
-    # Check tools context first (most common path — runtime already created one)
-    try:
-        from agents.ui.tools import get_cdp_session_ctx as tools_get_cdp
-        existing = tools_get_cdp()
-        if existing is not None:
+    if cdp_session is None:
+        # Check tools context first (most common path — runtime already created one)
+        try:
+            from agents.ui.tools import get_cdp_session_ctx as tools_get_cdp
+            existing = tools_get_cdp()
+            if existing is not None:
+                if task_id:
+                    _cdp_sessions[task_id] = existing
+                cdp_session = existing
+        except Exception:
+            pass
+
+    if cdp_session is None:
+        try:
+            context = page.context
+            new_sess = await context.new_cdp_session(page)
             if task_id:
-                _cdp_sessions[task_id] = existing
-            return existing
-    except Exception:
-        pass
+                _cdp_sessions[task_id] = new_sess
+            cdp_session = new_sess
+        except Exception:
+            return None
 
-    try:
-        context = page.context
-        cdp_session = await context.new_cdp_session(page)
-        if task_id:
-            _cdp_sessions[task_id] = cdp_session
-        return cdp_session
-    except Exception:
-        return None
+    # Ensure Accessibility and DOM domains are enabled for the session
+    if cdp_session is not None:
+        if not getattr(cdp_session, "_l2_enabled", False):
+            try:
+                await cdp_session.send("Accessibility.enable")
+                await cdp_session.send("DOM.enable")
+                cdp_session._l2_enabled = True
+            except Exception as e:
+                print(f"  [CDP init] Failed to enable Accessibility/DOM: {e}", flush=True)
+
+    return cdp_session
 
 
 def cleanup_cdp_session(task_id: str) -> None:

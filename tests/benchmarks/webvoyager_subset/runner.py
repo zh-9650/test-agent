@@ -217,11 +217,20 @@ async def run_single_task(
 
     set_current_task(task_id)
 
+    orig_env_max_steps = os.environ.get("MAX_STEPS_PER_CASE")
     try:
         from playwright.async_api import async_playwright
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"]
+            )
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 720},
+                device_scale_factor=1,
+            )
+            page = await context.new_page()
             try:
                 # P1: Setup page.goto retry logic
                 max_retries = 3
@@ -234,7 +243,10 @@ async def run_single_task(
                         break
                     except Exception as goto_err:
                         print(f"  [Setup] Attempt {attempt} failed: {type(goto_err).__name__}: {goto_err}", flush=True)
-                        if attempt == max_retries:
+                        err_str = str(goto_err).lower()
+                        # Fast fail for anti-bot / http2 protocol errors where retry is futile
+                        is_futile = any(k in err_str for k in ["http2", "captcha", "aborted", "security", "blocked"])
+                        if attempt == max_retries or is_futile:
                             raise goto_err
                         await asyncio.sleep(2)
 
@@ -277,22 +289,31 @@ async def run_single_task(
                 }
 
                 # Set MAX_STEPS_PER_CASE env var so the graph safety valves align with task settings
-                os.environ.setdefault("MAX_STEPS_PER_CASE", str(max_steps))
+                os.environ["MAX_STEPS_PER_CASE"] = str(max_steps)
                 graph = build_execution_graph()
-                step_count = 0
-                last_ar = None
-                # P2: Time budget limit (default 300s)
-                time_limit = task.get("time_budget_s", 300)
-                for step_count in range(max_steps):
-                    elapsed = time.time() - start_time
-                    if elapsed > time_limit:
-                        print(f"  [Timeout] Task {task_id} elapsed {elapsed:.1f}s > budget {time_limit}s, forcing break.", flush=True)
-                        break
-                    result = await graph.ainvoke(state, {"recursion_limit": max(100, max_steps * 10)})
+                
+                # Single execution of the self-looping LangGraph with timeout (default 600s)
+                time_limit = task.get("time_budget_s", 600)
+                try:
+                    result = await asyncio.wait_for(
+                        graph.ainvoke(state, {"recursion_limit": max(100, max_steps * 10)}),
+                        timeout=time_limit
+                    )
                     state.update(result)
-                    last_ar = state.get("_last_action_result")
-                    if last_ar and last_ar.action and last_ar.action.startswith("mark_task_"):
-                        break
+                except asyncio.TimeoutError:
+                    print(f"  [Timeout] Task {task_id} timed out after {time_limit}s.", flush=True)
+                    from core.interfaces import ActionResult
+                    state["_last_action_result"] = ActionResult(
+                        action="timeout_guard",
+                        target=None,
+                        success=False,
+                        error=f"Task timed out after {time_limit} seconds",
+                        status="timeout",
+                        before_url=page.url,
+                        after_url=page.url
+                    )
+                last_ar = state.get("_last_action_result")
+                steps_run = state.get("current_step", 0)
 
                 duration = time.time() - start_time
 
@@ -326,7 +347,7 @@ async def run_single_task(
                     "reason": reason,
                     "judge_verdict": judge_text,
                     "duration_s": round(duration, 2),
-                    "steps": step_count + 1,
+                    "steps": steps_run,
                     "tokens": state.get("_last_token_count", 0),
                     "page_info": {
                         "url": final_state["page_info"].get("url"),
@@ -379,6 +400,10 @@ async def run_single_task(
         }
     finally:
         cleanup_task_context(task_id)
+        if orig_env_max_steps is not None:
+            os.environ["MAX_STEPS_PER_CASE"] = orig_env_max_steps
+        else:
+            os.environ.pop("MAX_STEPS_PER_CASE", None)
 
 
 async def run_benchmark(

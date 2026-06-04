@@ -19,13 +19,13 @@ def _sanitize_memory_value(text: str) -> str:
 
 async def retrieve_memories(target_url: str, query_text: str = None) -> str:
     """Retrieve relevant memories for a target URL using Postgres Native Full-Text Search."""
+    print("  [DEBUG MEM] Step 1: Entering retrieve_memories", flush=True)
     domain = urlparse(target_url).netloc or target_url
-    print(f"[MemoryRetrieval] Retrieving memories for domain={domain}, target_url={target_url}")
+    print(f"[MemoryRetrieval] Retrieving memories for domain={domain}, target_url={target_url}", flush=True)
     
+    print("  [DEBUG MEM] Step 2: Opening database session", flush=True)
     async with async_session() as session:
-        # Bug fix: Use scope_type-aware filtering to prevent cross-domain memory leakage.
-        # Instead of a simple scope_value IN (...), we pair each scope_type with its
-        # expected scope_value to ensure domain memories don't leak across domains.
+        print("  [DEBUG MEM] Step 3: Session opened, building query", flush=True)
         sql = select(AgentMemory).where(
             or_(
                 # Global memories: scope_type='global' and scope_value='*'
@@ -52,8 +52,11 @@ async def retrieve_memories(target_url: str, query_text: str = None) -> str:
         # Limit to top 10 most relevant/recent
         sql = sql.order_by(AgentMemory.updated_at.desc()).limit(10)
         
+        print("  [DEBUG MEM] Step 4: Executing SQL query", flush=True)
         result = await session.execute(sql)
+        print("  [DEBUG MEM] Step 5: Query executed, fetching scalars", flush=True)
         memories = result.scalars().all()
+        print(f"  [DEBUG MEM] Step 6: Query finished, memories count={len(memories)}", flush=True)
         
     if not memories:
         return ""

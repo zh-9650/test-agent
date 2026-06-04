@@ -275,12 +275,18 @@ def _coerce_to_pydantic(payload: Any, schema: type[T]) -> T:
         raise ValueError("could not coerce list payload")
     if isinstance(payload, dict):
         payload = _unwrap_envelope(payload)
+        # Robust mapping for typical LLM model field aliases in AssertionResult
+        if schema.__name__ == "AssertionResult":
+            if "reason" in payload and "reasoning" not in payload:
+                payload["reasoning"] = payload["reason"]
+            if "verdict" in payload and "status" not in payload:
+                payload["status"] = payload["verdict"]
         return schema.model_validate(payload)
     raise ValueError(f"unsupported payload type: {type(payload).__name__}")
 
 
 async def safe_structured_invoke(
-    prompt: str,
+    prompt: str | list[AnyMessage],
     schema: type[T],
     model_type: str = "default",
 ) -> T | None:
@@ -290,18 +296,25 @@ async def safe_structured_invoke(
     to a raw LLM call + manual JSON extraction. Returns None only if both paths
     fail or produce an empty result.
     """
+    from langchain_core.messages import HumanMessage
+
     llm = get_llm_client(model_type)
 
+    if isinstance(prompt, str):
+        messages = [HumanMessage(content=prompt)]
+    else:
+        messages = prompt
+
     try:
-        result = await llm.with_structured_output(schema).ainvoke(prompt)
+        result = await llm.with_structured_output(schema).ainvoke(messages)
         if result is not None:
-            return result
+            return _coerce_to_pydantic(result, schema)
         print(f"[LLM] structured_output returned None for {schema.__name__}, falling back to raw parse")
     except Exception as e:
         print(f"[LLM] structured_output errored for {schema.__name__}: {e}; falling back to raw parse")
 
     try:
-        raw = await llm.ainvoke(prompt)
+        raw = await llm.ainvoke(messages)
         text = _unwrap_content(raw.content)
         blob = _extract_json_blob(text)
         if not blob:

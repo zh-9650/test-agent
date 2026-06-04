@@ -29,11 +29,24 @@ from core.interfaces import ActionResult
 _current_task_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "_current_task_id", default=None
 )
+_current_step: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "_current_step", default=0
+)
 
 # Registry mapping task_id -> {"page": <Page>, "element_map": {id: el_info}}
 _task_contexts: dict[str, dict[str, Any]] = {}
 _hitl_events: dict[str, asyncio.Event] = {}
 _hitl_responses: dict[str, str] = {}
+
+
+def set_current_step(step: int) -> None:
+    """Set the current step index (0-based) for the running task."""
+    _current_step.set(step)
+
+
+def get_current_step() -> int:
+    """Get the current step index for the running task."""
+    return _current_step.get()
 
 
 def set_current_task(task_id: str) -> None:
@@ -303,7 +316,7 @@ async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
     if not lookup_key.startswith("#"):
         return None
 
-    entry = backend_node_map.lookup(task_id, lookup_key, current_step=0)
+    entry = backend_node_map.lookup(task_id, lookup_key, current_step=get_current_step())
     if not entry:
         print(f"  [CDP Resolve] No BackendNodeMap entry for {lookup_key}", flush=True)
         return None
@@ -338,37 +351,75 @@ async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
 
     # Set temporary attribute
     temp_id = f"cdp-temp-{uuid.uuid4().hex}"
+    has_temp_attr = False
     try:
         await cdp_sess.send("Runtime.callFunctionOn", {
             "functionDeclaration": f"function() {{ this.setAttribute('data-l2-cdp-temp', '{temp_id}'); }}",
             "objectId": object_id,
         })
+        has_temp_attr = True
     except Exception as e:
         print(f"  [CDP Resolve] Failed to call function on object: {e}", flush=True)
         await release_object(cdp_sess, object_id)
         return None
 
-    # Release handle immediately
-    await release_object(cdp_sess, object_id)
-
     # Find in Playwright frames
     target_locator = None
+    frame_found = None
     for frame in page.frames:
         try:
             locator = frame.locator(f"[data-l2-cdp-temp='{temp_id}']")
             if await locator.count() > 0:
                 target_locator = locator.first
+                frame_found = frame
                 break
         except Exception:
             pass
 
+    xpath = None
     if target_locator:
-        # Clean up attribute
         try:
-            await target_locator.evaluate("el => el.removeAttribute('data-l2-cdp-temp')")
-        except Exception:
-            pass
-        print(f"  [CDP Resolve] Successfully resolved {lookup_key} via CDP backendNodeId {backend_node_id}", flush=True)
+            response = await cdp_sess.send("Runtime.callFunctionOn", {
+                "functionDeclaration": """function() {
+                    let el = this;
+                    let path = '';
+                    for (; el && el.nodeType === 1; el = el.parentNode) {
+                        let index = 1;
+                        for (let sibling = el.previousSibling; sibling; sibling = sibling.previousSibling) {
+                            if (sibling.nodeType === 1 && sibling.tagName === el.tagName) {
+                                index++;
+                            }
+                        }
+                        let tagName = el.tagName.toLowerCase();
+                        path = '/' + tagName + '[' + index + ']' + path;
+                    }
+                    return path;
+                }""",
+                "objectId": object_id,
+                "returnByValue": True,
+            })
+            xpath = response.get("result", {}).get("value")
+        except Exception as eval_err:
+            print(f"  [CDP Resolve] XPath evaluation failed: {eval_err}", flush=True)
+
+    # GUARANTEED CLEANUP of temp attribute in CDP layer
+    if has_temp_attr:
+        try:
+            await cdp_sess.send("Runtime.callFunctionOn", {
+                "functionDeclaration": "function() { this.removeAttribute('data-l2-cdp-temp'); }",
+                "objectId": object_id,
+            })
+        except Exception as clean_err:
+            print(f"  [CDP Resolve] Failed to clean temp attribute on object: {clean_err}", flush=True)
+
+    await release_object(cdp_sess, object_id)
+
+    if frame_found and xpath:
+        stable_locator = frame_found.locator(f"xpath={xpath}").first
+        print(f"  [CDP Resolve] Resolved {lookup_key} to stable XPath: {xpath}", flush=True)
+        return stable_locator
+    elif target_locator:
+        print(f"  [CDP Resolve] Resolved {lookup_key} to temp locator (no XPath)", flush=True)
         return target_locator
 
     print(f"  [CDP Resolve] Could not locate element with temp attribute {temp_id}", flush=True)
@@ -384,6 +435,11 @@ async def _resolve_element(target: str, page: Any) -> Any:
     3. If found, try xpath or other specific fallback attributes
     4. Otherwise, try text-based locators in order
     """
+    # Global cleanup of stale CDP temporary attributes before resolving
+    try:
+        await page.evaluate("() => { document.querySelectorAll('[data-l2-cdp-temp]').forEach(el => el.removeAttribute('data-l2-cdp-temp')); }")
+    except Exception:
+        pass
     tid = _current_task_id.get()
     ctx = _task_contexts.get(tid, {}) if tid else {}
     element_map = ctx.get("element_map", {})
@@ -574,8 +630,8 @@ async def click(target: str) -> dict[str, Any]:
                             extracted_content=f"已点击元素 '{el_text or el_label or target}'",
                             duration_ms=int((_time.time() - _t0) * 1000),
                         )
-            except Exception:
-                pass
+            except Exception as click_err:
+                print(f"  [CDP Click] Coordinate click failed: {click_err}, falling back to locator", flush=True)
 
         # Fallback: Playwright locator click
         await locator.click(timeout=10000)
@@ -1167,11 +1223,9 @@ async def mark_task_complete(reasoning: str) -> dict[str, Any]:
         from core.page_semantic import extract_page_semantics
         page_info = await extract_page_semantics(page, task_id=task_id)
         title = page_info.get("title", "")
-        headlines = page_info.get("headlines", [])
-        if not headlines and page_info.get("headings"):
-            headlines = page_info.get("headings")
-        if headlines:
-            extracted = f"{title} | {headlines[0]}"
+        headings = page_info.get("headings", [])
+        if headings:
+            extracted = f"{title} | {headings[0]}"
         else:
             extracted = title
     except Exception:
@@ -1208,11 +1262,9 @@ async def mark_task_failed(reasoning: str) -> dict[str, Any]:
         from core.page_semantic import extract_page_semantics
         page_info = await extract_page_semantics(page, task_id=task_id)
         title = page_info.get("title", "")
-        headlines = page_info.get("headlines", [])
-        if not headlines and page_info.get("headings"):
-            headlines = page_info.get("headings")
-        if headlines:
-            extracted = f"{title} | {headlines[0]}"
+        headings = page_info.get("headings", [])
+        if headings:
+            extracted = f"{title} | {headings[0]}"
         else:
             extracted = title
     except Exception:
