@@ -80,6 +80,8 @@ V1.7 完成后 L1 + Phase 1.5 8 个 skill 全部 V1.6 化。**L2 (execution_grap
 4.  **Action Timeline 设计**：不走“代码生成再跑”的老路，每一步都是“Thought + Action + Result + Assertion”的实时博弈。
 5.  **Robust Retry 重试兜底**：在 AI 调用环节实现异步指数退避重试机制，以应对大模型 API 严格的 Rate Limit 429 报错。
 6.  **配置文件与启动机制**：开发期由 `main.py` 统管，同时拉起 Uvicorn 和 Vite 进程。
+7.  **用例级重试而非步级重试 (2026-06-04)**：同行反馈"失败 3 次才算失败"。选择用例级重试 (整个用例从头跑) 而非步级重试 (同一动作换 context 再试), 因为步级重试容易陷入局部最优, 用例级重试让 LLM 从全局视角重新规划。
+8.  **a11y tree 截断到 10KB (2026-06-04)**：重试 context 注入 a11y tree 时截断到 10KB, 保护 `L2_TOKEN_BUDGET=30K` 不被撑爆。等模型切回 200K context (qwen3.7-max) 后可适当放宽。
 
 ## 5. 最近技术升级与架构演进 (Latest Upgrades - Phase 1.5+)
 
@@ -125,4 +127,21 @@ V1.7 完成后 L1 + Phase 1.5 8 个 skill 全部 V1.6 化。**L2 (execution_grap
   - Sprint B3: assert 条件边 + Locator 失败率数据采集（为 Phase 2.0C CDP 迁移做决策）
   - **CDP 迁移推迟到 Phase 2.0C**，触发条件：100 case 后 locator 失败率 > 30%
 *   **全局路线图汇总**：`docs/master-roadmap.md` — 包含所有 GPT 评审建议、架构改进、代码对比优化、PRD 未实现故事，按 P0-P5 6 级组织
+*   **Phase 2.0C+D — CDP 迁移 + 截图按需 (2026-06-04)**: 详见 handoff `docs/handoff/2026-06-04-phase2.0CD-benchmark.md`。
+    - 2.0C: `_resolve_via_cdp()` 用 Chrome DevTools Protocol 替代 Playwright Locator 失败路径 (gate: `L2_USE_CDP=1`)
+    - 2.0D: 截图按需 (`L2_OBSERVE_SCREENSHOT=0` 默认不截, LLM 调 `screenshot_on_demand` 才截) + JPEG 压缩
+    - 2.0D: `ActionResult` 结构化返回 (status/extracted_content/long_term_memory/candidates)
+*   **用例级重试策略 (2026-06-04, 同行反馈)**:
+    - **策略**: 用例 fail → runtime 自动重跑整个用例, 最多 `MAX_TEST_CASE_RETRIES` 次重试 (默认 2, 总 3 次尝试)
+    - **失败 context 注入**: `_capture_failure_context()` 抓 screenshot + a11y tree (10KB 截断) + assertion reasoning, 注入下一次 attempt 的 SystemMessage 顶部
+    - **浏览器完全重置**: 每次重试前 `_reset_browser_state()` 清 cookies/storage/goto blank/goto target
+    - **3 次都 fail → `human_review_required`**: failure_context 持久化到 DB, 供后续人工 review
+    - **新 WebSocket 事件**: `test_case_retry` (attempt/max_retries/previous_reasoning)
+    - **TestResult 扩展**: `retry_count: int`, `failure_context: list[dict]`, status Literal 加 `"human_review_required"`
+    - **env var**: `MAX_TEST_CASE_RETRIES=2` (可配, 0=禁用重试)
+*   **2026-06-04 全项目审计修复 (Opus 审计)**:
+    - Phase 1: BUG-01 `_fast_assert` 结果被边缘函数丢弃 (record_node 兜底恢复), BUG-02 `AssertionResult.reasoning` 加 `default=""`, BUG-08 `page_semantic.py` `toLower()` → `toLowerCase()`
+    - Phase 2: 移除 compaction 二次 LLM 调用, 注入 `_compaction_summary` 到 messages, 移除硬编码 `sleep(2)`, 修 `count_tokens` 错 import
+    - Phase 3: requirements.txt 加版本钉 + 补 browser-use/tiktoken, `request_human_intervention` 返回 dict, Input 重复计数修复, 探索模式密码脱敏
+    - Phase 4: 删 6 个脏文件 + old/(4.35MB) + pdf_images/(7.29MB), 清 API debug prints + 死代码, 端口统一 8002
 

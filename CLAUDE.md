@@ -10,7 +10,8 @@ This file provides guidance to Claude Code when working with this project.
 
 - **`CONTEXT.md`** (root) — All confirmed design decisions (44), glossary, agent breakdown, shared modules. **Read this first before writing any code.**
 - **`docs/PRD.md`** — Full product requirements: 44 user stories, implementation decisions, database schema, project structure, testing strategy.
-- **`old/`** — Outdated architecture docs from before the current design. **Ignore this directory.**
+- **`scripts/`** — Trigger/maintenance scripts (e.g., `trigger_test.py`)
+- **`tests/scripts/`** — Debug/monitoring scripts (e.g., `monitor_task.py`)
 
 ## Tech Stack
 
@@ -36,6 +37,7 @@ This file provides guidance to Claude Code when working with this project.
 - `record`: persist to database + emit WebSocket message
 
 **Safety valves:** max 15 steps per case, 3 consecutive failures → skip. Both configurable.
+**Case-level retry:** failed test cases retry up to 2 times (total 3 attempts) with failure context injection. Configurable via `MAX_TEST_CASE_RETRIES`. 3 failures → `human_review_required`.
 
 ## Environment Setup
 
@@ -56,9 +58,10 @@ ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.1
 DATABASE_URL=postgresql://postgres:123456@localhost:5432/smart_test
 MAX_STEPS_PER_CASE=15
 MAX_CONSECUTIVE_FAILURES=3
+MAX_TEST_CASE_RETRIES=2
 MAX_EXPLORE_PAGES=20
 MAX_EXPLORE_MINUTES=5
-BACKEND_PORT=8000
+BACKEND_PORT=8002
 FRONTEND_PORT=5173
 
 # Test target (for development validation):
@@ -95,7 +98,9 @@ smart-test-agent/
 ├── database/              # SQLAlchemy (create_all, no Alembic in Phase 1)
 │   └── models.py          # task, task_step, report tables
 ├── data/                  # Runtime files (screenshots, traces, reports)
+├── scripts/               # Trigger/maintenance scripts
 └── tests/
+    └── scripts/           # Debug/monitoring scripts
 ```
 
 ## Design Principles
