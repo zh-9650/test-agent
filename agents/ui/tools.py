@@ -286,13 +286,103 @@ def _normalize_target(target: Any) -> str:
     return raw
 
 
+async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
+    """Phase 2.0C: Resolve element via CDP backendNodeId.
+    
+    1. Normalize target.
+    2. Lookup backendNodeId in BackendNodeMap.
+    3. Resolve backendNodeId using CDP resolveNode.
+    4. Set temporary unique attribute on the element.
+    5. Find element in Playwright frame(s) using CSS attribute selector.
+    """
+    import uuid
+    import core.backend_node_map as backend_node_map
+    from core.cdp_client import resolve_node, release_object, get_cdp_session
+
+    lookup_key = _normalize_target(target)
+    if not lookup_key.startswith("#"):
+        return None
+
+    entry = backend_node_map.lookup(task_id, lookup_key, current_step=0)
+    if not entry:
+        print(f"  [CDP Resolve] No BackendNodeMap entry for {lookup_key}", flush=True)
+        return None
+
+    backend_node_id = entry.get("backend_node_id")
+    if not backend_node_id:
+        return None
+
+    # Get CDP session
+    cdp_sess = get_cdp_session_ctx()
+    if not cdp_sess:
+        try:
+            cdp_sess = await get_cdp_session(page, task_id)
+            if cdp_sess:
+                set_cdp_session(cdp_sess, task_id=task_id)
+        except Exception:
+            pass
+
+    if not cdp_sess:
+        print(f"  [CDP Resolve] No active CDP session", flush=True)
+        return None
+
+    # Resolve backendNodeId to objectId
+    resolved = await resolve_node(cdp_sess, backend_node_id)
+    if not resolved:
+        print(f"  [CDP Resolve] Failed to resolve backendNodeId {backend_node_id}", flush=True)
+        return None
+
+    object_id = resolved.get("objectId")
+    if not object_id:
+        return None
+
+    # Set temporary attribute
+    temp_id = f"cdp-temp-{uuid.uuid4().hex}"
+    try:
+        await cdp_sess.send("Runtime.callFunctionOn", {
+            "functionDeclaration": f"function() {{ this.setAttribute('data-l2-cdp-temp', '{temp_id}'); }}",
+            "objectId": object_id,
+        })
+    except Exception as e:
+        print(f"  [CDP Resolve] Failed to call function on object: {e}", flush=True)
+        await release_object(cdp_sess, object_id)
+        return None
+
+    # Release handle immediately
+    await release_object(cdp_sess, object_id)
+
+    # Find in Playwright frames
+    target_locator = None
+    for frame in page.frames:
+        try:
+            locator = frame.locator(f"[data-l2-cdp-temp='{temp_id}']")
+            if await locator.count() > 0:
+                target_locator = locator.first
+                break
+        except Exception:
+            pass
+
+    if target_locator:
+        # Clean up attribute
+        try:
+            await target_locator.evaluate("el => el.removeAttribute('data-l2-cdp-temp')")
+        except Exception:
+            pass
+        print(f"  [CDP Resolve] Successfully resolved {lookup_key} via CDP backendNodeId {backend_node_id}", flush=True)
+        return target_locator
+
+    print(f"  [CDP Resolve] Could not locate element with temp attribute {temp_id}", flush=True)
+    return None
+
+
 async def _resolve_element(target: str, page: Any) -> Any:
     """Resolve a target string to a Playwright Locator.
 
     Strategy:
     1. Normalize target. If target is digit or [digit] or starts with #, look up in element_map
-    2. If found, try xpath or other specific fallback attributes
-    3. Otherwise, try text-based locators in order
+    2. If L2_USE_CDP is enabled, try resolving via CDP backendNodeId.
+    3. If found, try xpath or other specific fallback attributes
+    4. Otherwise, try text-based locators in order
     """
     tid = _current_task_id.get()
     ctx = _task_contexts.get(tid, {}) if tid else {}
@@ -309,6 +399,15 @@ async def _resolve_element(target: str, page: Any) -> Any:
         tc["_locator_stats"]["total"] = tc["_locator_stats"].get("total", 0) + 1
     except Exception:
         pass
+
+    # CDP Integration Branch (Phase 2.0C)
+    if os.getenv("L2_USE_CDP") == "1" and tid:
+        try:
+            cdp_locator = await _resolve_via_cdp(page, target, tid)
+            if cdp_locator:
+                return cdp_locator
+        except Exception as cdp_err:
+            print(f"  [CDP Resolve Error] {cdp_err}", flush=True)
 
     if lookup_key in element_map:
         el_info = element_map[lookup_key]
@@ -1059,10 +1158,36 @@ async def mark_task_complete(reasoning: str) -> dict[str, Any]:
         reasoning: 任务成功的理由或发现，请尽量详细说明
     """
     page = get_current_page()
+    task_id = get_current_task_id()
+    res = await _make_action_result("mark_task_complete", None, True, page, page.url)
+
+    # P4: Auto-extract final answer from page
+    extracted = ""
+    try:
+        from core.page_semantic import extract_page_semantics
+        page_info = await extract_page_semantics(page, task_id=task_id)
+        title = page_info.get("title", "")
+        headlines = page_info.get("headlines", [])
+        if not headlines and page_info.get("headings"):
+            headlines = page_info.get("headings")
+        if headlines:
+            extracted = f"{title} | {headlines[0]}"
+        else:
+            extracted = title
+    except Exception:
+        pass
+
+    extracted_content = reasoning
+    if extracted:
+        if extracted_content:
+            extracted_content = f"{extracted_content}\n\n[Auto-Extracted Page Info] {extracted}"
+        else:
+            extracted_content = extracted
+
     return {
-        **await _make_action_result("mark_task_complete", None, True, page, page.url),
+        **res,
         "display_text": f"任务标记为已成功: {reasoning}",
-        "extracted_content": reasoning,
+        "extracted_content": extracted_content,
     }
 
 
@@ -1074,10 +1199,36 @@ async def mark_task_failed(reasoning: str) -> dict[str, Any]:
         reasoning: 任务失败的具体原因（如：找不到目标元素，页面报错等）
     """
     page = get_current_page()
+    task_id = get_current_task_id()
+    res = await _make_action_result("mark_task_failed", None, False, page, page.url, error=reasoning)
+
+    # P4: Auto-extract final answer from page for failure context
+    extracted = ""
+    try:
+        from core.page_semantic import extract_page_semantics
+        page_info = await extract_page_semantics(page, task_id=task_id)
+        title = page_info.get("title", "")
+        headlines = page_info.get("headlines", [])
+        if not headlines and page_info.get("headings"):
+            headlines = page_info.get("headings")
+        if headlines:
+            extracted = f"{title} | {headlines[0]}"
+        else:
+            extracted = title
+    except Exception:
+        pass
+
+    extracted_content = reasoning
+    if extracted:
+        if extracted_content:
+            extracted_content = f"{extracted_content}\n\n[Auto-Extracted Page Info] {extracted}"
+        else:
+            extracted_content = extracted
+
     return {
-        **await _make_action_result("mark_task_failed", None, False, page, page.url, error=reasoning),
+        **res,
         "display_text": f"任务标记为已失败: {reasoning}",
-        "extracted_content": reasoning,
+        "extracted_content": extracted_content,
     }
 
 

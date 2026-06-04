@@ -58,6 +58,8 @@ yarn.lock
 data/screenshots/*
 data/sessions/*
 data/reports/*
+data/webvoyager_report*.md
+data/bench_errors/*
 !data/screenshots/.gitkeep
 !data/sessions/.gitkeep
 !data/reports/.gitkeep

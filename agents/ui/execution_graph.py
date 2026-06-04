@@ -370,9 +370,12 @@ async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
             urls = set(a.get("url", "") for a in recent if a.get("url"))
             fps = set(a.get("fingerprint", "") for a in recent if a.get("fingerprint"))
             names = [a.get("name", "") for a in recent]
+            
+            write_actions = {"click", "input_text", "select_dropdown", "press_key", "navigate", "scroll", "hover", "BATCH"}
+            all_recent_are_write = all(name in write_actions for name in names)
             page_stable = len(urls) <= 1 and len(fps) <= 1
 
-            if page_stable and not need_replan:
+            if page_stable and all_recent_are_write and not need_replan:
                 # 检查是否不同的 action 但页面无变化（脱轨，不同于 AAA/ABAB 死循环）
                 need_replan = True
                 corrective_text = (
@@ -384,14 +387,14 @@ async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
             # B2.4: AAA / ABAB 检测
             if len(action_history) >= 3:
                 names3 = [a.get("name", "") for a in action_history[-3:]]
-                if names3[-1] == names3[-2] == names3[-3]:
+                if names3[-1] == names3[-2] == names3[-3] and names3[-1] in write_actions:
                     need_replan = True
-                    page_info["_loop_detected"] = "AAA (连续 3 次相同动作)"
+                    page_info["_loop_detected"] = f"AAA (连续 3 次相同写动作: {names3[-1]})"
             if len(action_history) >= 4:
                 names4 = [a.get("name", "") for a in action_history[-4:]]
-                if names4[-1] == names4[-3] and names4[-2] == names4[-4] and names4[-1] != names4[-2]:
+                if names4[-1] == names4[-3] and names4[-2] == names4[-4] and names4[-1] != names4[-2] and names4[-1] in write_actions and names4[-2] in write_actions:
                     need_replan = True
-                    page_info["_loop_detected"] = "ABAB (4 步交替)"
+                    page_info["_loop_detected"] = f"ABAB (4 步交替写动作: {names4[-1]}/{names4[-2]})"
 
         # B2.3 + 2.0D: Context 压缩 — 双阈值 (步数 + tokens) 触发 LLM 语义压缩
         # 向后兼容: L2_COMPACTION=0 时回退到物理截断
@@ -597,6 +600,17 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
         for attempt in range(max_retries):
             try:
                 response = await llm_with_tools.ainvoke(messages)
+                if os.getenv("L2_DEBUG_LLM") == "1":
+                    try:
+                        import sys
+                        encoding = sys.stdout.encoding or "utf-8"
+                        safe_content = str(response.content).encode(encoding, errors="replace").decode(encoding)
+                        print(f"  [Decide] LLM response: {safe_content}", flush=True)
+                        if response.tool_calls:
+                            safe_calls = str(response.tool_calls).encode(encoding, errors="replace").decode(encoding)
+                            print(f"  [Decide] Tool calls: {safe_calls}", flush=True)
+                    except Exception:
+                        pass
                 return {"messages": [response], "_last_token_count": decide_token_count}
             except Exception as e:
                 logging.getLogger(__name__).error(

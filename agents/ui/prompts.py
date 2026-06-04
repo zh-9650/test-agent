@@ -116,6 +116,9 @@ def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any]
 8. **<focus_areas> 优先关注**: 用例设计与 step 选择优先对齐 <focus_areas>.
 9. **<risk_points> 重点验证**: 遇到 <risk_points> 里的场景, 必须触发相关路径并验证.
 10. **完成判据**: 当所有步骤已执行, 且页面变化/URL/可见元素明确满足 <预期结果> 时, mark_task_complete.
+11. **禁止直接导航捷径**: 严禁直接调用 `navigate` 访问带有查询参数的结果页 URL（例如 `?q=xxx` 或 `/searchresults.html?` 等）。你必须在页面已有的输入框中输入内容，并通过点击搜索/提交按钮来完成交互。
+12. **前置弹窗关闭原则**: 如果页面被 Genius 登录框、Cookie 同意框、订阅弹窗等阻挡或部分遮蔽，你**必须**首先尝试定位并点击其关闭按钮（如 'Close', 'X', 或者是弹窗外的空白区域）以消除弹窗，然后再继续用例的实质步骤。禁止直接无视弹窗强行点击被遮挡的元素。
+13. **完成前答案提取**: 在你调用 `mark_task_complete` 表明任务完成之前，如果当前用例需要提取特定的信息（如价格、星数、标题、数值等），你**必须**先通过调用 `extract_text`（针对可定位元素）或 `evaluate_js`（针对没有编号的复杂非交互文本）把这些数据提取到 `action_result` 的 `extracted_content` 中，然后再结束任务。禁止在未提取答案到 `extracted_content` 的情况下直接 mark_task_complete。
 </rules>
 
 <examples>

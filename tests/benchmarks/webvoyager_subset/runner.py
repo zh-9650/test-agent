@@ -223,7 +223,21 @@ async def run_single_task(
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             try:
-                await page.goto(task["url"], wait_until="domcontentloaded", timeout=30000)
+                # P1: Setup page.goto retry logic
+                max_retries = 3
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        wait_until = "domcontentloaded" if attempt == 1 else "commit"
+                        timeout = 30000 if attempt == 1 else (20000 if attempt == 2 else 15000)
+                        print(f"  [Setup] Navigation attempt {attempt}/{max_retries} to {task['url']} (wait_until={wait_until}, timeout={timeout})...", flush=True)
+                        await page.goto(task["url"], wait_until=wait_until, timeout=timeout)
+                        break
+                    except Exception as goto_err:
+                        print(f"  [Setup] Attempt {attempt} failed: {type(goto_err).__name__}: {goto_err}", flush=True)
+                        if attempt == max_retries:
+                            raise goto_err
+                        await asyncio.sleep(2)
+
                 set_current_page(page, task_id)
 
                 test_case = TestCase(
@@ -262,11 +276,19 @@ async def run_single_task(
                     "need_replan": False,
                 }
 
+                # Set MAX_STEPS_PER_CASE env var so the graph safety valves align with task settings
+                os.environ.setdefault("MAX_STEPS_PER_CASE", str(max_steps))
                 graph = build_execution_graph()
                 step_count = 0
                 last_ar = None
+                # P2: Time budget limit (default 300s)
+                time_limit = task.get("time_budget_s", 300)
                 for step_count in range(max_steps):
-                    result = await graph.ainvoke(state, {"recursion_limit": max_steps * 5})
+                    elapsed = time.time() - start_time
+                    if elapsed > time_limit:
+                        print(f"  [Timeout] Task {task_id} elapsed {elapsed:.1f}s > budget {time_limit}s, forcing break.", flush=True)
+                        break
+                    result = await graph.ainvoke(state, {"recursion_limit": max(100, max_steps * 10)})
                     state.update(result)
                     last_ar = state.get("_last_action_result")
                     if last_ar and last_ar.action and last_ar.action.startswith("mark_task_"):
@@ -321,16 +343,29 @@ async def run_single_task(
         tb = traceback.format_exc()
         try:
             (PROJECT_ROOT / "data" / "bench_errors").mkdir(parents=True, exist_ok=True)
-            (PROJECT_ROOT / "data" / "bench_errors" / f"{task_id}.log").write_text(
+            log_content = (
                 f"=== {task_id} ({task.get('site', '')}) ===\n"
                 f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
                 f"Instruction: {task.get('instruction', '')[:200]}\n"
                 f"Exception: {type(e).__name__}: {e}\n\n"
-                f"{tb}\n",
+                f"{tb}\n"
+            )
+            if "state" in locals():
+                log_content += "\n=== Action History ===\n"
+                action_hist = state.get("action_history", [])
+                for idx, act in enumerate(action_hist):
+                    log_content += f"Step {idx}: {act}\n"
+                log_content += "\n=== Messages ===\n"
+                for msg in state.get("messages", []):
+                    log_content += f"[{type(msg).__name__}]: {str(msg.content)[:400]}\n"
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        log_content += f"  Tool Calls: {msg.tool_calls}\n"
+            (PROJECT_ROOT / "data" / "bench_errors" / f"{task_id}.log").write_text(
+                log_content,
                 encoding="utf-8",
             )
-        except Exception:
-            pass
+        except Exception as log_err:
+            print(f"Failed to write error log: {log_err}", flush=True)
         return {
             "task_id": task_id,
             "site": task.get("site", ""),
