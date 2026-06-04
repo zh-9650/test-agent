@@ -23,6 +23,7 @@ import os
 import re
 import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -317,6 +318,19 @@ async def run_single_task(
             finally:
                 await browser.close()
     except Exception as e:
+        tb = traceback.format_exc()
+        try:
+            (PROJECT_ROOT / "data" / "bench_errors").mkdir(parents=True, exist_ok=True)
+            (PROJECT_ROOT / "data" / "bench_errors" / f"{task_id}.log").write_text(
+                f"=== {task_id} ({task.get('site', '')}) ===\n"
+                f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Instruction: {task.get('instruction', '')[:200]}\n"
+                f"Exception: {type(e).__name__}: {e}\n\n"
+                f"{tb}\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
         return {
             "task_id": task_id,
             "site": task.get("site", ""),
@@ -326,6 +340,7 @@ async def run_single_task(
             "judge_verdict": "",
             "duration_s": round(time.time() - start_time, 2),
             "steps": 0,
+            "traceback": tb,
         }
     finally:
         cleanup_task_context(task_id)
@@ -392,6 +407,23 @@ def generate_report(results: list[dict[str, Any]]) -> str:
     for r in results:
         lines.append(f"| {r['task_id']} | {r.get('site', '')} | {r['status']} | "
                      f"{r.get('steps', 0)} | {r.get('duration_s', 0)}s |")
+
+    # Error tracebacks (full stack for debugging)
+    errored = [r for r in results if r.get("status") == "error" and r.get("traceback")]
+    if errored:
+        lines.append("")
+        lines.append("## Error Tracebacks")
+        lines.append("")
+        lines.append("Full stack traces for tasks that errored. Also written to `data/bench_errors/{task_id}.log`.")
+        lines.append("")
+        for r in errored:
+            lines.append(f"### {r['task_id']} — {r.get('site', '')}")
+            lines.append(f"**Reason**: {r.get('reason', '')}")
+            lines.append("")
+            lines.append("```")
+            lines.append(r["traceback"][:3000])
+            lines.append("```")
+            lines.append("")
 
     # LLM judge 详情
     judged = [r for r in results if r.get("judge_verdict")]
