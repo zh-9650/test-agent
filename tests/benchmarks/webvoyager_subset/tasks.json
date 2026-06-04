@@ -1,0 +1,96 @@
+{
+  "$comment": "WebVoyager 公开基准测试 10 题, Phase 2.0D 基线。来源: github.com/MinorJerry/WebVoyager",
+  "version": "2026-06-04",
+  "tasks": [
+    {
+      "id": "WV-001",
+      "site": "Amazon",
+      "url": "https://www.amazon.com/",
+      "instruction": "Search for 'mechanical keyboard' and find the first result's price.",
+      "success_criteria": "extract_text returns a price string (contains '$')",
+      "category": "search",
+      "max_steps": 12
+    },
+    {
+      "id": "WV-002",
+      "site": "Walmart",
+      "url": "https://www.walmart.com/",
+      "instruction": "Search for 'laptop' and report the number of results shown.",
+      "success_criteria": "extract_text returns a number with 'results' or 'items'",
+      "category": "search",
+      "max_steps": 12
+    },
+    {
+      "id": "WV-003",
+      "site": "Booking.com",
+      "url": "https://www.booking.com/",
+      "instruction": "Search for hotels in New York for next month, 1 adult, 1 night.",
+      "success_criteria": "URL contains 'searchresults' or page title contains 'New York'",
+      "category": "form",
+      "max_steps": 15
+    },
+    {
+      "id": "WV-004",
+      "site": "Google Flights",
+      "url": "https://www.google.com/travel/flights",
+      "instruction": "Search for one-way flights from NYC to LAX for tomorrow.",
+      "success_criteria": "URL contains 'flights/search' OR page contains flight results",
+      "category": "form",
+      "max_steps": 15
+    },
+    {
+      "id": "WV-005",
+      "site": "GitHub",
+      "url": "https://github.com/",
+      "instruction": "Search for 'playwright' repositories and report the star count of the top result.",
+      "success_criteria": "extract_text returns text containing 'k' (e.g., '65.4k')",
+      "category": "search",
+      "max_steps": 10
+    },
+    {
+      "id": "WV-006",
+      "site": "BBC News",
+      "url": "https://www.bbc.com/news",
+      "instruction": "Find the headline of the top story and report it.",
+      "success_criteria": "extract_text returns a non-empty headline string (length > 10)",
+      "category": "extract",
+      "max_steps": 8
+    },
+    {
+      "id": "WV-007",
+      "site": "Hacker News",
+      "url": "https://news.ycombinator.com/",
+      "instruction": "Report the title and score of the top story.",
+      "success_criteria": "extract_text returns text containing both a title and a number (score)",
+      "category": "extract",
+      "max_steps": 6
+    },
+    {
+      "id": "WV-008",
+      "site": "Wikipedia",
+      "url": "https://en.wikipedia.org/",
+      "instruction": "Search for 'Large language model' and report the first paragraph text.",
+      "success_criteria": "extract_text returns text > 50 characters",
+      "category": "search",
+      "max_steps": 10
+    },
+    {
+      "id": "WV-009",
+      "site": "Wolfram Alpha",
+      "url": "https://www.wolframalpha.com/",
+      "instruction": "Compute 'integral of x^2 dx' and report the result.",
+      "success_criteria": "extract_text returns text containing 'x^3' or 'x³'",
+      "category": "form",
+      "max_steps": 12
+    },
+    {
+      "id": "WV-010",
+      "site": "OpenTable",
+      "url": "https://www.opentable.com/",
+      "instruction": "Search for restaurants in San Francisco for tonight, 2 people.",
+      "success_criteria": "URL contains 'restaurants' or page contains restaurant list",
+      "category": "form",
+      "max_steps": 15
+    }
+  ]
+}

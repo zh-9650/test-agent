@@ -124,6 +124,7 @@ class ActionResult(BaseModel):
     """Phase 2.0A Sprint 2: 标准化动作执行结果。
 
     所有工具函数统一返回此模型，包含执行前后的状态对比。
+    Phase 2.0D (P0): 扩展为结构化结果, 支撑 LLM 语义判断。
     """
 
     action: str = Field(description="动作名称: click / input_text / navigate / scroll / ...")
@@ -135,6 +136,37 @@ class ActionResult(BaseModel):
     page_changed: bool = Field(default=False, description="DOM 指纹发生了变化")
     url_changed: bool = Field(default=False, description="URL 发生了变化")
     filled_value: str = Field(default="", description="B1.3: input_text 实际填入的值, 密码脱敏为前2位+****")
+
+    # ---- Phase 2.0D: 结构化结果扩展 (对标 browser-use ActionResult) ----
+    status: Literal["success", "failure", "timeout", "not_found", "inconclusive"] = Field(
+        default="success",
+        description="细粒度状态, 比 success bool 更有信息量"
+    )
+    extracted_content: str | None = Field(
+        default=None,
+        description="工具执行后提取的关键内容 (如填入值、点击后元素文本、错误提示), 给 LLM 阅读"
+    )
+    long_term_memory: str | None = Field(
+        default=None,
+        description="给 LLM 的下一步建议 (如'页面可能需要刷新'、'尝试其他定位策略')"
+    )
+    candidates: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="失败时的备选元素列表 (每个含 index/text/role/xpath), LLM 可重选"
+    )
+    include_in_memory: bool = Field(
+        default=True,
+        description="是否进入 LLM 上下文 (临时性工具如 screenshot 可设为 False)"
+    )
+    duration_ms: int = Field(default=0, description="工具自身执行耗时 (ms)")
+    evidence: dict[str, Any] = Field(
+        default_factory=dict,
+        description="结构化证据 (screenshot 路径、network 状态、stack 摘要等)"
+    )
+
+    def is_terminal(self) -> bool:
+        """判断是否为终态 (mark_task_* 工具)."""
+        return self.action.startswith("mark_task_")
 
 
 class StepResult(BaseModel):

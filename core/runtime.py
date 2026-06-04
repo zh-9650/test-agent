@@ -25,7 +25,7 @@ from core.execution_logger import _task_id_map, log_step, log_test_result
 from agents.ui.planning_graph import build_planning_graph
 from agents.ui.execution_graph import build_execution_graph
 from agents.ui.setup_manager import execute_setup
-from agents.ui.tools import cleanup_task_context, set_current_page, set_current_task
+from agents.ui.tools import cleanup_task_context, set_cdp_session, set_current_page, set_current_task
 from core.report_builder import ReportBuilder
 from core.skills.session_summary import generate_case_summary
 from core.skills.coverage_tracker import CoverageTracker
@@ -332,6 +332,17 @@ class Runtime:
         self.page._browser_session = self.browser_session
         set_current_task(self.task_id)
         set_current_page(self.page, task_id=self.task_id)
+
+        # Phase 2.0C: Create CDP session and register with tools
+        print("DEBUG: Creating CDP session...")
+        try:
+            cdp_session = await self.page.context.new_cdp_session(self.page)
+            set_cdp_session(cdp_session, task_id=self.task_id)
+            self._cdp_session = cdp_session
+            print("DEBUG: CDP session created.")
+        except Exception as e:
+            print(f"DEBUG: CDP session not available (non-Chromium browser?): {e}")
+            self._cdp_session = None
 
         print("DEBUG: Navigating to target URL...")
         # Navigate to target URL

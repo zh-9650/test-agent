@@ -222,26 +222,28 @@ async def test_observe_node_mock():
 
     state = make_sample_state()
 
-    # V2.0 A2 (2026-06-02): observe_node 现在用 take_screenshot_compressed, 改 patch 它
-    with patch("agents.ui.execution_graph.extract_page_semantics", new_callable=AsyncMock) as mock_semantic, \
-         patch("agents.ui.execution_graph.take_screenshot_compressed", new_callable=AsyncMock) as mock_ss, \
-         patch("agents.ui.execution_graph.get_current_page") as mock_get_page, \
-         patch("agents.ui.execution_graph.update_element_map") as mock_update_map:
+    # Phase 2.0D: 默认 L2_OBSERVE_SCREENSHOT=0, 需显式打开才能 observe 自动截屏
+    # 测试期望截图: 临时设置 env, 然后跑
+    with patch.dict(os.environ, {"L2_OBSERVE_SCREENSHOT": "1"}):
+        with patch("agents.ui.execution_graph.extract_page_semantics", new_callable=AsyncMock) as mock_semantic, \
+             patch("agents.ui.execution_graph.take_screenshot_compressed", new_callable=AsyncMock) as mock_ss, \
+             patch("agents.ui.execution_graph.get_current_page") as mock_get_page, \
+             patch("agents.ui.execution_graph.update_element_map") as mock_update_map:
 
-        mock_semantic.return_value = mock_page_info
-        mock_ss.return_value = mock_screenshot
-        mock_get_page.return_value = MagicMock()
+            mock_semantic.return_value = mock_page_info
+            mock_ss.return_value = mock_screenshot
+            mock_get_page.return_value = MagicMock()
 
-        result = await observe_node(state)
+            result = await observe_node(state)
 
-        mock_semantic.assert_called_once()
-        mock_ss.assert_called_once()
-        mock_update_map.assert_called_once_with(mock_page_info["interactive_elements"])
+            mock_semantic.assert_called_once()
+            mock_ss.assert_called_once()
+            mock_update_map.assert_called_once_with(mock_page_info["interactive_elements"])
 
-        assert result["page_info"] == mock_page_info
-        assert result["screenshot"] == mock_screenshot
-        assert result["state_before"]["url"] == "http://example.com/login"
-        assert "state_after" in result
+            assert result["page_info"] == mock_page_info
+            assert result["screenshot"] == mock_screenshot
+            assert result["state_before"]["url"] == "http://example.com/login"
+            assert "state_after" in result
 
 
 # ---------------------------------------------------------------------------

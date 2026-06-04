@@ -15,7 +15,8 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 
-async def extract_page_semantics(page: Any) -> dict[str, Any]:
+async def extract_page_semantics(page: Any, task_id: str | None = None,
+                                current_step: int = 0) -> dict[str, Any]:
     """从 Playwright page 提取页面语义摘要。
 
     使用 Playwright locator API（不用 querySelectorAll），框架无关。
@@ -29,8 +30,13 @@ async def extract_page_semantics(page: Any) -> dict[str, Any]:
     ② 单页提取结果不超过 2000 tokens
     ③ 超过 50 个交互元素时截断
 
+    Phase 2.0D: 当 task_id 提供时, 将元素的 backendNodeId 持久化到
+    BackendNodeMap, 供后续步骤直接 resolveNode 复用, 避免每次重走 AXTree。
+
     Args:
         page: Playwright Page 对象
+        task_id: 可选, 持久化 backendNodeId 到 BackendNodeMap
+        current_step: 当前步数 (用于 age-based pruning)
 
     Returns:
         dict 格式的页面语义摘要
@@ -72,6 +78,30 @@ async def extract_page_semantics(page: Any) -> dict[str, Any]:
 
     # Tables are also interactive / structural
     result["tables"] = await _extract_tables(page)
+
+    # Phase 2.0D: 持久化 backendNodeId 到 BackendNodeMap
+    if task_id:
+        try:
+            from core import backend_node_map
+            for el in interactive_elements:
+                bid = el.get("backend_node_id")
+                if bid:
+                    backend_node_map.store(
+                        task_id=task_id,
+                        element_id=el.get("id", ""),
+                        backend_node_id=bid,
+                        frame_id=el.get("frame_id", ""),
+                        attrs={
+                            "tag": el.get("type", ""),
+                            "text": el.get("text", "")[:50],
+                            "role": el.get("role", ""),
+                            "input_type": el.get("input_type", ""),
+                        },
+                        current_step=current_step,
+                    )
+        except Exception:
+            # 持久化失败不应影响语义提取
+            pass
 
     return result
 
@@ -119,7 +149,19 @@ async def take_screenshot_compressed(page: Any, quality: int | None = None) -> s
 
 
 async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
-    """Collect all interactive elements using browser-use or fallback to Playwright."""
+    """Phase 2.0C: CDP AXTree 优先, 回退 browser-use DOM service, 最差 Playwright locator."""
+    # Priority 1: CDP AXTree (Phase 2.0C Sprint 1)
+    try:
+        from core.cdp_client import extract_elements_via_cdp, get_cdp_session
+        cdp_session = await get_cdp_session(page)
+        if cdp_session:
+            cdp_elements = await extract_elements_via_cdp(page, cdp_session)
+            if cdp_elements:
+                return cdp_elements
+    except Exception:
+        pass
+
+    # Priority 2: browser-use DOM service (existing)
     session = getattr(page, "_browser_session", None)
     if session:
         elements: list[dict[str, Any]] = []
@@ -135,11 +177,9 @@ async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
                     })
             return elements
         except Exception as e:
-            # Fallback to Playwright if browser-use fails
             print(f"BrowserSession extraction failed: {e}")
-            pass
 
-    # Playwright fallback
+    # Priority 3: Playwright locator fallback
     elements = []
     counter = 1
 

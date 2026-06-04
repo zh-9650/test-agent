@@ -221,9 +221,13 @@ def _fast_assert(state: dict[str, Any]) -> dict[str, Any] | None:
             reasoning = call.get("args", {}).get("reasoning", "")
             return {"_last_change_report": ChangeReport(), "_last_assertion": AssertionResult(status="pass", reasoning=reasoning)}
 
-    # Action error → fail
-    if action_result and action_result.error:
-        return {"_last_change_report": ChangeReport(), "_last_assertion": AssertionResult(status="fail", reasoning=f"工具报错: {action_result.error}")}
+    # Action error → fail (Phase 2.0D: 也检查 status, 失败/超时/未找到)
+    if action_result and (action_result.error or action_result.status in ("failure", "timeout", "not_found")):
+        reason = action_result.error or f"action status={action_result.status}"
+        # Phase 2.0D: 注入 long_term_memory (失败教训) 到 reasoning
+        if action_result.long_term_memory:
+            reason = f"{reason}\n💡 后续建议: {action_result.long_term_memory}"
+        return {"_last_change_report": ChangeReport(), "_last_assertion": AssertionResult(status="fail", reasoning=reason)}
 
     # Intermediate step with page change → inconclusive
     is_final_step = current_test_case is not None and current_step_index >= len(current_test_case.steps) - 1
@@ -316,13 +320,22 @@ async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
         page = get_current_page()
 
         # Extract semantics
-        page_info = await extract_page_semantics(page)
-        # V2.0 A2: 截图压缩 (env L2_SCREENSHOT_COMPRESSED=1 默认开)
-        compress = os.getenv("L2_SCREENSHOT_COMPRESSED", "1") != "0"
-        if compress:
-            screenshot = await take_screenshot_compressed(page)
+        current_step = state.get("current_step", 0)
+        page_info = await extract_page_semantics(page, task_id=task_id, current_step=current_step)
+        # Phase 2.0D: 截图-on-demand 混合策略
+        # 默认 observe 不截图 (L2_OBSERVE_SCREENSHOT=0), LLM 显式调 screenshot_on_demand 才截
+        # 旧行为 L2_OBSERVE_SCREENSHOT=1 保留 (向后兼容)
+        observe_screenshot = os.getenv("L2_OBSERVE_SCREENSHOT", "0") == "1"
+        if observe_screenshot:
+            # V2.0 A2: 截图压缩 (env L2_SCREENSHOT_COMPRESSED=1 默认开)
+            compress = os.getenv("L2_SCREENSHOT_COMPRESSED", "1") != "0"
+            if compress:
+                screenshot = await take_screenshot_compressed(page)
+            else:
+                screenshot = await take_screenshot(page)
         else:
-            screenshot = await take_screenshot(page)
+            # 不截图 — LLM 显式 screenshot_on_demand 时由工具自身注入
+            screenshot = ""
 
         # Update element map for tools to resolve #N / [N] references
         update_element_map(page_info.get("interactive_elements", []))
@@ -380,44 +393,78 @@ async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
                     need_replan = True
                     page_info["_loop_detected"] = "ABAB (4 步交替)"
 
-        # B2.3: Context 压缩移至 observe (decide 之前执行)
+        # B2.3 + 2.0D: Context 压缩 — 双阈值 (步数 + tokens) 触发 LLM 语义压缩
+        # 向后兼容: L2_COMPACTION=0 时回退到物理截断
         budget = int(os.getenv("L2_TOKEN_BUDGET", "30000"))
         messages = list(state.get("messages", []))
         messages_to_remove = []
+        compaction_summary: str | None = None
         if messages:
-            total = count_tokens(messages)
-            if total > budget:
-                from langchain_core.messages import RemoveMessage
-                head = messages[:1]
-                tail_count = 5
-                tail = messages[-tail_count:] if len(messages) > tail_count else []
-                middle = messages[1:-tail_count] if len(messages) > tail_count + 1 else []
-                to_remove = []
-                working_head = list(head)
-                working_middle = list(middle)
-                working_tail = list(tail)
-                while working_middle:
-                    candidate = working_head + working_middle + working_tail
-                    if count_tokens(candidate) <= budget:
-                        break
-                    m = working_middle.pop(0)
-                    if hasattr(m, "id") and m.id:
-                        to_remove.append(RemoveMessage(id=m.id))
-                    elif m is not None:
-                        import hashlib
-                        fake_id = hashlib.md5(repr(m).encode()).hexdigest()
-                        to_remove.append(RemoveMessage(id=fake_id))
-                messages_to_remove = to_remove
+            from core.context_manager import (
+                should_compact, compact_history, build_compact_summary_message,
+                COMPACTION_ENABLED,
+            )
+            if COMPACTION_ENABLED and should_compact({**state, "messages": messages}):
+                # Phase 2.0D: LLM 语义压缩
+                try:
+                    messages_to_remove = await compact_history({**state, "messages": messages})
+                    # 摘要消息作为 state 字段返回, 由 record_node 注入 messages list
+                    # 这里暂存, 调用方负责实际插入
+                    # 简化: 直接构造摘要插入到 head 后
+                    from core.llm_client import get_llm_client
+                    from core.context_manager import _messages_to_text, _invoke_compact_llm
+                    middle = messages[1:-int(os.getenv("L2_COMPACT_KEEP_LAST", "6"))]
+                    if middle:
+                        history_text = _messages_to_text(middle)
+                        summary_text = await _invoke_compact_llm(history_text)
+                        if summary_text:
+                            compaction_summary = summary_text
+                        else:
+                            # 降级: 物理截断 (compact_history 内部已 fallback)
+                            pass
+                except Exception as e:
+                    # 任何异常 → 物理截断兜底
+                    pass
 
-        return {
+            if not messages_to_remove:
+                # 回退: 原物理截断逻辑 (L2_COMPACTION=0 或 LLM 失败)
+                total = count_tokens(messages)
+                if total > budget:
+                    from langchain_core.messages import RemoveMessage
+                    head = messages[:1]
+                    tail_count = 5
+                    tail = messages[-tail_count:] if len(messages) > tail_count else []
+                    middle = messages[1:-tail_count] if len(messages) > tail_count + 1 else []
+                    to_remove = []
+                    working_head = list(head)
+                    working_middle = list(middle)
+                    working_tail = list(tail)
+                    while working_middle:
+                        candidate = working_head + working_middle + working_tail
+                        if count_tokens(candidate) <= budget:
+                            break
+                        m = working_middle.pop(0)
+                        if hasattr(m, "id") and m.id:
+                            to_remove.append(RemoveMessage(id=m.id))
+                        elif m is not None:
+                            import hashlib
+                            fake_id = hashlib.md5(repr(m).encode()).hexdigest()
+                            to_remove.append(RemoveMessage(id=fake_id))
+                    messages_to_remove = to_remove
+
+        # LangGraph 1.x: messages 字段不能为 None, 不压缩时不要放入此 key
+        ret: dict[str, Any] = {
             "page_info": page_info,
             "screenshot": screenshot,
             "state_before": state_before,
             "state_after": {},
             "action_history": action_history,
             "need_replan": need_replan,
-            "messages": messages_to_remove if messages_to_remove else None,
+            "_compaction_summary": compaction_summary,  # Phase 2.0D: LLM 语义压缩摘要
         }
+        if messages_to_remove:
+            ret["messages"] = messages_to_remove
+        return ret
     except Exception as e:
         # Never crash: return error state
         return {
@@ -527,9 +574,11 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
         if screenshot_base64:
             # 注意: state.screenshot 已是 base64, 不再二次压缩
             # 压缩应在 observe_node 截图时就做 (后续优化点)
+            # V2.0 fix (2026-06-04): MiMo v2.5 (Anthropic-compatible) 拒绝 OpenAI image_url 格式
+            # 会返回 'connection was closed in the middle of operation'. 改用 Anthropic 原生格式.
             content = [
                 {"type": "text", "text": text_content},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_base64}"}}
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": screenshot_base64}},
             ]
         else:
             content = text_content
@@ -543,12 +592,16 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
         # Call LLM
         # Robust Retry Loop for API Rate Limits (429)
         import asyncio
+        import logging
         max_retries = 3
         for attempt in range(max_retries):
             try:
                 response = await llm_with_tools.ainvoke(messages)
                 return {"messages": [response], "_last_token_count": decide_token_count}
             except Exception as e:
+                logging.getLogger(__name__).error(
+                    f"[decide attempt={attempt}] {type(e).__name__}: {e}", exc_info=True
+                )
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2 ** attempt)
                 else:
@@ -801,6 +854,21 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
             if action_result.error:
                 # 工具执行报错 → 大概率失败
                 reason = f"动作执行报错: {action_result.error}"
+                if action_result.long_term_memory:
+                    reason = f"{reason} | 💡 后续建议: {action_result.long_term_memory}"
+                return {
+                    "_last_change_report": ChangeReport(),
+                    "_last_assertion": AssertionResult(status="fail", reasoning=reason),
+                    "consecutive_failures": state.get("consecutive_failures", 0) + 1,
+                }
+
+            # Phase 2.0D: status-based fast fail (无 error 也有 status 失败)
+            if action_result.status in ("failure", "timeout", "not_found"):
+                reason = f"动作状态={action_result.status}"
+                if action_result.error:
+                    reason = f"{reason} ({action_result.error})"
+                if action_result.long_term_memory:
+                    reason = f"{reason} | 💡 后续建议: {action_result.long_term_memory}"
                 return {
                     "_last_change_report": ChangeReport(),
                     "_last_assertion": AssertionResult(status="fail", reasoning=reason),
@@ -871,6 +939,20 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
         # B1.3: 获取 filled_value 传给断言 prompt
         filled_value = action_result.filled_value if action_result else ""
 
+        # Phase 2.0D: 把 ActionResult 的结构化字段 (extracted_content / long_term_memory) 注入 prompt
+        action_context_lines: list[str] = []
+        if action_result and action_result.extracted_content:
+            action_context_lines.append(f"[工具输出] {action_result.extracted_content}")
+        if action_result and action_result.long_term_memory and not action_result.success:
+            action_context_lines.append(f"[系统建议] {action_result.long_term_memory}")
+        if action_result and action_result.candidates:
+            cands_text = " | ".join(
+                f"{{text: {c.get('text','')[:30]}, role: {c.get('role','?')}, id: {c.get('id','?')}}}"
+                for c in action_result.candidates[:3]
+            )
+            action_context_lines.append(f"[失败备选元素] {cands_text}")
+        action_context = "\n".join(action_context_lines)
+
         assertion_prompt = get_assertion_prompt(
             tool_calls=tool_calls,
             change_report=change_report,
@@ -879,6 +961,8 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
             page_info=state_after,
             filled_value=filled_value,
         )
+        if action_context:
+            assertion_prompt = f"{action_context}\n\n---\n{assertion_prompt}"
 
         screenshot_after = state.get("screenshot_after")
         if screenshot_after:

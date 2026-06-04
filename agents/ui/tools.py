@@ -1,22 +1,24 @@
-"""agents/ui/tools.py — Playwright tool definitions for UI testing.
+"""agents/ui/tools.py — Playwright/CDP hybrid tool definitions for UI testing.
 
 Defines @tool decorated functions that the LLM can call to interact with web pages.
 Includes: click, input_text, navigate, scroll, wait, and other page interactions.
 
-Phase 2.0A improvements:
-- All tools return ActionResult dict (Sprint 2)
-- wait_for_stable() built into each tool (Sprint 3)
-- DOM fingerprint for page_changed detection (Sprint 2)
+Phase 2.0C: CDP migration — 感知层和执行层都支持 CDP 后端,
+使用 backendNodeId 锚定 + CDP Input.dispatchMouseEvent/Input.dispatchKeyEvent.
+Playwright fallback 保留以兼容 Firefox/WebKit.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextvars
+import os
 from typing import Any
 
 from langchain_core.tools import tool
 
+from core.cdp_client import (cdp_click, cdp_input_text, cleanup_cdp_session,
+                              get_cdp_session, get_dom_fingerprint as cdp_fingerprint)
 from core.interfaces import ActionResult
 
 # ---------------------------------------------------------------------------
@@ -47,6 +49,25 @@ def get_current_task_id() -> str | None:
 def cleanup_task_context(task_id: str) -> None:
     """Remove all stored state for a finished task."""
     _task_contexts.pop(task_id, None)
+    cleanup_cdp_session(task_id)
+
+
+def set_cdp_session(session: Any, task_id: str | None = None) -> None:
+    """Phase 2.0C: Register CDP session for a task."""
+    tid = task_id or _current_task_id.get()
+    if tid is None:
+        return
+    ctx = _task_contexts.setdefault(tid, {"page": None, "element_map": {}})
+    ctx["cdp_session"] = session
+
+
+def get_cdp_session_ctx() -> Any | None:
+    """Phase 2.0C: Get the current task's CDP session."""
+    tid = _current_task_id.get()
+    if tid is None:
+        return None
+    ctx = _task_contexts.get(tid, {})
+    return ctx.get("cdp_session", None)
 
 
 def set_current_page(page: Any, task_id: str | None = None) -> None:
@@ -126,7 +147,13 @@ def get_element_map() -> dict[str, dict]:
 
 
 async def _get_dom_fingerprint(page: Any) -> str:
-    """计算当前页面的 DOM 三维指纹：elCount_htmlLen_textLen。"""
+    """Phase 2.0C: CDP 优先的 DOM 指纹, 回退 JS evaluate."""
+    cdp_sess = get_cdp_session_ctx()
+    if cdp_sess:
+        try:
+            return await cdp_fingerprint(page, cdp_sess)
+        except Exception:
+            pass
     try:
         return await page.evaluate("""() => {
             const elCount = document.querySelectorAll('*').length;
@@ -165,6 +192,14 @@ async def _make_action_result(
     before_url: str,
     before_fingerprint: str | None = None,
     error: str | None = None,
+    status: str | None = None,
+    extracted_content: str | None = None,
+    long_term_memory: str | None = None,
+    candidates: list[dict[str, Any]] | None = None,
+    filled_value: str | None = None,
+    include_in_memory: bool = True,
+    duration_ms: int = 0,
+    evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """构造 ActionResult dict。
 
@@ -176,11 +211,38 @@ async def _make_action_result(
         before_url: 动作执行前 URL
         before_fingerprint: 动作执行前的 DOM 指纹 (None 时自动计算)
         error: 错误信息
+        status: 细粒度状态 (success/failure/timeout/not_found), 默认根据 success 推断
+        extracted_content: 工具提取的关键内容 (Phase 2.0D)
+        long_term_memory: 给 LLM 的下一步建议 (Phase 2.0D)
+        candidates: 失败时的备选元素列表 (Phase 2.0D)
+        filled_value: input 实际填入值 (兼容 2.0B)
+        include_in_memory: 是否进入 LLM 上下文
+        duration_ms: 工具自身执行耗时
+        evidence: 结构化证据
     """
     after_url = page.url
     if before_fingerprint is None:
         before_fingerprint = "0_0_0"
     after_fingerprint = await _get_dom_fingerprint(page)
+
+    # 推断 status (Phase 2.0D)
+    if status is None:
+        if success:
+            status = "success"
+        elif error and ("timeout" in error.lower() or "超时" in error):
+            status = "timeout"
+        elif error and ("not found" in error.lower() or "找不到" in error or "no element" in error.lower()):
+            status = "not_found"
+        else:
+            status = "failure"
+
+    # 缺省 long_term_memory (Phase 2.0D)
+    if long_term_memory is None and not success:
+        long_term_memory = (
+            f"动作 {action} 失败: {error}. "
+            f"建议: 1) 检查目标元素是否可见 2) 尝试备选定位 (xpath/text/role) 3) 刷新页面后重试"
+        )
+
     return ActionResult(
         action=action,
         target=target,
@@ -190,6 +252,14 @@ async def _make_action_result(
         after_url=after_url,
         page_changed=(before_fingerprint != after_fingerprint),
         url_changed=(before_url != after_url),
+        filled_value=filled_value if filled_value is not None else "",
+        status=status,
+        extracted_content=extracted_content,
+        long_term_memory=long_term_memory,
+        candidates=candidates or [],
+        include_in_memory=include_in_memory,
+        duration_ms=duration_ms,
+        evidence=evidence or {},
     ).model_dump()
 
 
@@ -356,14 +426,22 @@ async def navigate(url: str) -> dict[str, Any]:
     try:
         await page.goto(url, wait_until="networkidle", timeout=30000)
         await _wait_for_stable(page)
-        return await _make_action_result("navigate", url, True, page, before_url)
+        return await _make_action_result(
+            "navigate", url, True, page, before_url,
+            extracted_content=f"已导航至 {page.url}",
+        )
     except Exception as e:
-        return await _make_action_result("navigate", url, False, page, before_url, error=str(e))
+        return await _make_action_result(
+            "navigate", url, False, page, before_url,
+            error=str(e),
+            status="timeout" if "timeout" in str(e).lower() else "failure",
+            long_term_memory=f"导航失败: {e}. 建议: 1) 检查 URL 是否合法 2) 检查网络 3) 尝试 page.reload()",
+        )
 
 
 @tool
 async def click(target: str) -> dict[str, Any]:
-    """点击页面上的元素。
+    """点击页面上的元素。Phase 2.0C: CDP Input.dispatchMouseEvent 优先。
 
     Args:
         target: 元素编号（如 #3）或元素描述（如 "登录按钮"）
@@ -371,18 +449,97 @@ async def click(target: str) -> dict[str, Any]:
     page = get_current_page()
     before_url = page.url
     before_fp = await _get_dom_fingerprint(page)
+    cdp_sess = get_cdp_session_ctx()
+    import time as _time
+    _t0 = _time.time()
     try:
         locator = await _resolve_element(target, page)
+
+        # Phase 2.0C: CDP click path — 通过坐标精准点击
+        if cdp_sess:
+            try:
+                el_info = _get_element_info(target)
+                coords = el_info.get("coords", {}) if el_info else {}
+                if coords and coords.get("x") is not None and coords.get("y") is not None:
+                    cx = coords["x"] + coords.get("width", 0) / 2
+                    cy = coords["y"] + coords.get("height", 0) / 2
+                    clicked = await cdp_click(page, cdp_sess, cx, cy)
+                    if clicked:
+                        await _wait_for_stable(page)
+                        # Phase 2.0D: extracted_content = 元素 text (给 LLM 看点击了啥)
+                        el_text = (el_info or {}).get("text", "")
+                        el_label = (el_info or {}).get("label", "")
+                        return await _make_action_result(
+                            "click", target, True, page, before_url,
+                            before_fingerprint=before_fp,
+                            extracted_content=f"已点击元素 '{el_text or el_label or target}'",
+                            duration_ms=int((_time.time() - _t0) * 1000),
+                        )
+            except Exception:
+                pass
+
+        # Fallback: Playwright locator click
         await locator.click(timeout=10000)
         await _wait_for_stable(page)
-        return await _make_action_result("click", target, True, page, before_url, before_fingerprint=before_fp)
+        return await _make_action_result(
+            "click", target, True, page, before_url,
+            before_fingerprint=before_fp,
+            extracted_content=f"已点击元素 '{target}'",
+            duration_ms=int((_time.time() - _t0) * 1000),
+        )
     except Exception as e:
-        return await _make_action_result("click", target, False, page, before_url, before_fingerprint=before_fp, error=str(e))
+        # Phase 2.0D: 失败时构造 candidates (相似元素供 LLM 重选)
+        cands = _find_similar_elements(target, page, max_n=3)
+        return await _make_action_result(
+            "click", target, False, page, before_url,
+            before_fingerprint=before_fp,
+            error=str(e),
+            status="not_found" if "not found" in str(e).lower() or "timeout" in str(e).lower() else "failure",
+            candidates=cands,
+            duration_ms=int((_time.time() - _t0) * 1000),
+        )
+
+
+def _get_element_info(target: str) -> dict[str, Any] | None:
+    """Phase 2.0C: 从 element_map 查找元素信息。"""
+    tid = _current_task_id.get()
+    ctx = _task_contexts.get(tid, {}) if tid else {}
+    element_map = ctx.get("element_map", {})
+    lookup_key = _normalize_target(target)
+    return element_map.get(lookup_key)
+
+
+def _find_similar_elements(target: str, page: Any, max_n: int = 3) -> list[dict[str, Any]]:
+    """Phase 2.0D: 在 element_map 中找相似元素, 用于 click/input 失败时给 LLM 备选。
+
+    相似度策略: text/label 包含 target 子串, 或 target 是数字时按 type 过滤
+    """
+    try:
+        tid = _current_task_id.get()
+        ctx = _task_contexts.get(tid, {}) if tid else {}
+        element_map = ctx.get("element_map", {})
+        target_lower = str(target).lower().strip()
+        scored: list[tuple[int, dict[str, Any]]] = []
+        for key, info in element_map.items():
+            text = (info.get("text") or info.get("label") or "").lower()
+            score = 0
+            if target_lower and target_lower in text:
+                score = 100 - len(text)  # 短文本优先
+            elif text and target_lower and text in target_lower:
+                score = 50
+            elif key == target:
+                score = 30
+            if score > 0:
+                scored.append((score, {k: info.get(k) for k in ("text", "label", "type", "role", "id") if info.get(k)}))
+        scored.sort(key=lambda x: -x[0])
+        return [item for _, item in scored[:max_n]]
+    except Exception:
+        return []
 
 
 @tool
 async def input_text(target: str, value: str) -> dict[str, Any]:
-    """在输入框中输入文本。使用 press_sequentially() 逐字输入以触发前端完整事件校验。
+    """在输入框中输入文本。Phase 2.0C: CDP Input.dispatchKeyEvent 逐字输入优先。
 
     Args:
         target: 元素编号（如 #1）或元素描述（如 "用户名输入框"）
@@ -391,6 +548,7 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
     page = get_current_page()
     before_url = page.url
     before_fp = await _get_dom_fingerprint(page)
+    cdp_sess = get_cdp_session_ctx()
     try:
         locator = await _resolve_element(target, page)
         
@@ -405,23 +563,19 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
 
         if not is_password_field:
             lower_target = str(target).lower()
-            # 扩大匹配范围: password / 密码 / pwd / passwd / pass
             if any(k in lower_target for k in ["password", "密码", "pwd", "passwd", "pass"]):
                 is_password_field = True
 
+        actual_filled = value
         if is_password_field:
-            # B1.1: 注入前校验步骤语义
             step_text = get_current_step_text()
             if not _should_auto_inject_password(get_task_config(), step_text):
-                # 步骤语义不匹配: 不注入密码，按原值填入，并记录警告
                 actual_filled = value
             else:
-                # Let's search config accounts for matching username filled on the page
                 task_config = get_task_config()
                 accounts = task_config.get("accounts", [])
                 matched_password = None
                 
-                # Find filled username value on the page
                 username_val = ""
                 try:
                     inputs = await page.query_selector_all("input")
@@ -437,7 +591,6 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
                                     username_val = val
                                     break
                     
-                    # Fallback: first non-empty input value that is not password/button
                     if not username_val:
                         for ip in inputs:
                             ip_type = await ip.get_attribute("type") or "text"
@@ -456,7 +609,6 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
                             break
                 
                 if not matched_password and accounts:
-                    # Check if any input value matches username
                     try:
                         all_vals = []
                         inputs = await page.query_selector_all("input")
@@ -473,30 +625,52 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
                         pass
                 
                 if not matched_password and accounts:
-                    # Last resort fallback: first account's password
                     matched_password = accounts[0].get("password")
                     
                 if matched_password:
                     value = matched_password
                 actual_filled = value
-        else:
-            actual_filled = value
 
-        await locator.click(timeout=5000)  # 先聚焦
-        await locator.fill("", timeout=3000)  # 清空
-        if value:
-            await locator.press_sequentially(value, delay=50)
+        # Focus first via click
+        await locator.click(timeout=5000)
+
+        # Phase 2.0C: CDP keyboard input path
+        cdp_used = False
+        if cdp_sess and value:
+            try:
+                typed = await cdp_input_text(cdp_sess, value)
+                if typed:
+                    cdp_used = True
+            except Exception:
+                pass
+
+        if not cdp_used:
+            await locator.fill("", timeout=3000)
+            if value:
+                await locator.press_sequentially(value, delay=50)
+
         await _wait_for_stable(page)
-        result = await _make_action_result("input_text", target, True, page, before_url, before_fingerprint=before_fp)
-        # B1.3: 记录实际填入值（密码脱敏）
+        # Phase 2.0D: 脱敏 filled_value
         if is_password_field and actual_filled:
             masked = actual_filled[:2] + "****" if len(actual_filled) > 2 else "****"
-            result["filled_value"] = masked
         else:
-            result["filled_value"] = actual_filled
-        return result
+            masked = actual_filled
+        return await _make_action_result(
+            "input_text", target, True, page, before_url,
+            before_fingerprint=before_fp,
+            filled_value=masked,
+            extracted_content=f"已在 '{target}' 输入 '{masked}'",
+        )
     except Exception as e:
-        return await _make_action_result("input_text", target, False, page, before_url, before_fingerprint=before_fp, error=str(e))
+        # Phase 2.0D: 失败时给候选
+        cands = _find_similar_elements(target, page, max_n=3)
+        return await _make_action_result(
+            "input_text", target, False, page, before_url,
+            before_fingerprint=before_fp,
+            error=str(e),
+            status="not_found" if "not found" in str(e).lower() or "timeout" in str(e).lower() else "failure",
+            candidates=cands,
+        )
 
 
 @tool
@@ -514,9 +688,16 @@ async def scroll(direction: str, amount: int = 300) -> dict[str, Any]:
         delta = amount if direction == "down" else -amount
         await page.mouse.wheel(0, delta)
         await _wait_for_stable(page)
-        return await _make_action_result("scroll", f"{direction}_{amount}", True, page, before_url, before_fingerprint=before_fp)
+        return await _make_action_result(
+            "scroll", f"{direction}_{amount}", True, page, before_url,
+            before_fingerprint=before_fp,
+            extracted_content=f"已向 {direction} 滚动 {amount}px",
+        )
     except Exception as e:
-        return await _make_action_result("scroll", f"{direction}_{amount}", False, page, before_url, before_fingerprint=before_fp, error=str(e))
+        return await _make_action_result(
+            "scroll", f"{direction}_{amount}", False, page, before_url,
+            before_fingerprint=before_fp, error=str(e),
+        )
 
 
 @tool
@@ -531,9 +712,157 @@ async def wait(seconds: float = 1.0) -> dict[str, Any]:
     try:
         await asyncio.sleep(seconds)
         await _wait_for_stable(page) if seconds < 3 else None
-        return await _make_action_result("wait", str(seconds), True, page, before_url)
+        return await _make_action_result(
+            "wait", str(seconds), True, page, before_url,
+            extracted_content=f"已等待 {seconds}s",
+        )
     except Exception as e:
         return await _make_action_result("wait", str(seconds), False, page, before_url, error=str(e))
+
+
+# Phase 2.0D: 截图-on-demand (L2_OBSERVE_SCREENSHOT 默认关, 节约 context)
+_screenshot_budget: dict[str, int] = {}  # task_id -> remaining screenshots
+
+
+def _consume_screenshot_quota(task_id: str | None) -> bool:
+    """Check and decrement the per-task screenshot quota.
+
+    Default budget is 2 per task (overridable via L2_SCREENSHOT_BUDGET env).
+    Returns True if quota remains, False if exhausted.
+    """
+    if not task_id:
+        return True  # no task_id = no quota (test mode)
+    budget = int(os.getenv("L2_SCREENSHOT_BUDGET", "2"))
+    used = _screenshot_budget.get(task_id, 0)
+    if used >= budget:
+        return False
+    _screenshot_budget[task_id] = used + 1
+    return True
+
+
+def _screenshot_quota_remaining(task_id: str | None) -> int:
+    if not task_id:
+        return int(os.getenv("L2_SCREENSHOT_BUDGET", "2"))
+    budget = int(os.getenv("L2_SCREENSHOT_BUDGET", "2"))
+    return max(0, budget - _screenshot_budget.get(task_id, 0))
+
+
+def reset_screenshot_budget(task_id: str) -> None:
+    """Reset screenshot quota for a task (call on task end)."""
+    _screenshot_budget.pop(task_id, None)
+
+
+@tool
+async def screenshot_on_demand(reason: str) -> dict[str, Any]:
+    """当页面元素位置/状态不确定时, 主动请求截图供 LLM 视觉分析。
+
+    Phase 2.0D 混合策略: observe_node 默认不截图 (节省 context),
+    LLM 遇到需要视觉判断的场景 (例如:
+    - 找不到元素, 但页面可能有视觉干扰
+    - 颜色/图标差异需要确认
+    - 弹窗/动画状态不确定) 时显式调用本工具。
+
+    配额: 每个测试用例最多调用 2 次 (env L2_SCREENSHOT_BUDGET 可改)。
+    截图采用 JPEG quality=70, 1280×720, 约 5-15KB base64,
+    直接注入到 LLM tool_message 上下文。
+
+    Args:
+        reason: 调用截图的原因 (例如 "按钮位置不确定, 需视觉确认")
+    """
+    page = get_current_page()
+    before_url = page.url
+    task_id = get_current_task_id()
+    if not _consume_screenshot_quota(task_id):
+        return await _make_action_result(
+            "screenshot_on_demand", reason, False, page, before_url,
+            error=f"screenshot quota exhausted (used {_screenshot_budget.get(task_id, 0)}/{os.getenv('L2_SCREENSHOT_BUDGET', '2')})",
+            status="failure",
+            extracted_content=(
+                f"截图配额已用完 ({os.getenv('L2_SCREENSHOT_BUDGET', '2')} 次/用例上限). "
+                f"请基于现有 page_info 文本信息继续决策, 避免再次请求截图。"
+            ),
+        )
+    try:
+        # Phase 2.0D: 固定 1280×720 JPEG q=70 (比默认 q=60 略高, 因 on-demand 看重点)
+        from core.page_semantic import take_screenshot_compressed
+        screenshot_b64 = await take_screenshot_compressed(page, quality=70)
+        return {
+            **await _make_action_result(
+                "screenshot_on_demand", reason, True, page, before_url,
+                extracted_content=(
+                    f"已截取屏幕供视觉分析 (原因: {reason}). "
+                    f"剩余配额: {_screenshot_quota_remaining(task_id)}/{os.getenv('L2_SCREENSHOT_BUDGET', '2')}."
+                ),
+            ),
+            "screenshot_b64": screenshot_b64,
+            "screenshot_injected": True,
+        }
+    except Exception as e:
+        return await _make_action_result(
+            "screenshot_on_demand", reason, False, page, before_url,
+            error=str(e),
+        )
+
+
+@tool
+async def parallel_tool_calls(
+    calls: list[dict[str, str]],
+    reason: str = "",
+) -> dict[str, Any]:
+    """并发执行多个独立的工具调用 (Phase 2.0D 优化).
+
+    适用场景 (LLM 应主动判断):
+    - 同时填写多个独立字段 (用户名 + 密码 + 邮箱)
+    - 同时点击多个独立按钮 (确认 + 取消)
+    - 同时 extract 多个不同元素
+
+    不适用 (会降级串行):
+    - 任一工具是 navigate / go_back (导航会换页面)
+    - 两个工具 target 重叠
+    - 包含 mark_task_* (标记类必最后)
+    - 包含 evaluate_js (JS 状态改变)
+
+    配置: 默认 L2_PARALLEL_TOOLS=0 禁用 (保持串行), 设 1 启用真正的并发执行.
+    当 env 禁用时, 本工具会按原顺序串行执行, 不抛错.
+
+    Args:
+        calls: list of {"name": "click", "args": {"target": "#1"}}
+        reason: 调用原因 (例如 "用户名/密码/邮箱是独立字段, 可并发")
+    """
+    page = get_current_page()
+    before_url = page.url
+    if not calls:
+        return await _make_action_result(
+            "parallel_tool_calls", reason, False, page, before_url,
+            error="empty calls list",
+        )
+    try:
+        from core.parallel_executor import execute_parallel_calls, is_parallel_enabled
+        from core.dependency import split_independent_groups
+
+        waves = split_independent_groups(calls)
+        parallel_mode = is_parallel_enabled()
+        results = await execute_parallel_calls(calls)
+
+        # 统计
+        success_count = sum(1 for r in results if r.get("status") == "success")
+        n_waves = len(waves)
+        max_concurrency = max((len(w) for w in waves), default=0)
+
+        return await _make_action_result(
+            "parallel_tool_calls", reason, True, page, before_url,
+            extracted_content=(
+                f"已执行 {len(calls)} 个调用 ({n_waves} wave, 最大并发={max_concurrency}, "
+                f"模式={'并发' if parallel_mode else '串行降级'}). "
+                f"成功: {success_count}/{len(calls)}."
+            ),
+        )
+    except Exception as e:
+        return await _make_action_result(
+            "parallel_tool_calls", reason, False, page, before_url,
+            error=str(e),
+        )
+
 
 _hitl_callbacks: dict[str, Any] = {}
 
@@ -583,7 +912,11 @@ async def press_key(key: str) -> dict[str, Any]:
     try:
         await page.keyboard.press(key)
         await _wait_for_stable(page)
-        return await _make_action_result("press_key", key, True, page, before_url, before_fingerprint=before_fp)
+        return await _make_action_result(
+            "press_key", key, True, page, before_url,
+            before_fingerprint=before_fp,
+            extracted_content=f"已按键 {key}",
+        )
     except Exception as e:
         return await _make_action_result("press_key", key, False, page, before_url, before_fingerprint=before_fp, error=str(e))
 
@@ -601,9 +934,19 @@ async def hover(target: str) -> dict[str, Any]:
         locator = await _resolve_element(target, page)
         await locator.hover(timeout=10000)
         await _wait_for_stable(page)
-        return await _make_action_result("hover", target, True, page, before_url, before_fingerprint=before_fp)
+        return await _make_action_result(
+            "hover", target, True, page, before_url,
+            before_fingerprint=before_fp,
+            extracted_content=f"已悬停于 '{target}'",
+        )
     except Exception as e:
-        return await _make_action_result("hover", target, False, page, before_url, before_fingerprint=before_fp, error=str(e))
+        cands = _find_similar_elements(target, page, max_n=3)
+        return await _make_action_result(
+            "hover", target, False, page, before_url,
+            before_fingerprint=before_fp, error=str(e),
+            status="not_found" if "timeout" in str(e).lower() else "failure",
+            candidates=cands,
+        )
 
 @tool
 async def go_back() -> dict[str, Any]:
@@ -614,7 +957,11 @@ async def go_back() -> dict[str, Any]:
     try:
         await page.go_back(wait_until="networkidle", timeout=15000)
         await _wait_for_stable(page)
-        return await _make_action_result("go_back", None, True, page, before_url, before_fingerprint=before_fp)
+        return await _make_action_result(
+            "go_back", None, True, page, before_url,
+            before_fingerprint=before_fp,
+            extracted_content=f"已后退至 {page.url}",
+        )
     except Exception as e:
         return await _make_action_result("go_back", None, False, page, before_url, before_fingerprint=before_fp, error=str(e))
 
@@ -630,11 +977,18 @@ async def extract_text(target: str) -> dict[str, Any]:
     try:
         locator = await _resolve_element(target, page)
         text = await locator.inner_text(timeout=5000)
-        result = await _make_action_result("extract_text", target, True, page, before_url)
-        result["extracted_content"] = text
-        return result
+        return await _make_action_result(
+            "extract_text", target, True, page, before_url,
+            extracted_content=text,  # Phase 2.0D: 核心目的就是提取文本
+        )
     except Exception as e:
-        return await _make_action_result("extract_text", target, False, page, before_url, error=str(e))
+        cands = _find_similar_elements(target, page, max_n=3)
+        return await _make_action_result(
+            "extract_text", target, False, page, before_url,
+            error=str(e),
+            status="not_found" if "timeout" in str(e).lower() else "failure",
+            candidates=cands,
+        )
 
 @tool
 async def select_dropdown(target: str, value: str) -> dict[str, Any]:
@@ -651,9 +1005,19 @@ async def select_dropdown(target: str, value: str) -> dict[str, Any]:
         locator = await _resolve_element(target, page)
         await locator.select_option(value, timeout=10000)
         await _wait_for_stable(page)
-        return await _make_action_result("select_dropdown", target, True, page, before_url, before_fingerprint=before_fp)
+        return await _make_action_result(
+            "select_dropdown", target, True, page, before_url,
+            before_fingerprint=before_fp,
+            extracted_content=f"已在 '{target}' 选择 '{value}'",
+        )
     except Exception as e:
-        return await _make_action_result("select_dropdown", target, False, page, before_url, before_fingerprint=before_fp, error=str(e))
+        cands = _find_similar_elements(target, page, max_n=3)
+        return await _make_action_result(
+            "select_dropdown", target, False, page, before_url,
+            before_fingerprint=before_fp, error=str(e),
+            status="not_found" if "timeout" in str(e).lower() else "failure",
+            candidates=cands,
+        )
 
 @tool
 async def evaluate_js(script: str) -> dict[str, Any]:
@@ -679,9 +1043,10 @@ async def evaluate_js(script: str) -> dict[str, Any]:
         if "return " in script and not script.strip().startswith("(") and not script.strip().startswith("function"):
             wrapped_script = f"(() => {{\n{script}\n}})()"
         result = await page.evaluate(wrapped_script)
-        res = await _make_action_result("evaluate_js", script[:50], True, page, before_url)
-        res["extracted_content"] = str(result)
-        return res
+        return await _make_action_result(
+            "evaluate_js", script[:50], True, page, before_url,
+            extracted_content=str(result),
+        )
     except Exception as e:
         return await _make_action_result("evaluate_js", script[:50], False, page, before_url, error=str(e))
 
@@ -751,6 +1116,9 @@ __all__ = [
     "mark_task_complete",
     "mark_task_failed",
     "mark_task_skipped",
+    "screenshot_on_demand",
+    "parallel_tool_calls",
+    "reset_screenshot_budget",
     "get_current_page",
     "set_current_page",
     "set_task_config",
@@ -763,6 +1131,8 @@ __all__ = [
     "set_current_step_text",
     "get_current_step_text",
     "_should_auto_inject_password",
+    "set_cdp_session",
+    "get_cdp_session_ctx",
     "tools",
     "tools_by_name",
 ]
@@ -784,6 +1154,8 @@ tools = [
     mark_task_complete,
     mark_task_failed,
     mark_task_skipped,
+    screenshot_on_demand,
+    parallel_tool_calls,
 ]
 
 # Provide a map for easy invocation by name
