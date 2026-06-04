@@ -183,8 +183,8 @@ async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
     elements = []
     counter = 1
 
-    # Inputs (excluding hidden)
-    inputs = page.locator("input:visible")
+    # Inputs (excluding hidden, checkboxes, radios — those have dedicated extractors below)
+    inputs = page.locator("input:visible:not([type='checkbox']):not([type='radio'])")
     input_count = await inputs.count()
     for i in range(input_count):
         el = inputs.nth(i)

@@ -966,7 +966,7 @@ async def parallel_tool_calls(
 _hitl_callbacks: dict[str, Any] = {}
 
 @tool
-async def request_human_intervention(reason: str) -> str:
+async def request_human_intervention(reason: str) -> dict[str, Any]:
     """当遇到需要人工解决的复杂场景（如验证码、滑动拼图、MFA动态口令等）时调用此工具。
     系统会挂起当前执行流，并通过 UI 通知人类，等待人类解决后恢复。
 
@@ -974,11 +974,11 @@ async def request_human_intervention(reason: str) -> str:
         reason: 呼叫人工的具体原因和要求。例如："请在浏览器中手动完成登录滑块验证，然后点击继续"。
 
     Returns:
-        人工干预的结果回复。
+        人工干预的结果回复 (dict 格式, 与其他工具返回一致).
     """
     task_id = get_current_task_id()
     if not task_id:
-        return "人工干预失败: 找不到当前 task_id"
+        return {"success": False, "error": "人工干预失败: 找不到当前 task_id"}
 
     # Create event and store in registry
     event = asyncio.Event()
@@ -988,7 +988,7 @@ async def request_human_intervention(reason: str) -> str:
     if task_id in _hitl_callbacks:
         await _hitl_callbacks[task_id](reason)
     else:
-        return "人工干预失败: 没有注册 HITL 回调"
+        return {"success": False, "error": "人工干预失败: 没有注册 HITL 回调"}
 
     # Block execution until human responds
     await event.wait()
@@ -996,7 +996,7 @@ async def request_human_intervention(reason: str) -> str:
     # Clean up and return human response
     _hitl_events.pop(task_id, None)
     response = _hitl_responses.pop(task_id, "人类已处理完成")
-    return response
+    return {"success": True, "result": response}
 
 @tool
 async def press_key(key: str) -> dict[str, Any]:

@@ -487,7 +487,7 @@ def get_exploration_system_prompt(accounts: list | None = None, task_config: dic
         accounts_block = (
             "\n## 可用测试账号 (用于登录页面自动登录)\n"
             + "\n".join(
-                f"- 角色: {a.get('role', 'N/A')}, 用户名: {a.get('username', 'N/A')}, 密码: {a.get('password', 'N/A')}"
+                f"- 角色: {a.get('role', 'N/A')}, 用户名: {a.get('username', 'N/A')}, 密码: ****** (工具自动填充)"
                 for a in accounts
             )
             + "\n(如果当前是登录页面, **必须**用这些账号登录, 进入后台深度探索, 不要在登录页停滞)\n"
