@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import logging
 import os
 from typing import Any
+
+logger = logging.getLogger("antigravity.tools")
 
 from langchain_core.tools import tool
 
@@ -318,7 +321,7 @@ async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
 
     entry = backend_node_map.lookup(task_id, lookup_key, current_step=get_current_step())
     if not entry:
-        print(f"  [CDP Resolve] No BackendNodeMap entry for {lookup_key}", flush=True)
+        logger.info(f"  [CDP Resolve] No BackendNodeMap entry for {lookup_key}")
         return None
 
     backend_node_id = entry.get("backend_node_id")
@@ -336,13 +339,13 @@ async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
             pass
 
     if not cdp_sess:
-        print(f"  [CDP Resolve] No active CDP session", flush=True)
+        logger.info("  [CDP Resolve] No active CDP session")
         return None
 
     # Resolve backendNodeId to objectId
     resolved = await resolve_node(cdp_sess, backend_node_id)
     if not resolved:
-        print(f"  [CDP Resolve] Failed to resolve backendNodeId {backend_node_id}", flush=True)
+        logger.warning(f"  [CDP Resolve] Failed to resolve backendNodeId {backend_node_id}")
         return None
 
     object_id = resolved.get("objectId")
@@ -359,7 +362,7 @@ async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
         })
         has_temp_attr = True
     except Exception as e:
-        print(f"  [CDP Resolve] Failed to call function on object: {e}", flush=True)
+        logger.warning(f"  [CDP Resolve] Failed to call function on object: {e}")
         await release_object(cdp_sess, object_id)
         return None
 
@@ -400,7 +403,7 @@ async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
             })
             xpath = response.get("result", {}).get("value")
         except Exception as eval_err:
-            print(f"  [CDP Resolve] XPath evaluation failed: {eval_err}", flush=True)
+            logger.warning(f"  [CDP Resolve] XPath evaluation failed: {eval_err}")
 
     # GUARANTEED CLEANUP of temp attribute in CDP layer
     if has_temp_attr:
@@ -410,19 +413,19 @@ async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
                 "objectId": object_id,
             })
         except Exception as clean_err:
-            print(f"  [CDP Resolve] Failed to clean temp attribute on object: {clean_err}", flush=True)
+            logger.warning(f"  [CDP Resolve] Failed to clean temp attribute on object: {clean_err}")
 
     await release_object(cdp_sess, object_id)
 
     if frame_found and xpath:
         stable_locator = frame_found.locator(f"xpath={xpath}").first
-        print(f"  [CDP Resolve] Resolved {lookup_key} to stable XPath: {xpath}", flush=True)
+        logger.info(f"  [CDP Resolve] Resolved {lookup_key} to stable XPath: {xpath}")
         return stable_locator
     elif target_locator:
-        print(f"  [CDP Resolve] Resolved {lookup_key} to temp locator (no XPath)", flush=True)
+        logger.info(f"  [CDP Resolve] Resolved {lookup_key} to temp locator (no XPath)")
         return target_locator
 
-    print(f"  [CDP Resolve] Could not locate element with temp attribute {temp_id}", flush=True)
+    logger.warning(f"  [CDP Resolve] Could not locate element with temp attribute {temp_id}")
     return None
 
 
@@ -463,7 +466,7 @@ async def _resolve_element(target: str, page: Any) -> Any:
             if cdp_locator:
                 return cdp_locator
         except Exception as cdp_err:
-            print(f"  [CDP Resolve Error] {cdp_err}", flush=True)
+            logger.warning(f"  [CDP Resolve Error] {cdp_err}")
 
     if lookup_key in element_map:
         el_info = element_map[lookup_key]
@@ -510,19 +513,23 @@ async def _resolve_element(target: str, page: Any) -> Any:
 
     # Not an ID — try as description (使用 str 安全转换, 防止整数 target 崩溃)
     safe_target = str(target)
-    # Try get_by_role button
-    locator = page.get_by_role("button", name=safe_target)
-    if await locator.count() > 0:
-        return locator.first
-    # Try get_by_text
-    locator = page.get_by_text(safe_target, exact=False)
-    if await locator.count() > 0:
-        return locator.first
-    # Try placeholder
+    # Priority 1: Try placeholder (most specific for inputs)
     locator = page.get_by_placeholder(safe_target)
     if await locator.count() > 0:
         return locator.first
-    # Try aria-label
+    # Priority 2: Try textbox role (covers search inputs, textareas)
+    locator = page.get_by_role("textbox", name=safe_target)
+    if await locator.count() > 0:
+        return locator.first
+    # Priority 3: Try button role
+    locator = page.get_by_role("button", name=safe_target)
+    if await locator.count() > 0:
+        return locator.first
+    # Priority 4: Try get_by_text
+    locator = page.get_by_text(safe_target, exact=False)
+    if await locator.count() > 0:
+        return locator.first
+    # Priority 5: Try aria-label
     locator = page.locator(f"[aria-label='{safe_target}']")
     if await locator.count() > 0:
         return locator.first
@@ -631,16 +638,24 @@ async def click(target: str) -> dict[str, Any]:
                             duration_ms=int((_time.time() - _t0) * 1000),
                         )
             except Exception as click_err:
-                print(f"  [CDP Click] Coordinate click failed: {click_err}, falling back to locator", flush=True)
+                logger.warning(f"  [CDP Click] Coordinate click failed: {click_err}, falling back to locator")
+                click_error_str = str(click_err)
+            else:
+                click_error_str = None
 
         # Fallback: Playwright locator click
         await locator.click(timeout=10000)
         await _wait_for_stable(page)
+        evidence_dict = {}
+        if "click_error_str" in locals() and click_error_str:
+            evidence_dict = {"cdp_fallback": True, "cdp_error": click_error_str}
+            
         return await _make_action_result(
             "click", target, True, page, before_url,
             before_fingerprint=before_fp,
             extracted_content=f"已点击元素 '{target}'",
             duration_ms=int((_time.time() - _t0) * 1000),
+            evidence=evidence_dict,
         )
     except Exception as e:
         # Phase 2.0D: 失败时构造 candidates (相似元素供 LLM 重选)
@@ -866,7 +881,6 @@ async def wait(seconds: float = 1.0) -> dict[str, Any]:
     before_url = page.url
     try:
         await asyncio.sleep(seconds)
-        await _wait_for_stable(page) if seconds < 3 else None
         return await _make_action_result(
             "wait", str(seconds), True, page, before_url,
             extracted_content=f"已等待 {seconds}s",
@@ -1146,6 +1160,51 @@ async def extract_text(target: str) -> dict[str, Any]:
         )
 
 @tool
+async def search(target: str, query: str) -> dict[str, Any]:
+    """在搜索框中输入关键词并提交搜索。复合操作: 聚焦 → 清空 → 输入 → 回车。
+
+    Args:
+        target: 搜索框元素编号（如 #1）或描述（如 "搜索框"、"search"）
+        query: 要搜索的关键词
+    """
+    page = get_current_page()
+    before_url = page.url
+    before_fp = await _get_dom_fingerprint(page)
+    try:
+        locator = await _resolve_element(target, page)
+
+        # 1. 聚焦搜索框
+        await locator.click(timeout=8000)
+        await asyncio.sleep(0.3)
+
+        # 2. 清空已有内容
+        await locator.fill("", timeout=3000)
+        await asyncio.sleep(0.1)
+
+        # 3. 逐字输入 (触发 autocomplete/typeahead)
+        await locator.press_sequentially(query, delay=80)
+        await asyncio.sleep(0.5)
+
+        # 4. 回车提交
+        await locator.press("Enter")
+        await _wait_for_stable(page)
+
+        return await _make_action_result(
+            "search", target, True, page, before_url,
+            before_fingerprint=before_fp,
+            extracted_content=f"已搜索: {query}, 当前URL: {page.url}",
+        )
+    except Exception as e:
+        cands = _find_similar_elements(target, page, max_n=3)
+        return await _make_action_result(
+            "search", target, False, page, before_url,
+            before_fingerprint=before_fp, error=str(e),
+            status="not_found" if "timeout" in str(e).lower() else "failure",
+            candidates=cands,
+        )
+
+
+@tool
 async def select_dropdown(target: str, value: str) -> dict[str, Any]:
     """从下拉菜单(select)中选择选项。
 
@@ -1181,7 +1240,7 @@ async def evaluate_js(script: str) -> dict[str, Any]:
     Args:
         script: 要执行的 JavaScript 代码
     """
-    blacklist = ("page.goto", "page.evaluate", "window.location", "location.href", "fetch(")
+    blacklist = ("page.goto", "page.evaluate", "window.location", "location.href")
     lower = script.lower()
     for keyword in blacklist:
         if keyword in lower:
@@ -1300,6 +1359,250 @@ async def mark_task_skipped(reasoning: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# browser-use 对齐 (2026-06-05): 新增 7 个工具
+# find / get_dropdown_options / get_specific_elements / switch_tab / close_tab / refresh / get_page_links
+# ---------------------------------------------------------------------------
+
+
+@tool
+async def find(query: str, role: str | None = None) -> dict[str, Any]:
+    """按描述或 role 查找元素（不执行动作，只返回匹配的元素编号列表）。
+
+    用于 "我看到页面有 'Submit Order' 按钮" 但不知道编号的场景。返回带 # 编号的列表。
+    不修改页面状态，不会导致 stability 触发重观察。
+
+    Args:
+        query: 自然语言描述，如 "login button" / "提交按钮" / "search box"
+        role: 可选限定，如 "button"/"input"/"link"/"textbox"/"combobox"
+    """
+    page = get_current_page()
+    before_url = page.url
+    role_to_css = {
+        "link": "a[href]",
+        "textbox": "input[type='text'], input:not([type]), textarea",
+        "combobox": "select",
+    }
+    try:
+        results: list[dict[str, Any]] = []
+        roles = [role] if role else ["button", "input", "link", "textbox", "combobox", "checkbox", "radio"]
+        for r in roles:
+            css = role_to_css.get(r, r)
+            locators = page.locator(f"[role='{r}']:visible, {css}:visible")
+            try:
+                count = await locators.count()
+            except Exception:
+                continue
+            for i in range(min(count, 10)):
+                el = locators.nth(i)
+                try:
+                    text = (await el.text_content() or "").strip()
+                    aria_label = (await el.get_attribute("aria-label") or "").strip()
+                    placeholder = (await el.get_attribute("placeholder") or "").strip()
+                    blob = " ".join([text, aria_label, placeholder]).lower()
+                    if query.lower() in blob or any(t.lower() in blob for t in query.split()):
+                        results.append({
+                            "id": f"#{len(results) + 1}",
+                            "role": r,
+                            "text": text[:60],
+                            "aria_label": aria_label[:60],
+                            "placeholder": placeholder[:60],
+                        })
+                        if len(results) >= 10:
+                            break
+                except Exception:
+                    continue
+            if len(results) >= 10:
+                break
+        return {
+            **await _make_action_result("find", query, True, page, before_url),
+            "display_text": f"找到 {len(results)} 个匹配元素",
+            "extracted_content": "\n".join(f"  {r['id']} [{r['role']}] \"{r['text']}\"" for r in results) if results else "(未找到匹配元素)",
+            "long_term_memory": f"使用 # 编号调用 click/input_text 等工具",
+            "include_in_memory": True,
+        }
+    except Exception as e:
+        return await _make_action_result("find", query, False, page, before_url, error=str(e))
+
+
+@tool
+async def get_dropdown_options(target: str) -> dict[str, Any]:
+    """获取下拉框（select）的所有可选项。
+
+    Args:
+        target: select 元素编号（如 #3）或描述
+    """
+    page = get_current_page()
+    before_url = page.url
+    try:
+        locator = await _resolve_element(target, page)
+        tag = await locator.evaluate("el => el.tagName.toLowerCase()")
+        if tag != "select":
+            return await _make_action_result(
+                "get_dropdown_options", target, False, page, before_url,
+                error=f"目标不是 select 元素 (tag={tag})",
+            )
+        options = await locator.evaluate("""
+            el => Array.from(el.options).map(o => ({value: o.value, text: o.text.trim(), selected: o.selected, disabled: o.disabled}))
+        """)
+        selected = [o for o in options if o.get("selected")]
+        return {
+            **await _make_action_result("get_dropdown_options", target, True, page, before_url),
+            "display_text": f"下拉框共 {len(options)} 个选项",
+            "extracted_content": "\n".join(
+                f"  {o['text']}" + (" ← 当前选中" if o.get('selected') else "") + (" (禁用)" if o.get('disabled') else "")
+                for o in options
+            ) if options else "(无选项)",
+            "long_term_memory": f"使用 select_dropdown(target=\"{target}\", value=\"...\") 选择",
+        }
+    except Exception as e:
+        return await _make_action_result("get_dropdown_options", target, False, page, before_url, error=str(e))
+
+
+@tool
+async def get_specific_elements(roles: str) -> dict[str, Any]:
+    """按 role 过滤当前页可见交互元素（不执行动作，只查看）。
+
+    Args:
+        roles: 逗号分隔 role 列表，如 "button,input" 或 "link,textbox"
+    """
+    page = get_current_page()
+    before_url = page.url
+    # role → CSS 元素映射 (有些 role 不是合法 CSS 标签)
+    role_to_css = {
+        "link": "a[href]",
+        "textbox": "input[type='text'], input:not([type]), textarea",
+        "combobox": "select",
+    }
+    try:
+        target_roles = [r.strip() for r in roles.split(",") if r.strip()]
+        results: list[dict[str, Any]] = []
+        for r in target_roles:
+            css = role_to_css.get(r, r)
+            locators = page.locator(f"[role='{r}']:visible, {css}:visible")
+            try:
+                count = await locators.count()
+            except Exception:
+                continue
+            for i in range(min(count, 30)):
+                el = locators.nth(i)
+                try:
+                    text = (await el.text_content() or "").strip()[:60]
+                    results.append({"role": r, "text": text})
+                except Exception:
+                    continue
+        return {
+            **await _make_action_result("get_specific_elements", roles, True, page, before_url),
+            "display_text": f"过滤 {roles} 找到 {len(results)} 个元素",
+            "extracted_content": "\n".join(f"  [{r['role']}] \"{r['text']}\"" for r in results) if results else "(未找到)",
+        }
+    except Exception as e:
+        return await _make_action_result("get_specific_elements", roles, False, page, before_url, error=str(e))
+
+
+@tool
+async def switch_tab(index: int) -> dict[str, Any]:
+    """切换到指定 index 的浏览器标签页。
+
+    Args:
+        index: 标签页索引（0 是第一个，1 是第二个，依此类推）
+    """
+    page = get_current_page()
+    before_url = page.url
+    context = page.context
+    pages = context.pages
+    if index < 0 or index >= len(pages):
+        return await _make_action_result(
+            "switch_tab", index, False, page, before_url,
+            error=f"标签页 index={index} 不存在（当前共 {len(pages)} 个）",
+        )
+    try:
+        target_page = pages[index]
+        await target_page.bring_to_front()
+        await _wait_for_stable(target_page)
+        return {
+            **await _make_action_result("switch_tab", index, True, page, before_url),
+            "display_text": f"已切换到标签页 [{index}]: {target_page.url}",
+            "extracted_content": f"当前标签页: [{index}] {target_page.title()} ({target_page.url})",
+        }
+    except Exception as e:
+        return await _make_action_result("switch_tab", index, False, page, before_url, error=str(e))
+
+
+@tool
+async def close_tab(index: int) -> dict[str, Any]:
+    """关闭指定 index 的浏览器标签页。
+
+    Args:
+        index: 标签页索引
+    """
+    page = get_current_page()
+    before_url = page.url
+    context = page.context
+    pages = context.pages
+    if index < 0 or index >= len(pages):
+        return await _make_action_result(
+            "close_tab", index, False, page, before_url,
+            error=f"标签页 index={index} 不存在",
+        )
+    try:
+        target = pages[index]
+        is_current = (target == page)
+        await target.close()
+        return {
+            **await _make_action_result("close_tab", index, True, page, before_url),
+            "display_text": f"已关闭标签页 [{index}]{'（含当前）' if is_current else ''}",
+            "extracted_content": f"关闭后剩余 {len(context.pages)} 个标签页",
+        }
+    except Exception as e:
+        return await _make_action_result("close_tab", index, False, page, before_url, error=str(e))
+
+
+@tool
+async def refresh() -> dict[str, Any]:
+    """刷新当前页面（F5/Ctrl+R 等价）。"""
+    page = get_current_page()
+    before_url = page.url
+    before_fp = await _get_dom_fingerprint(page)
+    try:
+        await page.reload(wait_until="networkidle", timeout=15000)
+        await _wait_for_stable(page)
+        return await _make_action_result(
+            "refresh", None, True, page, before_url,
+            before_fingerprint=before_fp,
+            extracted_content=f"已刷新页面: {page.url}",
+        )
+    except Exception as e:
+        return await _make_action_result("refresh", None, False, page, before_url, before_fingerprint=before_fp, error=str(e))
+
+
+@tool
+async def get_page_links() -> dict[str, Any]:
+    """列出当前页所有可见链接的文本和 URL（不点击，仅查看）。"""
+    page = get_current_page()
+    before_url = page.url
+    try:
+        links = page.locator("a:visible[href]")
+        count = await links.count()
+        results: list[dict[str, str]] = []
+        for i in range(min(count, 50)):
+            el = links.nth(i)
+            try:
+                text = (await el.text_content() or "").strip()[:50]
+                href = (await el.get_attribute("href") or "")[:80]
+                if text or href:
+                    results.append({"text": text, "href": href})
+            except Exception:
+                continue
+        return {
+            **await _make_action_result("get_page_links", None, True, page, before_url),
+            "display_text": f"页面上共 {count} 个链接",
+            "extracted_content": "\n".join(f"  \"{l['text']}\" → {l['href']}" for l in results) if results else "(无可见链接)",
+        }
+    except Exception as e:
+        return await _make_action_result("get_page_links", None, False, page, before_url, error=str(e))
+
+
+# ---------------------------------------------------------------------------
 # Tool exports
 # ---------------------------------------------------------------------------
 
@@ -1307,6 +1610,7 @@ __all__ = [
     "navigate",
     "click",
     "input_text",
+    "search",
     "scroll",
     "wait",
     "press_key",
@@ -1321,23 +1625,13 @@ __all__ = [
     "mark_task_skipped",
     "screenshot_on_demand",
     "parallel_tool_calls",
-    "reset_screenshot_budget",
-    "get_current_page",
-    "set_current_page",
-    "set_task_config",
-    "get_task_config",
-    "get_element_map",
-    "update_element_map",
-    "set_current_task",
-    "get_current_task_id",
-    "cleanup_task_context",
-    "set_current_step_text",
-    "get_current_step_text",
-    "_should_auto_inject_password",
-    "set_cdp_session",
-    "get_cdp_session_ctx",
-    "tools",
-    "tools_by_name",
+    "find",
+    "get_dropdown_options",
+    "get_specific_elements",
+    "switch_tab",
+    "close_tab",
+    "refresh",
+    "get_page_links",
 ]
 
 # Provide a list of tool objects for LLM binding
@@ -1345,6 +1639,7 @@ tools = [
     navigate,
     click,
     input_text,
+    search,
     scroll,
     wait,
     press_key,
@@ -1359,6 +1654,13 @@ tools = [
     mark_task_skipped,
     screenshot_on_demand,
     parallel_tool_calls,
+    find,
+    get_dropdown_options,
+    get_specific_elements,
+    switch_tab,
+    close_tab,
+    refresh,
+    get_page_links,
 ]
 
 # Provide a map for easy invocation by name

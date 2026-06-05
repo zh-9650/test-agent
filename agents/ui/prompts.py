@@ -119,6 +119,15 @@ def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any]
 11. **禁止直接导航捷径**: 严禁直接调用 `navigate` 访问带有查询参数的结果页 URL（例如 `?q=xxx` 或 `/searchresults.html?` 等）。你必须在页面已有的输入框中输入内容，并通过点击搜索/提交按钮来完成交互。
 12. **前置弹窗关闭原则**: 如果页面被 Genius 登录框、Cookie 同意框、订阅弹窗等阻挡或部分遮蔽，你**必须**首先尝试定位并点击其关闭按钮（如 'Close', 'X', 或者是弹窗外的空白区域）以消除弹窗，然后再继续用例的实质步骤。禁止直接无视弹窗强行点击被遮挡的元素。
 13. **完成前答案提取**: 在你调用 `mark_task_complete` 表明任务完成之前，如果当前用例需要提取特定的信息（如价格、星数、标题、数值等），你**必须**先通过调用 `extract_text`（针对可定位元素）或 `evaluate_js`（针对没有编号的复杂非交互文本）把这些数据提取到 `action_result` 的 `extracted_content` 中，然后再结束任务。禁止在未提取答案到 `extracted_content` 的情况下直接 mark_task_complete。
+14. **结构化思考输出 (browser-use 对齐)**: 每次回复**必须**在 tool_call 之前用纯文本输出 3 个简短字段，帮助你维护"上一步评价 + 进度记忆 + 下一步目标"，上下文长时也不丢:
+   ```
+   评价: <1 句话评价上一步是否成功>
+   记忆: <1-3 句记录当前进度 (在哪个页面/做了什么/还差什么)>
+   下一步: <1 句话描述下一步要做什么>
+   ```
+   字段名也接受英文 Evaluation/Memory/Next Goal. 这 3 字段会被记录到 <agent_history>，多步后给你自己看。
+15. **target 参数必须是 #N 编号 (硬约束)**: 调用 click/input_text/scroll/press_key/hover/extract_text/select_dropdown/get_dropdown_options 时, `target` 参数**必须**是 `#N` 格式 (N 是 1-100 之间的整数, 对应"交互元素"列表里的 # 编号). 禁止把元素的文本描述 (如 "Search or jump to… button") 传给 target —— 文本描述里含省略号、特殊字符, 解析必然失败. 如果你只看到描述没看到编号, 改用 `find(query="...")` 工具按描述查 # 编号. 错误示范: `click(target="[57] button 'Search or jump to…'")` ← 这是 0 步就退的常见原因. 正确示范: `click(target="#57")`.
+16. **提取完整性 (硬约束)**: 当 step 描述要求"取 X 和 Y"或"取 X、Y、Z"时 (例如 "title and score" / "标题和价格"), 你**必须**对**每个**要求的字段分别调用一次 `extract_text` (或一次 `evaluate_js` 拿多个字段), 全部提取到 extracted_content 后再 mark_task_complete. 漏一个字段 = 任务失败. 错误示范: step 要 "title and score", 只 extract 了 score 就 mark_complete. 正确做法: 先 extract title, 再 extract score, 都进 extracted_content, 最后 mark_complete.
 </rules>
 
 <examples>
@@ -134,6 +143,84 @@ def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any]
 → 调 click(target="#login-btn")
 </example>
 
+<example type="good">
+当前步骤 1/3: 搜索 "mechanical keyboard"
+页面状态: 页面有搜索框 (placeholder="Search" 或 type="search")
+→ 调 search(target="搜索框", query="mechanical keyboard")
+复合操作: 自动聚焦 → 清空 → 输入 → 回车提交
+</example>
+
+<example type="good">
+当前步骤 1/2: 在 Hacker News 搜索 "playwright"
+页面状态: 页面顶部有搜索输入框
+→ 调 search(target="#1", query="playwright")
+使用元素编号精确定位
+</example>
+
+<example type="good">
+当前步骤 3/5: 点击页面底部的 "关于我们" 链接
+页面状态: 交互元素列表中只有顶部的头部导航。页面底部的元素未列出。[提示: 有 15 个交互元素在当前视口之外被过滤，可使用 `scroll` 滚动页面以使其可见]
+→ 调 scroll(direction="down", amount=800)
+说明: 目标元素在当前视口外被过滤，因此需要先向下滚动页面使其进入视口并更新编号。
+</example>
+
+<example type="good">
+当前步骤 2/4: 点击购买按钮
+页面状态: 页面弹出了一个包含 "请同意服务条款" 的 Modal 对话框/遮罩层，其上有确定按钮（#ok-btn）和取消按钮。
+→ 调 click(target="#ok-btn")
+说明: 页面有弹窗或提示框时，会阻挡后续操作。必须优先点击确定或关闭按钮消除弹窗，再继续主线任务。
+</example>
+
+<example type="good">
+当前步骤 4/4: 确认并提交表单
+页面状态: 页面有 "提交成功" 提示文本。在上一步点击后，页面没有发生新变化，且已包含所需验证信息。
+→ 调 mark_task_complete(reasoning="页面已包含提交成功提示，任务顺利完成")
+说明: 标记任务完成前，应仔细检查页面是否已有期望的文字或实质性结果，避免盲目标记。
+</example>
+
+<example type="good">
+当前步骤 2/3: 点击登录
+页面状态: [SYSTEM INTERRUPT] 检测到动作死循环: AAA (连续 3 次在相同页面执行相同写动作: click)
+→ 调 scroll(direction="down", amount=300)
+说明: 当系统检测到死循环动作，说明上几次点击被遮挡或失败，应避免重复原动作。可以通过滚动位置或重新导航来恢复正常状态。
+</example>
+
+<example type="good">
+当前步骤 2/3: 输入密码并登录
+页面状态: 用户名输入框已填，密码输入框（#password）显示已填充值 (即密码自动填充/注入已生效)
+→ 调 click(target="#login-btn")
+说明: 当密码框已显示填充，说明系统已自动填入相应密码。LLM 无需再次调用 input_text 填密码，直接点击登录即可。
+</example>
+
+<example type="good">
+当前步骤 3/3: 提取价格并完成任务
+页面状态: 页面显示 "商品价格: $99.99" (#price-tag)
+→ 调 extract_text(target="#price-tag")
+说明: 应该先调用 extract_text 获取目标数据并存入证据链，然后在下一步执行 mark_task_complete。
+</example>
+
+<example type="good">
+当前步骤 1/1: 报告头条新闻的 title 和 score
+页面状态: 页面顶部有标题 (#story-title) 和分数 (#story-score) 两个可定位元素
+先输出 (browser-use 4 字段):
+  Evaluation: 上一步导航成功, 已加载 Hacker News 首页
+  Memory: 在 HN 首页, 看到 #1 头条含 title 和 score
+  Next Goal: 提取 title 和 score 两个字段
+然后调:
+  → extract_text(target="#story-title") 提取 title
+  → extract_text(target="#story-score") 提取 score
+  → mark_task_complete(reasoning="已提取 title 和 score, 任务完成")
+说明: 提取完整性 — 当 step 要求多个字段时, 必须每个字段分别 extract, 全部进 extracted_content 后再 mark_complete.
+</example>
+
+<example type="bad">
+当前步骤 1/1: 报告头条新闻的 title 和 score
+→ 调 click(target="[57] button 'Search or jump to…'")  ← target 是描述, 不是 #N 编号
+违反规则 15 — target 必须是 #N 格式
+→ 调 extract_text(target="#story-score")  ← 只提取 score, 漏了 title
+违反规则 16 — 提取完整性, 多字段都要提取
+</example>
+
 <example type="bad">
 当前页面: 登录页
 → 输出纯文本: "我应该登录" 但不调任何工具
@@ -145,11 +232,17 @@ def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any]
 → 调 input_text(target="#username", value="practice", password="<此处省略明文>")
 违反规则 6 — 密码不应进 prompt, 工具自己读
 </example>
+
+<example type="bad">
+当前步骤 1/3: 搜索 "laptop"
+→ 调 click(target="搜索按钮") 先点搜索按钮再输入
+违反搜索最佳实践 — 应直接用 search 工具, 而非分步 click + input_text
+</example>
 </examples>
 
 <output_contract>
 每次 decide 调用必须满足以下两种之一:
-(a) **tool_call 必填**: 调用一个工具 (click / input_text / scroll / press_key / navigate / get_current_page / update_element_map / evaluate_js / mark_task_*), tool_calls 数组长度 = 1
+(a) **tool_call 必填**: 调用一个工具 (click / input_text / search / scroll / press_key / navigate / get_current_page / update_element_map / evaluate_js / mark_task_*), tool_calls 数组长度 = 1
 (b) **显式 mark**: 当用例达成/失败/跳过时, 调 mark_task_complete / mark_task_failed / mark_task_skipped, reasoning 字段 ≤ 200 字描述判定理由
 
 禁止:
@@ -368,7 +461,7 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
     Token-aware truncation retained from V1.6 B4.
     """
     import os as _os
-    char_budget = int(_os.getenv("L2_PAGE_INFO_CHAR_BUDGET", "3000"))
+    char_budget = int(_os.getenv("L2_PAGE_INFO_CHAR_BUDGET", "10000"))
     parts: list[str] = []
 
     # Phase 2.0A Sprint 5: Failure Memory 告警注入 (最顶部)
@@ -388,12 +481,61 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
 
     parts.append(f"URL: {page_info.get('url', 'N/A')}")
     parts.append(f"标题: {page_info.get('title', 'N/A')}")
+    
+    viewport = page_info.get("viewport")
+    if viewport:
+        sy = viewport.get("scrollY", 0)
+        ih = viewport.get("innerHeight", 1)
+        sh = viewport.get("scrollHeight", 1)
+        scroll_percent = int((sy / max(1, sh - ih)) * 100) if sh > ih else 100
+        pixels_above = sy
+        pixels_below = max(0, sh - sy - ih)
+        parts.append(
+            f"视口: {scroll_percent}% (Y: {sy}px / {sh}px, "
+            f"视口上方: {pixels_above}px, 视口下方: {pixels_below}px)"
+        )
+
+    tabs = page_info.get("tabs", [])
+    if tabs:
+        tab_lines = [f"\n浏览器标签页 ({len(tabs)} 个):"]
+        for t in tabs:
+            marker = "→" if t.get("active") else " "
+            tab_lines.append(f"  {marker} [{t.get('index')}] {t.get('title', '?')} ({t.get('url', '?')})")
+        parts.extend(tab_lines)
 
     elements = page_info.get("interactive_elements", [])
+    pending_requests = page_info.get("pending_requests", 0)
+    if pending_requests > 0:
+        parts.append(
+            f"正在进行中的网络请求: {pending_requests} 个 "
+            "(提示: 页面可能仍在加载数据，请根据需要通过 wait 工具进行等待)"
+        )
+        pending_detail = page_info.get("pending_requests_detail", [])
+        for line in pending_detail:
+            parts.append(f"  ⏳ {line}")
+    closed_popups = page_info.get("closed_popups", [])
+    if closed_popups:
+        parts.append(f"\n系统已自动关闭弹窗/对话框 ({len(closed_popups)} 个):")
+        for cp in closed_popups[-5:]:
+            parts.append(f"  - {cp}")
+
     if elements:
-        max_el = 30
+        max_el = 80
         truncated_elements = elements[:max_el]
-        parts.append(f"\n交互元素 (前 {len(truncated_elements)}/{len(elements)} 个):")
+        
+        off_viewport_skipped = page_info.get("_off_viewport_filter_skipped", False)
+        is_truncated = page_info.get("truncated", False)
+        
+        total_elements_msg = f" (前 {len(truncated_elements)}/{len(elements)} 个)"
+        if off_viewport_skipped or is_truncated:
+            hint_parts = []
+            if off_viewport_skipped:
+                hint_parts.append("有其他交互元素在当前视口之外被过滤，可使用 `scroll` 滚动页面以使其可见")
+            if is_truncated:
+                hint_parts.append("元素过多已进行截断展示")
+            total_elements_msg += f" [提示: {'，'.join(hint_parts)}]"
+            
+        parts.append(f"\n交互元素{total_elements_msg}:")
         for el in truncated_elements:
             # Phase 2.0A Sprint 4: 紧凑索引格式
             el_id = el.get("id", "")
@@ -427,6 +569,22 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
             role = el.get("role")
             if role and role != el_type:
                 props.append(f"role={role}")
+            input_type = el.get("input_type", "")
+            if input_type and input_type not in ("text", ""):
+                props.append(f"type={input_type}")
+            
+            # Rich attributes extraction (href, value)
+            href = el.get("href")
+            if href:
+                if len(href) > 60:
+                    href = href[:60] + "..."
+                props.append(f'href="{href}"')
+            
+            value = el.get("value")
+            if value:
+                if len(value) > 60:
+                    value = value[:60] + "..."
+                props.append(f'value="{value}"')
 
             if el_text:
                 parts.append(f'  [{idx}] {el_type} "{el_text}" ({", ".join(props)})' if props else f'  [{idx}] {el_type} "{el_text}"')
@@ -487,7 +645,7 @@ def get_exploration_system_prompt(accounts: list | None = None, task_config: dic
         accounts_block = (
             "\n## 可用测试账号 (用于登录页面自动登录)\n"
             + "\n".join(
-                f"- 角色: {a.get('role', 'N/A')}, 用户名: {a.get('username', 'N/A')}, 密码: ****** (工具自动填充)"
+                f"- 角色: {a.get('role', 'N/A')}, 用户名: {a.get('username', 'N/A')}, 密码: {a.get('password', '******')}"
                 for a in accounts
             )
             + "\n(如果当前是登录页面, **必须**用这些账号登录, 进入后台深度探索, 不要在登录页停滞)\n"
@@ -663,3 +821,55 @@ def get_plan_generation_prompt(target_url: str, explored_urls: list[str], task_c
 2. 共享的前置条件（如登录）
 3. 优先级和分类
 4. 覆盖功能测试、安全测试、边界测试"""
+
+
+# =============================================================================
+# browser-use 对齐: Evaluation / Memory / Next Goal 4 字段解析
+# =============================================================================
+
+
+def parse_browser_use_decision(text: str) -> dict[str, str]:
+    """Parse browser-use style 4-field decision from LLM text content.
+
+    Looks for these patterns in LLM response text (case-insensitive, both
+    English and Chinese markers):
+      Evaluation: ... | 上一步评价: ...
+      Memory: ... | 记忆: ...
+      Next Goal: ... | 下一步目标: ...
+
+    Returns dict with keys: evaluation, memory, next_goal (all empty if not found).
+    Loose parsing — any of the 3 markers missing = empty string for that field.
+    """
+    import re
+    result = {"evaluation": "", "memory": "", "next_goal": ""}
+
+    if not text:
+        return result
+
+    eval_patterns = [
+        r"(?:^|\n)\s*(?:\*\*?)?(?:Evaluation|评价|上一步评价|上一步结果)\s*[::]\s*\*?\*?\s*(.+?)(?=\n\s*(?:\*\*?)?(?:Memory|记忆|进度记忆|Next Goal|下一步目标|下一步)\s*[::]|\Z)",
+    ]
+    memory_patterns = [
+        r"(?:^|\n)\s*(?:\*\*?)?(?:Memory|记忆|进度记忆)\s*[::]\s*\*?\*?\s*(.+?)(?=\n\s*(?:\*\*?)?(?:Next Goal|下一步目标|下一步|Action|行动)\s*[::]|\Z)",
+    ]
+    next_goal_patterns = [
+        r"(?:^|\n)\s*(?:\*\*?)?(?:Next Goal|下一步目标|下一步|Goal|目标)\s*[::]\s*\*?\*?\s*(.+?)(?=\n\s*(?:\*\*?)?(?:Action|行动|行动序列|工具)\s*[::]|\Z)",
+    ]
+
+    for pat in eval_patterns:
+        m = re.search(pat, text, re.DOTALL | re.IGNORECASE)
+        if m:
+            result["evaluation"] = m.group(1).strip()[:200]
+            break
+    for pat in memory_patterns:
+        m = re.search(pat, text, re.DOTALL | re.IGNORECASE)
+        if m:
+            result["memory"] = m.group(1).strip()[:300]
+            break
+    for pat in next_goal_patterns:
+        m = re.search(pat, text, re.DOTALL | re.IGNORECASE)
+        if m:
+            result["next_goal"] = m.group(1).strip()[:200]
+            break
+
+    return result

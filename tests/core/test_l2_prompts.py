@@ -271,7 +271,7 @@ async def test_decide_node_injects_session_summary_into_system_message(
 
     msgs = captured.get("messages", [])
     assert msgs, "decide_node should have called the LLM"
-    sys_msg = next((m for m in msgs if isinstance(m, SystemMessage)), None)
+    sys_msg = next((m for m in msgs if isinstance(m, SystemMessage) and "[cached-block-end]" not in str(m.content)), None)
     assert sys_msg is not None, "system message missing"
     assert "TC-000" in sys_msg.content, "session_summary not injected into system message"
     assert "BASE_SYS_PROMPT" in sys_msg.content, "base system prompt not included"
@@ -410,17 +410,23 @@ async def test_record_node_no_trim_under_budget():
 async def test_evaluate_js_blocks_page_goto():
     from agents.ui.tools import evaluate_js
 
-    # 5 banned keywords from the V2.0 plan
-    for bad in [
-        "page.goto('https://evil.com')",
-        "page.evaluate('alert(1)')",
-        "window.location = 'https://evil.com'",
-        "document.location.href = 'https://evil.com'",
-        "fetch('https://evil.com/exfil')",
-    ]:
-        result = await evaluate_js.ainvoke(bad)
-        assert "拒绝" in result or "禁止" in result or "blocked" in result.lower() or "blacklist" in result.lower(), \
-            f"expected blacklist rejection for: {bad!r}, got: {result!r}"
+    # Mock get_current_page to return a fake page to avoid RuntimeError
+    with patch("agents.ui.tools.get_current_page") as mock_gp:
+        page = MagicMock()
+        page.url = "https://example.com"
+        mock_gp.return_value = page
+
+        # 4 banned keywords from the V2.0 plan (fetch removed per Phase 2.0A audit)
+        for bad in [
+            "page.goto('https://evil.com')",
+            "page.evaluate('alert(1)')",
+            "window.location = 'https://evil.com'",
+            "document.location.href = 'https://evil.com'",
+        ]:
+            result = await evaluate_js.ainvoke(bad)
+            err_msg = (result.get("error") or "") if isinstance(result, dict) else str(result)
+            assert "拒绝" in err_msg or "禁止" in err_msg or "blocked" in err_msg.lower() or "blacklist" in err_msg.lower(), \
+                f"expected blacklist rejection for: {bad!r}, got: {result!r}"
 
 
 @pytest.mark.asyncio
@@ -431,11 +437,13 @@ async def test_evaluate_js_allows_safe_scripts():
     # Safe scripts (no banned keywords) should pass the blacklist and hit page.evaluate
     with patch("agents.ui.tools.get_current_page") as mock_gp:
         page = MagicMock()
+        page.url = "https://example.com"
         page.evaluate = AsyncMock(return_value="ok")
         mock_gp.return_value = page
         for safe in ["return document.title", "() => document.title", "document.querySelectorAll('a').length"]:
             result = await evaluate_js.ainvoke(safe)
-            assert "拒绝" not in result and "禁止" not in result, \
+            err_msg = (result.get("error") or "") if isinstance(result, dict) else str(result)
+            assert "拒绝" not in err_msg and "禁止" not in err_msg, \
                 f"safe script blocked: {safe!r} -> {result!r}"
 
 
@@ -606,14 +614,17 @@ def test_b4_format_page_info_truncates_long_element_text():
     assert "..." in out
 
 
-def test_b4_format_page_info_caps_interactive_elements_count():
-    """B4 契约: interactive_elements > 30 应截断并提示省略数."""
+def test_b4_format_page_info_caps_interactive_elements_count(monkeypatch):
+    """B4 契约: interactive_elements > 80 应截断并提示省略数.
+    browser-use 对齐: 上限从 30 提到 80 (1M context 装得下).
+    """
     from agents.ui.prompts import _format_page_info
+    monkeypatch.setenv("L2_PAGE_INFO_CHAR_BUDGET", "100000")
 
-    elements = [{"id": f"#{i}", "type": "button", "text": f"btn{i}"} for i in range(50)]
+    elements = [{"id": f"#{i}", "type": "button", "text": f"btn{i}"} for i in range(100)]
     pi = {"url": "u", "title": "t", "interactive_elements": elements}
     out = _format_page_info(pi)
-    assert "前 30/50" in out or "30" in out
+    assert "80" in out
     assert "省略" in out  # 提示还有 20 个
 
 
@@ -1451,4 +1462,105 @@ async def test_l2_live_practice_login(sample_test_case, sample_task_config):
     assert steps, "no steps collected"
     final_assertion = steps[-1].assertion
     assert final_assertion is not None
-    print(f"\n[live] steps={len(steps)} final_status={final_assertion.status}")
+
+
+# =============================================================================
+# browser-use 对齐: parse_browser_use_decision 测试
+# =============================================================================
+
+
+def test_parse_browser_use_decision_chinese():
+    """中文标记: 评价/记忆/下一步."""
+    from agents.ui.prompts import parse_browser_use_decision
+    text = "评价: 点击成功，按钮已点击\n记忆: 已在登录页输入用户名\n下一步: 输入密码"
+    out = parse_browser_use_decision(text)
+    assert "点击成功" in out["evaluation"]
+    assert "登录页" in out["memory"]
+    assert "密码" in out["next_goal"]
+
+
+def test_parse_browser_use_decision_english():
+    """英文标记: Evaluation/Memory/Next Goal."""
+    from agents.ui.prompts import parse_browser_use_decision
+    text = "Evaluation: success\nMemory: logged in as test_c\nNext Goal: click login button"
+    out = parse_browser_use_decision(text)
+    assert out["evaluation"] == "success"
+    assert "logged in" in out["memory"]
+    assert "login button" in out["next_goal"]
+
+
+def test_parse_browser_use_decision_partial():
+    """部分缺失返回空串，不报错."""
+    from agents.ui.prompts import parse_browser_use_decision
+    out = parse_browser_use_decision("评价: 做了")
+    assert out["evaluation"] != ""
+    assert out["memory"] == ""
+    assert out["next_goal"] == ""
+
+
+def test_parse_browser_use_decision_empty():
+    from agents.ui.prompts import parse_browser_use_decision
+    out = parse_browser_use_decision("")
+    assert out == {"evaluation": "", "memory": "", "next_goal": ""}
+
+
+# =============================================================================
+# 2026-06-05 修复: system_prompt 强化 #N 格式 + 提取完整性 + 4 字段英文标
+# =============================================================================
+
+
+def test_system_prompt_has_target_format_rule():
+    """规则 15: target 必须是 #N 格式, 禁止把元素描述当 target."""
+    from agents.ui.prompts import get_execution_system_prompt
+    from core.interfaces import TestCase
+    tc = TestCase(
+        id="TC-X", title="t", description="d", steps=["click #5"],
+        expected="ok", priority="medium", category="ui"
+    )
+    sp = get_execution_system_prompt(tc)
+    assert "#N" in sp or "# 编号" in sp
+    assert "target" in sp
+    assert "find" in sp  # 推荐用 find 查 #N
+
+
+def test_system_prompt_has_extraction_completeness_rule():
+    """规则 16: 多字段必须分别提取, 漏一个 = 失败."""
+    from agents.ui.prompts import get_execution_system_prompt
+    from core.interfaces import TestCase
+    tc = TestCase(
+        id="TC-X", title="t", description="d", steps=["extract title and score"],
+        expected="title and score", priority="medium", category="ui"
+    )
+    sp = get_execution_system_prompt(tc)
+    assert "提取完整性" in sp
+    assert "每个" in sp or "分别" in sp
+    assert "extracted_content" in sp
+
+
+def test_system_prompt_has_4_field_rule():
+    """规则 14: 4 字段 Evaluation/Memory/Next Goal 强制输出."""
+    from agents.ui.prompts import get_execution_system_prompt
+    from core.interfaces import TestCase
+    tc = TestCase(
+        id="TC-X", title="t", description="d", steps=["do something"],
+        expected="ok", priority="medium", category="ui"
+    )
+    sp = get_execution_system_prompt(tc)
+    assert "Evaluation" in sp and "Memory" in sp and "Next Goal" in sp
+    assert "评价" in sp  # 中英双标
+
+
+def test_system_prompt_has_examples_for_target_and_completeness():
+    """Few-shot 必须含 #N target 格式 + 多字段提取的 good example."""
+    from agents.ui.prompts import get_execution_system_prompt
+    from core.interfaces import TestCase
+    tc = TestCase(
+        id="TC-X", title="t", description="d", steps=["extract title and score"],
+        expected="title and score", priority="medium", category="ui"
+    )
+    sp = get_execution_system_prompt(tc)
+    # 含 good example 覆盖多字段提取
+    assert "extract_text" in sp
+    # 含 bad example 展示错误 target 格式
+    # 含 "extract_text(target" (good example 示范) + "'Search" 之类 bad 例子
+    assert "[" in sp and "]" in sp  # 编号格式示例

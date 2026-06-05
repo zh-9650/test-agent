@@ -7,8 +7,90 @@ This is the "eyes" of the AI testing agent.
 from __future__ import annotations
 
 import base64
+import logging
 import os
 from typing import Any
+
+logger = logging.getLogger("antigravity.page_semantic")
+
+def track_page_requests(page: Any) -> None:
+    """Attach request/response/dialog/popup listeners to page.
+
+    Tracks:
+    - _pending_requests: set of in-flight Playwright Request objects
+    - _request_log: list of (method, url, start_time) for pending, used to render URL+method
+    - _closed_popups: list of popup descriptions auto-dismissed (max 20, ring buffer)
+    - _popup_pages: list of new Page objects opened via window.open
+    """
+    if not hasattr(page, "_pending_requests"):
+        page._pending_requests = set()
+        page._request_log = []
+        page._closed_popups = []
+        page._popup_pages = []
+
+        def on_request(request):
+            if not request.url.startswith("data:"):
+                page._pending_requests.add(request)
+                try:
+                    import time as _t
+                    page._request_log.append({
+                        "method": request.method,
+                        "url": request.url,
+                        "start": _t.time(),
+                    })
+                except Exception:
+                    pass
+
+        def on_request_finished(request):
+            page._pending_requests.discard(request)
+            try:
+                if page._request_log:
+                    entry = page._request_log[0]
+                    if entry.get("url") == request.url:
+                        page._request_log.pop(0)
+            except Exception:
+                pass
+
+        def on_request_failed(request):
+            page._pending_requests.discard(request)
+            try:
+                if page._request_log:
+                    entry = page._request_log[0]
+                    if entry.get("url") == request.url:
+                        page._request_log.pop(0)
+            except Exception:
+                pass
+
+        def on_dialog(dialog):
+            try:
+                page._closed_popups.append(
+                    f"{dialog.type}: \"{dialog.message[:80]}\" (auto-dismissed)"
+                )
+                if len(page._closed_popups) > 20:
+                    page._closed_popups = page._closed_popups[-20:]
+                dialog.dismiss()
+            except Exception:
+                try:
+                    dialog.dismiss()
+                except Exception:
+                    pass
+
+        def on_popup(popup_page):
+            try:
+                page._popup_pages.append(popup_page)
+                page._closed_popups.append(
+                    f"window.open: {popup_page.url} (auto-tracked)"
+                )
+                if len(page._closed_popups) > 20:
+                    page._closed_popups = page._closed_popups[-20:]
+            except Exception:
+                pass
+
+        page.on("request", on_request)
+        page.on("requestfinished", on_request_finished)
+        page.on("requestfailed", on_request_failed)
+        page.on("dialog", on_dialog)
+        page.on("popup", on_popup)
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -69,11 +151,103 @@ async def extract_page_semantics(page: Any, task_id: str | None = None,
     result["loading"] = await _detect_loading(page)
     result["pagination"] = await _extract_pagination(page)
 
+    # Viewport Info
+    viewport_info = {}
+    try:
+        viewport_info = await page.evaluate("""() => ({
+            scrollY: window.scrollY,
+            scrollX: window.scrollX,
+            innerHeight: window.innerHeight,
+            innerWidth: window.innerWidth,
+            scrollHeight: document.body.scrollHeight
+        })""")
+        result["viewport"] = viewport_info
+    except Exception:
+        pass
+
+    # Tabs info (multi-tab awareness)
+    try:
+        context = page.context
+        tabs = []
+        for i, p in enumerate(context.pages):
+            tabs.append({
+                "index": i,
+                "title": await p.title(),
+                "url": p.url,
+                "active": (p == page),
+            })
+        if tabs:
+            result["tabs"] = tabs
+    except Exception:
+        pass
+
+    # Track and count pending requests (with URL/method for LLM context)
+    try:
+        track_page_requests(page)
+        pending = getattr(page, "_pending_requests", set())
+        request_log = getattr(page, "_request_log", [])
+        result["pending_requests"] = len(pending)
+        if request_log:
+            import time as _t
+            now = _t.time()
+            enriched = []
+            for entry in request_log[-8:]:
+                dur_ms = int((now - entry.get("start", now)) * 1000)
+                url = entry.get("url", "")
+                if len(url) > 80:
+                    url = url[:77] + "..."
+                enriched.append(f"{entry.get('method', '?')} {url} ({dur_ms}ms)")
+            result["pending_requests_detail"] = enriched
+    except Exception:
+        pass
+
+    # Closed popups / dialogs (auto-dismissed events)
+    try:
+        closed_popups = getattr(page, "_closed_popups", [])
+        if closed_popups:
+            result["closed_popups"] = list(closed_popups[-10:])
+    except Exception:
+        pass
+
     # Layer 1: Interactive elements (collected last so we can truncate)
-    interactive_elements = await _collect_interactive_elements(page)
-    if len(interactive_elements) > 50:
-        interactive_elements = interactive_elements[:50]
+    all_interactive_elements = await _collect_interactive_elements(page)
+    
+    # Viewport filtering — uses box_x/box_y (top-left corner)
+    interactive_elements = []
+    if viewport_info:
+        sy = viewport_info.get("scrollY", 0)
+        sx = viewport_info.get("scrollX", 0)
+        ih = viewport_info.get("innerHeight", 1080)
+        iw = viewport_info.get("innerWidth", 1920)
+        
+        for el in all_interactive_elements:
+            coords = el.get("coords")
+            if not coords:
+                interactive_elements.append(el)
+                continue
+            
+            # Use top-left corner (box_x/box_y) for intersection, not center
+            top = coords.get("box_y", coords.get("y", 0))
+            left = coords.get("box_x", coords.get("x", 0))
+            h = coords.get("height", 0)
+            w = coords.get("width", 0)
+            
+            # Intersection check with 100px buffer
+            if (top + h > sy - 100) and (top < sy + ih + 100) and (left + w > sx - 100) and (left < sx + iw + 100):
+                interactive_elements.append(el)
+    else:
+        interactive_elements = all_interactive_elements
+
+    # Set viewport filtering hint flag
+    result["_off_viewport_filter_skipped"] = (len(all_interactive_elements) > len(interactive_elements))
+
+    # Fallback truncation if still too many elements (env-overridable, default 100)
+    import os as _os
+    max_elements = int(_os.getenv("L2_MAX_INTERACTIVE_ELEMENTS", "100"))
+    if len(interactive_elements) > max_elements:
+        interactive_elements = interactive_elements[:max_elements]
         result["truncated"] = True
+        result["_total_interactive_count"] = len(all_interactive_elements)
     result["interactive_elements"] = interactive_elements
 
     # Tables are also interactive / structural
@@ -177,7 +351,7 @@ async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
                     })
             return elements
         except Exception as e:
-            print(f"BrowserSession extraction failed: {e}")
+            logger.warning(f"BrowserSession extraction failed: {e}")
 
     # Priority 3: Playwright locator fallback
     elements = []
@@ -359,6 +533,30 @@ async def _get_element_semantics(el: Any, el_type: str, page: Any = None) -> dic
     }
 
 
+async def _get_bbox(el: Any) -> dict[str, Any]:
+    """Shared bounding box extractor for all element types.
+
+    Returns coords dict with:
+      x, y     = center point (for CDP click)
+      box_x, box_y = top-left corner (for viewport filtering)
+      width, height
+    """
+    try:
+        bbox = await el.bounding_box()
+        if bbox:
+            return {
+                "x": round(bbox["x"] + bbox["width"] / 2),
+                "y": round(bbox["y"] + bbox["height"] / 2),
+                "box_x": round(bbox["x"]),
+                "box_y": round(bbox["y"]),
+                "width": round(bbox["width"]),
+                "height": round(bbox["height"]),
+            }
+    except Exception:
+        pass
+    return {}
+
+
 async def _extract_input(page: Any, el: Any, counter: int) -> dict[str, Any] | None:
     """Extract info from an input element."""
     input_type = await el.get_attribute("type") or "text"
@@ -381,6 +579,7 @@ async def _extract_input(page: Any, el: Any, counter: int) -> dict[str, Any] | N
         value = "***"
 
     semantics = await _get_element_semantics(el, "input", page)
+    coords = await _get_bbox(el)
 
     return {
         "id": f"#{counter}",
@@ -391,6 +590,7 @@ async def _extract_input(page: Any, el: Any, counter: int) -> dict[str, Any] | N
         "required": required,
         "disabled": disabled,
         "value": value,
+        "coords": coords,
         **semantics,
     }
 
@@ -406,6 +606,7 @@ async def _extract_button(el: Any, counter: int) -> dict[str, Any] | None:
         pass
 
     semantics = await _get_element_semantics(el, "button")
+    coords = await _get_bbox(el)
 
     return {
         "id": f"#{counter}",
@@ -413,6 +614,7 @@ async def _extract_button(el: Any, counter: int) -> dict[str, Any] | None:
         "text": text.strip(),
         "button_type": button_type,
         "disabled": disabled,
+        "coords": coords,
         **semantics,
     }
 
@@ -423,12 +625,14 @@ async def _extract_link(el: Any, counter: int) -> dict[str, Any] | None:
     href = await el.get_attribute("href") or ""
 
     semantics = await _get_element_semantics(el, "link")
+    coords = await _get_bbox(el)
 
     return {
         "id": f"#{counter}",
         "type": "link",
         "text": text.strip(),
         "href": href,
+        "coords": coords,
         **semantics,
     }
 
@@ -439,14 +643,27 @@ async def _extract_select(page: Any, el: Any, counter: int) -> dict[str, Any] | 
     options = await el.evaluate("""
         el => Array.from(el.options).map(o => o.text.trim())
     """)
+    selected_value = ""
+    try:
+        selected_value = await el.evaluate("""
+            el => {
+                const opt = el.options[el.selectedIndex];
+                return opt ? opt.text.trim() : "";
+            }
+        """) or ""
+    except Exception:
+        pass
 
     semantics = await _get_element_semantics(el, "select", page)
+    coords = await _get_bbox(el)
 
     return {
         "id": f"#{counter}",
         "type": "select",
         "label": label,
         "options": options or [],
+        "value": selected_value,
+        "coords": coords,
         **semantics,
     }
 
@@ -468,12 +685,14 @@ async def _extract_checkbox(page: Any, el: Any, counter: int) -> dict[str, Any] 
             pass
 
     semantics = await _get_element_semantics(el, "checkbox", page)
+    coords = await _get_bbox(el)
 
     return {
         "id": f"#{counter}",
         "type": "checkbox",
         "label": label,
         "checked": checked,
+        "coords": coords,
         **semantics,
     }
 
@@ -495,12 +714,14 @@ async def _extract_radio(page: Any, el: Any, counter: int) -> dict[str, Any] | N
             pass
 
     semantics = await _get_element_semantics(el, "radio", page)
+    coords = await _get_bbox(el)
 
     return {
         "id": f"#{counter}",
         "type": "radio",
         "label": label,
         "checked": checked,
+        "coords": coords,
         **semantics,
     }
 

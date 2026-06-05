@@ -293,6 +293,14 @@ class TestState(MessagesState):
     action_history: list[dict[str, Any]] = Field(default_factory=list, description="最近 6 步动作一级分类记录")
     need_replan: bool = Field(default=False, description="Loop Detection 触发后标记, decide_node 据此注入 [SYSTEM INTERRUPT]")
 
+    # browser-use 对齐 (2026-06-05): agent_history 结构化历史
+    # 仿 browser-use <agent_history><step_N>{Evaluation, Memory, Next Goal, Action Results}</step_N>
+    # 每步由 decide_node 追加, 渲染时序列化为 XML 块
+    agent_history: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="结构化历史: [{step, evaluation, memory, next_goal, action, action_result, page_state_summary}, ...]"
+    )
+
     # V2.0 D 可观测性 (2026-06-02)
     _last_token_count: int  # D1: 上一次 LLM 调用 (decide/assert) 的 token 数
     _last_node_name: str  # D2: 上一次执行的节点名 (runtime 据此发 node_event WebSocket)

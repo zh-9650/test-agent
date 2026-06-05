@@ -108,15 +108,18 @@ async def test_numbered_ids(page):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_max_50_elements(page):
-    # Generate 60 inputs + 5 buttons = 65 interactive elements
-    inputs = "".join(f'<input type="text" placeholder="field {i}">' for i in range(60))
+async def test_max_50_elements(page, monkeypatch):
+    # Generate 110 inputs + 5 buttons = 115 interactive elements
+    # Default L2_MAX_INTERACTIVE_ELEMENTS=100, so truncated
+    monkeypatch.setenv("L2_MAX_INTERACTIVE_ELEMENTS", "100")
+    inputs = "".join(f'<input type="text" placeholder="field {i}">' for i in range(110))
     buttons = "".join(f'<button>Btn {i}</button>' for i in range(5))
     await page.set_content(f"<html><body>{inputs}{buttons}</body></html>")
 
     result = await extract_page_semantics(page)
     assert result["truncated"] is True
-    assert len(result["interactive_elements"]) == 50
+    assert len(result["interactive_elements"]) == 100
+    assert result["_total_interactive_count"] == 115
 
 
 # ---------------------------------------------------------------------------

@@ -198,43 +198,86 @@ def _fast_assert(state: dict[str, Any]) -> dict[str, Any] | None:
     # Marker tasks with B1.2 secondary confirmation
     for call in tool_calls:
         name = call.get("name", "")
-        if name == "mark_task_complete":
-            state_before = state.get("state_before", {})
-            state_after = state.get("state_after", {})
-            ar = state.get("_last_action_result")
-            url_before = ar.before_url if ar else ""
-            url_after = ar.after_url if ar else ""
-            page_really_changed = (url_before != url_after)
-            if not page_really_changed and (state_before or state_after):
-                cr = detect_changes(state_before, state_after)
-                page_really_changed = cr.url_changed or cr.new_elements or cr.gone_elements or cr.modal_appeared
+        if name in ("mark_task_complete", "mark_task_failed", "mark_task_skipped"):
             reasoning = call.get("args", {}).get("reasoning", "")
-            if page_really_changed:
-                return {"_last_change_report": ChangeReport(), "_last_assertion": AssertionResult(status="pass", reasoning=reasoning)}
-            else:
-                return {"_last_change_report": ChangeReport(), "_last_assertion": AssertionResult(status="inconclusive",
-                    reasoning=f"⚠️ 标记成功但页面无实质变化 (URL: {url_before} → {url_after})")}
-        if name == "mark_task_failed":
-            reasoning = call.get("args", {}).get("reasoning", "")
-            return {"_last_change_report": ChangeReport(), "_last_assertion": AssertionResult(status="fail", reasoning=reasoning)}
-        if name == "mark_task_skipped":
-            reasoning = call.get("args", {}).get("reasoning", "")
-            return {"_last_change_report": ChangeReport(), "_last_assertion": AssertionResult(status="pass", reasoning=reasoning)}
+            
+            if name == "mark_task_complete":
+                reasoning = reasoning or "LLM 主动标记任务成功"
+                state_before = state.get("state_before", {})
+                state_after = state.get("state_after", {})
+                ar = state.get("_last_action_result")
+                url_before = ar.before_url if ar else ""
+                url_after = ar.after_url if ar else ""
+                page_really_changed = (url_before != url_after)
+                if not page_really_changed and (state_before or state_after):
+                    cr = detect_changes(state_before, state_after)
+                    page_really_changed = cr.url_changed or cr.new_elements or cr.gone_elements or cr.modal_appeared
+                if page_really_changed:
+                    return {
+                        "_last_change_report": ChangeReport(),
+                        "_last_assertion": AssertionResult(status="pass", reasoning=reasoning),
+                        "consecutive_failures": 0,
+                    }
+                else:
+                    downgrade = (
+                        f"⚠️ LLM 标记任务成功但页面无实质变化 (URL: {url_before} → {url_after}), "
+                        f"降级为 inconclusive 请人工确认。LLM 理由: {reasoning}"
+                    )
+                    return {
+                        "_last_change_report": ChangeReport(url_changed=False),
+                        "_last_assertion": AssertionResult(status="inconclusive", reasoning=downgrade),
+                        "consecutive_failures": 0,
+                    }
+            elif name == "mark_task_failed":
+                reasoning = reasoning or "LLM 主动标记任务失败"
+                return {
+                    "_last_change_report": ChangeReport(),
+                    "_last_assertion": AssertionResult(status="fail", reasoning=reasoning),
+                    "consecutive_failures": state.get("consecutive_failures", 0) + 1,
+                }
+            elif name == "mark_task_skipped":
+                reasoning = reasoning or "LLM 主动标记任务跳过"
+                return {
+                    "_last_change_report": ChangeReport(),
+                    "_last_assertion": AssertionResult(status="pass", reasoning=reasoning),
+                    "consecutive_failures": 0,
+                }
 
     # Action error → fail (Phase 2.0D: 也检查 status, 失败/超时/未找到)
-    if action_result and (action_result.error or action_result.status in ("failure", "timeout", "not_found")):
-        reason = action_result.error or f"action status={action_result.status}"
-        # Phase 2.0D: 注入 long_term_memory (失败教训) 到 reasoning
-        if action_result.long_term_memory:
-            reason = f"{reason}\n💡 后续建议: {action_result.long_term_memory}"
-        return {"_last_change_report": ChangeReport(), "_last_assertion": AssertionResult(status="fail", reasoning=reason)}
+    if action_result:
+        if action_result.error or action_result.status in ("failure", "timeout", "not_found"):
+            reason = ""
+            if action_result.status in ("failure", "timeout", "not_found"):
+                reason = f"动作状态={action_result.status} (status={action_result.status})"
+                if action_result.error:
+                    reason = f"{reason} ({action_result.error})"
+            else:
+                reason = f"动作执行报错: {action_result.error}"
+                
+            if action_result.long_term_memory:
+                reason = f"{reason} | 💡 后续建议: {action_result.long_term_memory}"
+            return {
+                "_last_change_report": ChangeReport(),
+                "_last_assertion": AssertionResult(status="fail", reasoning=reason),
+                "consecutive_failures": state.get("consecutive_failures", 0) + 1,
+            }
 
-    # Intermediate step with page change → inconclusive
-    is_final_step = current_test_case is not None and current_step_index >= len(current_test_case.steps) - 1
-    if not is_final_step:
-        if action_result and (action_result.page_changed or action_result.url_changed):
-            return {"_last_change_report": ChangeReport(url_changed=action_result.url_changed),
-                    "_last_assertion": AssertionResult(status="inconclusive", reasoning="中间步骤, 页面已变化")}
+        # Intermediate step with page change → inconclusive
+        is_final_step = current_test_case is not None and current_step_index >= len(current_test_case.steps) - 1
+        if not is_final_step:
+            if action_result.page_changed or action_result.url_changed:
+                return {
+                    "_last_change_report": ChangeReport(
+                        url_changed=action_result.url_changed,
+                        url_before=action_result.before_url,
+                        url_after=action_result.after_url
+                    ),
+                    "_last_assertion": AssertionResult(
+                        status="inconclusive",
+                        reasoning=f"页面已变化 (变: {'URL' if action_result.url_changed else 'DOM'}), 继续下一步"
+                    ),
+                    "consecutive_failures": 0,
+                }
 
     return None  # 需要走 LLM assert
 
@@ -386,15 +429,30 @@ async def observe_node(state: dict[str, Any]) -> dict[str, Any]:
 
             # B2.4: AAA / ABAB 检测
             if len(action_history) >= 3:
-                names3 = [a.get("name", "") for a in action_history[-3:]]
-                if names3[-1] == names3[-2] == names3[-3] and names3[-1] in write_actions:
+                recent3 = action_history[-3:]
+                names3 = [a.get("name", "") for a in recent3]
+                urls3 = set(a.get("url", "") for a in recent3 if a.get("url"))
+                fps3 = set(a.get("fingerprint", "") for a in recent3 if a.get("fingerprint"))
+                if (names3[-1] == names3[-2] == names3[-3] and 
+                    names3[-1] in write_actions and 
+                    len(urls3) <= 1 and 
+                    len(fps3) <= 1):
                     need_replan = True
-                    page_info["_loop_detected"] = f"AAA (连续 3 次相同写动作: {names3[-1]})"
+                    page_info["_loop_detected"] = f"AAA (连续 3 次在相同页面执行相同写动作: {names3[-1]})"
             if len(action_history) >= 4:
-                names4 = [a.get("name", "") for a in action_history[-4:]]
-                if names4[-1] == names4[-3] and names4[-2] == names4[-4] and names4[-1] != names4[-2] and names4[-1] in write_actions and names4[-2] in write_actions:
+                recent4 = action_history[-4:]
+                names4 = [a.get("name", "") for a in recent4]
+                urls4 = set(a.get("url", "") for a in recent4 if a.get("url"))
+                fps4 = set(a.get("fingerprint", "") for a in recent4 if a.get("fingerprint"))
+                if (names4[-1] == names4[-3] and 
+                    names4[-2] == names4[-4] and 
+                    names4[-1] != names4[-2] and 
+                    names4[-1] in write_actions and 
+                    names4[-2] in write_actions and 
+                    len(urls4) <= 1 and 
+                    len(fps4) <= 1):
                     need_replan = True
-                    page_info["_loop_detected"] = f"ABAB (4 步交替写动作: {names4[-1]}/{names4[-2]})"
+                    page_info["_loop_detected"] = f"ABAB (4 步在相同页面交替写动作: {names4[-1]}/{names4[-2]})"
 
         # B2.3 + 2.0D: Context 压缩 — 双阈值 (步数 + tokens) 触发 LLM 语义压缩
         # 向后兼容: L2_COMPACTION=0 时回退到物理截断
@@ -529,10 +587,29 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
         messages = list(state.get("messages", []))  # copy
 
         # B2.2: 复用/替换 SystemMessage 而非每步重建
-        if messages and isinstance(messages[0], SystemMessage):
-            messages[0] = SystemMessage(content=system_prompt)
+        # browser-use 对齐: Anthropic 提示缓存 (cache_control: ephemeral) 节省 30%+ cost
+        if os.getenv("L2_CACHE_SYSTEM", "1") != "0":
+            cache_marker = SystemMessage(
+                content="[cached-block-end]",
+                additional_kwargs={"cache_control": {"type": "ephemeral", "scope": "system"}},
+            )
+            system_message = SystemMessage(
+                content=system_prompt,
+                additional_kwargs={"cache_control": {"type": "ephemeral"}},
+            )
         else:
-            messages.insert(0, SystemMessage(content=system_prompt))
+            cache_marker = None
+            system_message = SystemMessage(content=system_prompt)
+        if messages and isinstance(messages[0], SystemMessage):
+            messages[0] = system_message
+        else:
+            messages.insert(0, system_message)
+        if cache_marker is not None:
+            insert_at = 1 if len(messages) > 1 else 0
+            if insert_at >= len(messages) or not (
+                isinstance(messages[insert_at], SystemMessage) and "[cached-block-end]" in str(messages[insert_at].content)
+            ):
+                messages.insert(insert_at, cache_marker)
 
         # Add current step info + page semantics
         page_info = state.get("page_info", {})
@@ -551,6 +628,22 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
             f"════════════════════════════════════════════════════\n"
         )
 
+        # 2026-06-05 修复: 提取完整性提示 — 强制 LLM 不要漏字段
+        # 解析 expected 里多个并列字段 (含 "和"/"and"/"、" 等)
+        completeness_hint = ""
+        try:
+            import re as _re
+            expected = current_test_case.expected or ""
+            and_count = len(_re.findall(r"和|及|and|,|、", expected))
+            if and_count >= 1:
+                completeness_hint = (
+                    f"\n⚠️ 提取完整性提醒: 预期结果包含 {and_count + 1} 个并列字段, "
+                    f"调用 extract_text 时**必须**对每个字段单独提取并写入 extracted_content. "
+                    f"漏一个 = 任务失败. 请确认 extracted_content 包含所有字段再 mark_task_complete.\n"
+                )
+        except Exception:
+            pass
+
         # Phase 2.0A Sprint 6: Loop Detection — [SYSTEM INTERRUPT] Micro-Replan
         replan_interrupt = ""
         if state.get("need_replan"):
@@ -564,7 +657,39 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
                 f"=========================\n"
             )
 
-        text_content = f"{goal_reminder}{replan_interrupt}{step_prompt}\n\n当前页面状态:\n{page_summary}"
+        # browser-use 对齐: agent_history XML 块 (仿 <agent_history><step_N>)
+        # 每步 {Evaluation, Memory, Next Goal, Action, Action Results}
+        # 只渲染最近 5 步, 避免 context 膨胀
+        history_xml = ""
+        agent_history = state.get("agent_history", [])
+        if agent_history:
+            history_xml = "\n<agent_history>\n"
+            for h in agent_history[-5:]:
+                step_n = h.get("step", 0)
+                action_name = h.get("action_name", "?")
+                action_args = h.get("action_args", {})
+                result_summary = h.get("action_result_summary", "(无)")
+                eval_text = h.get("evaluation", "")
+                memory_text = h.get("memory", "")
+                next_goal_text = h.get("next_goal", "")
+                history_xml += f"  <step_{step_n}>\n"
+                if eval_text:
+                    history_xml += f"    <evaluation>{eval_text}</evaluation>\n"
+                if memory_text:
+                    history_xml += f"    <memory>{memory_text}</memory>\n"
+                if next_goal_text:
+                    history_xml += f"    <next_goal>{next_goal_text}</next_goal>\n"
+                args_str = ", ".join(f"{k}={repr(v)[:60]}" for k, v in action_args.items())[:200]
+                history_xml += f"    <action>{action_name}({args_str})</action>\n"
+                history_xml += f"    <action_results>{result_summary}</action_results>\n"
+                history_xml += f"  </step_{step_n}>\n"
+            history_xml += "</agent_history>\n"
+
+        text_content = (
+            f"{goal_reminder}{completeness_hint}{replan_interrupt}{step_prompt}\n\n"
+            f"{history_xml}\n"
+            f"当前页面状态:\n{page_summary}"
+        )
 
         # V2.0 A2: 截图压缩 (env L2_SCREENSHOT_COMPRESSED=1 默认开, 节省 80% tokens)
         # 兼容旧行为: 传 "0" 关闭
@@ -607,7 +732,11 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
                             print(f"  [Decide] Tool calls: {safe_calls}", flush=True)
                     except Exception:
                         pass
-                return {"messages": [response], "_last_token_count": decide_token_count}
+                return {
+                    "messages": [response],
+                    "_last_token_count": decide_token_count,
+                    "_last_ai_text": str(response.content or ""),
+                }
             except Exception as e:
                 logging.getLogger(__name__).error(
                     f"[decide attempt={attempt}] {type(e).__name__}: {e}", exc_info=True
@@ -754,6 +883,30 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
     # Phase 2.0A Sprint 2: 将结构化 ActionResult 传给 assert_node
     action_result_text = "\n".join(results)
 
+    # browser-use 对齐: 追加 agent_history (解析 LLM 4 字段)
+    from agents.ui.prompts import parse_browser_use_decision
+    new_history = list(state.get("agent_history", []))
+    parsed_eval = {"evaluation": "", "memory": "", "next_goal": ""}
+    if tool_calls:
+        last_call = tool_calls[0]
+        last_ai_text = state.get("_last_ai_text", "")
+        if last_ai_text:
+            parsed_eval = parse_browser_use_decision(last_ai_text)
+        step_n = len(new_history) + 1
+        first_result = results[0] if results else "(no result)"
+        result_summary = first_result[:300] if first_result else "(无)"
+        new_history.append({
+            "step": step_n,
+            "evaluation": parsed_eval.get("evaluation", ""),
+            "memory": parsed_eval.get("memory", ""),
+            "next_goal": parsed_eval.get("next_goal", ""),
+            "action_name": last_call.get("name", "?"),
+            "action_args": last_call.get("args", {}),
+            "action_result_summary": result_summary,
+        })
+        if len(new_history) > 10:
+            new_history = new_history[-10:]
+
     return {
         "messages": tool_messages,
         "state_after": state_after,
@@ -765,6 +918,7 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
         "_last_tool_calls": tool_calls, # Pass the batch for assertion
         "consecutive_failures": consecutive_failures,
         "recent_failures": recent_failures, # Phase 2.0A Sprint 5: 失败记忆
+        "agent_history": new_history,  # browser-use 对齐
     }
 
 
@@ -801,98 +955,7 @@ async def assert_node(state: dict[str, Any]) -> dict[str, Any]:
         else:
             current_step_text = "验证最终预期结果"
 
-        # =================================================================
-        # Layer 0: Rule-based quick judgment
-        # =================================================================
 
-        # Layer 0.5: Explicit task markers with B1.2 secondary confirmation
-        for call in tool_calls:
-            name = call.get("name", "")
-            if name == "mark_task_complete":
-                reasoning = call.get("args", {}).get("reasoning", "LLM 主动标记任务成功")
-                # B1.2: 二次确认 — 检查页面是否有实质变化
-                state_before = state.get("state_before", {})
-                state_after = state.get("state_after", {})
-                action_result = state.get("_last_action_result")
-                url_before = action_result.before_url if action_result else ""
-                url_after = action_result.after_url if action_result else ""
-                page_really_changed = (url_before != url_after)
-                if not page_really_changed and (state_before or state_after):
-                    change_report = detect_changes(state_before, state_after)
-                    page_really_changed = (
-                        change_report.url_changed
-                        or change_report.new_elements
-                        or change_report.gone_elements
-                        or change_report.modal_appeared
-                    )
-                if page_really_changed:
-                    return {
-                        "_last_change_report": ChangeReport(),
-                        "_last_assertion": AssertionResult(status="pass", reasoning=reasoning),
-                        "consecutive_failures": 0,
-                    }
-                else:
-                    downgrade = (
-                        f"⚠️ LLM 标记任务成功但页面无实质变化 (URL: {url_before} → {url_after}), "
-                        f"降级为 inconclusive 请人工确认。LLM 理由: {reasoning}"
-                    )
-                    return {
-                        "_last_change_report": ChangeReport(url_changed=False),
-                        "_last_assertion": AssertionResult(status="inconclusive", reasoning=downgrade),
-                        "consecutive_failures": 0,
-                    }
-            elif name == "mark_task_failed":
-                reasoning = call.get("args", {}).get("reasoning", "LLM 主动标记任务失败")
-                return {
-                    "_last_change_report": ChangeReport(),
-                    "_last_assertion": AssertionResult(status="fail", reasoning=reasoning),
-                    "consecutive_failures": state.get("consecutive_failures", 0) + 1,
-                }
-            elif name == "mark_task_skipped":
-                reasoning = call.get("args", {}).get("reasoning", "LLM 主动标记任务跳过")
-                return {
-                    "_last_change_report": ChangeReport(),
-                    "_last_assertion": AssertionResult(status="pass", reasoning=reasoning),
-                    "consecutive_failures": 0,
-                }
-
-        # Layer 0.6: ActionResult-based quick judgment
-        if action_result:
-            if action_result.error:
-                # 工具执行报错 → 大概率失败
-                reason = f"动作执行报错: {action_result.error}"
-                if action_result.long_term_memory:
-                    reason = f"{reason} | 💡 后续建议: {action_result.long_term_memory}"
-                return {
-                    "_last_change_report": ChangeReport(),
-                    "_last_assertion": AssertionResult(status="fail", reasoning=reason),
-                    "consecutive_failures": state.get("consecutive_failures", 0) + 1,
-                }
-
-            # Phase 2.0D: status-based fast fail (无 error 也有 status 失败)
-            if action_result.status in ("failure", "timeout", "not_found"):
-                reason = f"动作状态={action_result.status}"
-                if action_result.error:
-                    reason = f"{reason} ({action_result.error})"
-                if action_result.long_term_memory:
-                    reason = f"{reason} | 💡 后续建议: {action_result.long_term_memory}"
-                return {
-                    "_last_change_report": ChangeReport(),
-                    "_last_assertion": AssertionResult(status="fail", reasoning=reason),
-                    "consecutive_failures": state.get("consecutive_failures", 0) + 1,
-                }
-
-            if action_result.page_changed or action_result.url_changed:
-                # 页面有明确变化 → 大概率成功（中间步骤）
-                if current_step_index < len(current_test_case.steps) - 1 if current_test_case else False:
-                    return {
-                        "_last_change_report": ChangeReport(url_changed=action_result.url_changed,
-                                                             url_before=action_result.before_url,
-                                                             url_after=action_result.after_url),
-                        "_last_assertion": AssertionResult(status="inconclusive",
-                                                           reasoning=f"页面已变化 (变: {'URL' if action_result.url_changed else 'DOM'}), 继续下一步"),
-                        "consecutive_failures": 0,
-                    }
 
         # =================================================================
         # Layer 1: Change detection (facts) — fallthrough for final step or complex cases

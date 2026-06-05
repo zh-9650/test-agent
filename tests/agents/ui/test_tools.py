@@ -217,3 +217,100 @@ def test_ui_tools_list():
     # V2.0 A (2026-06-02): 数量从 5 增到 15 (press_key/hover/go_back/extract_text/select_dropdown/evaluate_js
     # + 3 个 mark_task_*). 只断言 "包含 5 个核心" + ">=10" 表示工具列表非空
     assert len(ui_tools) >= 10, f"expected >=10 tools, got {len(ui_tools)}"
+    # browser-use 对齐 (2026-06-05): 7 个新工具已注册
+    for new_tool in ("find", "get_dropdown_options", "get_specific_elements", "switch_tab", "close_tab", "refresh", "get_page_links"):
+        assert new_tool in tool_names, f"missing new tool: {new_tool}"
+
+
+# ---------------------------------------------------------------------------
+# browser-use 对齐 (2026-06-05): 新工具 smoke test
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_refresh(page):
+    from agents.ui.tools import set_current_page, refresh
+    set_current_page(page)
+    await page.set_content("<html><body><h1>Test</h1></body></html>")
+    result = await refresh.ainvoke({})
+    assert result["success"] is True
+    assert "刷新" in result.get("extracted_content", "")
+
+
+@pytest.mark.asyncio
+async def test_get_page_links(page):
+    from agents.ui.tools import set_current_page, get_page_links
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <a href="https://example.com/a">Link A</a>
+        <a href="https://example.com/b">Link B</a>
+        <a href="https://example.com/c" style="display:none">Hidden</a>
+    </body></html>
+    """)
+    result = await get_page_links.ainvoke({})
+    assert result["success"] is True
+    assert "Link A" in result.get("extracted_content", "")
+    assert "example.com/a" in result.get("extracted_content", "")
+
+
+@pytest.mark.asyncio
+async def test_find_returns_matches(page):
+    from agents.ui.tools import set_current_page, find
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <button>Login</button>
+        <button>Sign Up</button>
+        <input placeholder="search">
+    </body></html>
+    """)
+    result = await find.ainvoke({"query": "Login"})
+    assert result["success"] is True
+    content = result.get("extracted_content", "")
+    assert "Login" in content
+
+
+@pytest.mark.asyncio
+async def test_get_dropdown_options(page):
+    from agents.ui.tools import set_current_page, get_dropdown_options
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <select id="sel">
+            <option value="a">Apple</option>
+            <option value="b" selected>Banana</option>
+            <option value="c">Cherry</option>
+        </select>
+    </body></html>
+    """)
+    # 注册 element_map: select 是 #1
+    from agents.ui.tools import set_current_page, set_current_task, update_element_map
+    set_current_task("test-dropdown")
+    set_current_page(page)
+    update_element_map([{"id": "#1", "type": "select", "xpath": "//select[1]"}])
+    result = await get_dropdown_options.ainvoke({"target": "#1"})
+    assert result["success"] is True, f"got error: {result.get('error')}"
+    content = result.get("extracted_content", "")
+    assert "Apple" in content
+    assert "Banana" in content
+    assert "Cherry" in content
+    assert "当前选中" in content
+
+
+@pytest.mark.asyncio
+async def test_refresh_and_get_specific_elements(page):
+    from agents.ui.tools import set_current_page, get_specific_elements
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <button>Btn1</button>
+        <button>Btn2</button>
+        <a href="/x">Link</a>
+    </body></html>
+    """)
+    result = await get_specific_elements.ainvoke({"roles": "button,link"})
+    assert result["success"] is True
+    content = result.get("extracted_content", "")
+    assert "Btn1" in content
+    assert "Link" in content
