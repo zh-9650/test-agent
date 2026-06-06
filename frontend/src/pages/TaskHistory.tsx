@@ -7,7 +7,7 @@ export default function TaskHistory() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [total, setTotal] = useState(0);
   const [skip, setSkip] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const limit = 20;
 
@@ -25,7 +25,20 @@ export default function TaskHistory() {
   };
 
   useEffect(() => {
-    fetchTasks(0);
+    let active = true;
+    listTasks(0, limit)
+      .then((res) => {
+        if (!active) return;
+        setTasks(res.tasks);
+        setTotal(res.total);
+      })
+      .catch((error) => console.error('Failed to fetch tasks:', error))
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleDelete = async (taskId: number, e: React.MouseEvent) => {

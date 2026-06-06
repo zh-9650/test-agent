@@ -6,8 +6,9 @@ L1 Pipeline Position:
   本节点职责: 把零散文档提纯为带溯源指针的结构化 KnowledgeBase
 """
 from pydantic import BaseModel
-from core.llm_client import safe_structured_invoke
+from core.llm_client import safe_structured_invoke, get_last_raw
 from core.interfaces import KnowledgeBase
+from core.diag_logger import get_diag_auto
 
 
 GOOD_EXAMPLE = """
@@ -133,5 +134,8 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
     result = await safe_structured_invoke(prompt, KnowledgeBase, model_type="default")
     if result is None:
         print("[KnowledgeExtractor] LLM returned no usable knowledge, using empty KnowledgeBase")
+        get_diag_auto().dump("01_l1_knowledge", node="N1_knowledge_extractor", output=empty, status="empty_fallback", raw_content=get_last_raw())
         return empty
+    get_diag_auto().dump("01_l1_knowledge", node="N1_knowledge_extractor", output=result, status="ok",
+                          business_rules_count=len(result.business_rules), roles_count=len(result.roles), raw_content=get_last_raw())
     return result

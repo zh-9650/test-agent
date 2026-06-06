@@ -26,7 +26,7 @@ export default function TaskCreate() {
   
   const [testingLayer1, setTestingLayer1] = useState(false);
   const [layer1Progress, setLayer1Progress] = useState('');
-  const [layer1Result, setLayer1Result] = useState<any>(null);
+  const [layer1Result, setLayer1Result] = useState<Record<string, unknown> | null>(null);
 
   const addAccount = () => {
     setAccounts([...accounts, { role: '', username: '', password: '' }]);
@@ -249,8 +249,9 @@ export default function TaskCreate() {
                     setLayer1Progress(msg);
                   });
                   setLayer1Result(res);
-                } catch (err: any) {
-                  alert('测试失败: ' + err.message);
+                } catch (err: unknown) {
+                  const message = err instanceof Error ? err.message : String(err);
+                  alert('测试失败: ' + message);
                 } finally {
                   setTestingLayer1(false);
                   setLayer1Progress('');

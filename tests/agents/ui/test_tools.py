@@ -314,3 +314,161 @@ async def test_refresh_and_get_specific_elements(page):
     content = result.get("extracted_content", "")
     assert "Btn1" in content
     assert "Link" in content
+
+
+# ---------------------------------------------------------------------------
+# mark_task_complete strict completion protocol
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_mark_task_complete_success_single_target(page):
+    """Single-target expected, normal-length reasoning, no extracted_fields → accept."""
+    from agents.ui.tools import set_current_page, set_current_expected, mark_task_complete
+    set_current_page(page)
+    set_current_expected("登录成功并跳转到 dashboard 页面")
+    await page.set_content("<html><head><title>Dashboard</title></head><body><h1>Welcome</h1></body></html>")
+    result = await mark_task_complete.ainvoke({
+        "reasoning": "已成功跳转到 Dashboard 页面, h1 显示 Welcome, 登录流程完整执行",
+    })
+    assert result["success"] is True
+    assert result["status"] == "success"
+    assert "Dashboard" in result.get("extracted_content", "")
+
+
+@pytest.mark.asyncio
+async def test_mark_task_complete_rejects_short_reasoning(page):
+    """reasoning < 20 chars → rejected."""
+    from agents.ui.tools import set_current_page, set_current_expected, mark_task_complete
+    set_current_page(page)
+    set_current_expected("登录成功")
+    await page.set_content("<html><body>ok</body></html>")
+    result = await mark_task_complete.ainvoke({
+        "reasoning": "完成",  # too short
+    })
+    assert result["success"] is False
+    assert result["status"] == "completion_rejected"
+    assert "reasoning 过短" in result.get("extracted_content", "")
+
+
+@pytest.mark.asyncio
+async def test_mark_task_complete_rejects_multi_target_missing_fields(page):
+    """expected contains '和' → extracted_fields required and must have ≥2 keys."""
+    from agents.ui.tools import set_current_page, set_current_expected, mark_task_complete
+    set_current_page(page)
+    set_current_expected("报告头条新闻的 title 和 score 两个字段")
+    await page.set_content("<html><body><h1>HN</h1></body></html>")
+
+    # Case A: no extracted_fields at all
+    result = await mark_task_complete.ainvoke({
+        "reasoning": "已经看到了页面上的两个字段, 任务可以标记完成。",
+    })
+    assert result["success"] is False
+    assert result["status"] == "completion_rejected"
+    assert "多目标" in result.get("extracted_content", "")
+
+    # Case B: extracted_fields has only 1 key
+    result2 = await mark_task_complete.ainvoke({
+        "reasoning": "已经看到了页面上的两个字段, 任务可以标记完成。",
+        "extracted_fields": {"title": "Show HN: foo"},
+    })
+    assert result2["success"] is False
+    assert result2["status"] == "completion_rejected"
+
+
+@pytest.mark.asyncio
+async def test_mark_task_complete_accepts_multi_target_with_fields(page):
+    """expected contains '和' + extracted_fields has ≥2 keys → accept."""
+    from agents.ui.tools import set_current_page, set_current_expected, mark_task_complete
+    set_current_page(page)
+    set_current_expected("报告头条新闻的 title 和 score 两个字段")
+    await page.set_content("<html><head><title>HN</title></head><body><h1>News</h1></body></html>")
+    result = await mark_task_complete.ainvoke({
+        "reasoning": "已抓取 title='Show HN: foo' 和 score='1234', 两字段都已写入 extracted_fields",
+        "extracted_fields": {"title": "Show HN: foo", "score": "1234"},
+        "evidence_url": page.url,
+    })
+    assert result["success"] is True
+    assert result["status"] == "success"
+    content = result.get("extracted_content", "")
+    assert "extracted_fields" in content
+    assert "title" in content
+    assert "score" in content
+
+
+@pytest.mark.asyncio
+async def test_mark_task_complete_evidence_url_mismatch_warns_not_rejects(page):
+    """evidence_url mismatch → soft warn, still accept."""
+    from agents.ui.tools import set_current_page, set_current_expected, mark_task_complete
+    set_current_page(page)
+    set_current_expected("访问到目标页面")
+    await page.set_content("<html><body>at real page</body></html>")
+    result = await mark_task_complete.ainvoke({
+        "reasoning": "已完成访问, 看到了目标页面的内容标题, 任务达成",
+        "evidence_url": "https://wrong-url.example.com/",
+    })
+    assert result["success"] is True
+    assert result["status"] == "success"
+    assert "wrong-url" in result.get("extracted_content", "")
+    assert "evidence_url" in result.get("extracted_content", "")
+    assert "不一致" in result.get("extracted_content", "")
+
+
+# ---------------------------------------------------------------------------
+# New Alignment Tests (2026-06-05)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_element_re_anchoring_on_mismatch(page):
+    """Verify that _resolve_element successfully performs semantic re-anchoring on mismatch."""
+    from agents.ui.tools import set_current_page, update_element_map, click
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <button id="new-btn">提交表单</button>
+    </body></html>
+    """)
+    update_element_map([
+        {"id": "#1", "type": "button", "text": "提交", "xpath": "//button[@id='btn-old']", "coords": {"x": 100, "y": 100, "width": 50, "height": 20}},
+    ])
+
+    result = await click.ainvoke({"target": "#1"})
+    assert result["success"] is True
+    assert "提交表单" in result["extracted_content"]
+
+
+@pytest.mark.asyncio
+async def test_aria_label_and_title_fallback_in_page_semantic(page):
+    """Verify buttons/links extract aria-label or title if text is empty."""
+    from core.page_semantic import extract_page_semantics
+    from agents.ui.tools import set_current_page
+    set_current_page(page)
+    await page.set_content("""
+    <html><body>
+        <button aria-label="Icon Button"></button>
+        <a href="/about" title="Tooltip Link"></a>
+    </body></html>
+    """)
+    result = await extract_page_semantics(page)
+    elements = result["interactive_elements"]
+    assert len(elements) == 2
+    assert elements[0]["text"] == "Icon Button"
+    assert elements[1]["text"] == "Tooltip Link"
+
+
+@pytest.mark.asyncio
+async def test_page_bottom_viewport_detection(page):
+    """Verify viewport detection determines when the page is scrolled to bottom."""
+    from core.page_semantic import extract_page_semantics
+    from agents.ui.tools import set_current_page
+    set_current_page(page)
+    await page.set_content("""
+    <html><body style="height: 1000px; margin: 0; padding: 0;">
+        <div style="height: 800px;">Spacing</div>
+        <div id="bottom">Bottom</div>
+    </body></html>
+    """)
+    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    result = await extract_page_semantics(page)
+    assert result["viewport"]["is_bottom"] is True

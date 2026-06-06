@@ -129,6 +129,24 @@ def test_create_all_creates_tables():
     asyncio.get_event_loop().run_until_complete(_test())
 
 
+def test_task_step_phase1_columns_exist():
+    """Startup schema compatibility keeps additive TaskStep columns available."""
+    from database.connection import create_async_engine_instance
+
+    async def _test():
+        engine = create_async_engine_instance(os.environ["DATABASE_URL"])
+        async with engine.connect() as conn:
+            result = await conn.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'task_step'"
+            ))
+            columns = {row[0] for row in result.fetchall()}
+        await engine.dispose()
+        assert {"test_case_status", "retry_count", "failure_context"} <= columns
+
+    asyncio.get_event_loop().run_until_complete(_test())
+
+
 def test_crud_create_task():
     """Test creating a task and reading it back."""
     from database.connection import async_session

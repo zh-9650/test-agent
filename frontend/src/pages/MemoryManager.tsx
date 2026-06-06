@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface MemoryItem {
   id: number;
@@ -12,7 +12,7 @@ interface MemoryItem {
 
 export default function MemoryManager() {
   const [memories, setMemories] = useState<MemoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<MemoryItem>>({});
@@ -33,7 +33,19 @@ export default function MemoryManager() {
   };
 
   useEffect(() => {
-    fetchMemories();
+    let active = true;
+    fetch('/api/memory')
+      .then((res) => res.json())
+      .then((data) => {
+        if (active) setMemories(data.memories || []);
+      })
+      .catch((error) => console.error(error))
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleDelete = async (id: number) => {

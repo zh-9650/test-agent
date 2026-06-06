@@ -88,6 +88,9 @@ class TaskStep(Base):
     screenshot_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
     change_report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     assertion_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    test_case_status: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="Final status: passed/failed/skipped/incomplete/human_review_required")
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="0=first attempt success, 1-2=retry count")
+    failure_context: Mapped[list | None] = mapped_column(JSONB, nullable=True, comment="Per-attempt failure context for retry policy")
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     task: Mapped["Task"] = relationship("Task", back_populates="steps")

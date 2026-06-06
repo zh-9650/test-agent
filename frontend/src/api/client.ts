@@ -35,6 +35,34 @@ export function getReportUrl(taskId: number): string {
   return `${API_BASE}/tasks/${taskId}/report`;
 }
 
+// Diag log viewer — 9 stage JSON files per task
+export interface DiagStageInfo {
+  stage: string;
+  size: number;
+  started_at?: string;
+  node?: string;
+  status?: string;
+}
+
+export interface DiagListResponse {
+  task_id: number;
+  exists: boolean;
+  stages: DiagStageInfo[];
+  index: unknown;
+}
+
+export async function getDiagList(taskId: number): Promise<DiagListResponse> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/diag`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<DiagListResponse>;
+}
+
+export async function getDiagFile(taskId: number, stage: string): Promise<unknown> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/diag/${stage}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function stopTask(taskId: number): Promise<void> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/stop`, { method: 'POST' });
   if (!res.ok) throw new Error(await res.text());
@@ -50,7 +78,7 @@ export async function testLayer1(
   apiDoc: string, 
   changelog: string,
   onProgress?: (msg: string) => void
-): Promise<any> {
+): Promise<Record<string, unknown> | null> {
   const res = await fetch(`${API_BASE}/test/layer1`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -84,7 +112,7 @@ export async function testLayer1(
         } else if (data.progress === 'done') {
           finalResult = data;
         }
-      } catch (e) {
+      } catch {
         // ignore parse error
       }
     }

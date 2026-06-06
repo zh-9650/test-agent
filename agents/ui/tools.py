@@ -140,6 +140,25 @@ def get_current_step_text() -> str:
     return ctx.get("current_step_text", "")
 
 
+def set_current_expected(expected_text: str, task_id: str | None = None) -> None:
+    """Register the current test case's expected result so mark_task_complete
+    can run its strict completion-evidence check against it."""
+    tid = task_id or _current_task_id.get()
+    if tid is None:
+        return
+    ctx = _task_contexts.setdefault(tid, {"page": None, "element_map": {}})
+    ctx["current_expected"] = expected_text
+
+
+def get_current_expected() -> str:
+    """Get the current test case's expected result text. Empty string when unset."""
+    tid = _current_task_id.get()
+    if tid is None:
+        return ""
+    ctx = _task_contexts.get(tid, {})
+    return ctx.get("current_expected", "")
+
+
 def update_element_map(elements: list[dict]) -> None:
     tid = _current_task_id.get()
     if tid is None:
@@ -182,22 +201,39 @@ async def _get_dom_fingerprint(page: Any) -> str:
 
 
 async def _wait_for_stable(page: Any, timeout: int = 5000, poll_interval: int = 250) -> None:
-    """等待 DOM 稳定：networkidle 兜底 + DOM 指纹轮询 + 物理缓冲。
+    """等待 DOM 稳定：物理缓冲 + 异步请求排空 + 连续 DOM 指纹双重比对稳定。
 
     不新增 LangGraph 节点，直接在工具函数内部调用。
-    企业系统有 WebSocket/SSE 时 networkidle 永不触发，靠 DOM 指纹轮询稳定。
     """
+    # 1. 初始 500ms 物理缓冲
+    await asyncio.sleep(0.5)
+
+    # 2. 等待 page._pending_requests 队列清空 (最多等待 2.5s)
     try:
-        await page.wait_for_load_state("networkidle", timeout=2000)
+        pending_start = asyncio.get_event_loop().time()
+        while getattr(page, "_pending_requests", set()) and (asyncio.get_event_loop().time() - pending_start < 2.5):
+            await asyncio.sleep(0.1)
     except Exception:
         pass
-    for _ in range(timeout // poll_interval):
-        before = await _get_dom_fingerprint(page)
-        await asyncio.sleep(poll_interval / 1000)
-        after = await _get_dom_fingerprint(page)
-        if before == after:
-            await asyncio.sleep(0.5)
-            return
+
+    # 3. 连续双重比对 DOM 指纹 (必须 3 次 check 连续一致，即 2 次 consecutive match)
+    try:
+        consecutive_matches = 0
+        last_fp = await _get_dom_fingerprint(page)
+
+        start_time = asyncio.get_event_loop().time()
+        while (asyncio.get_event_loop().time() - start_time) * 1000 < timeout:
+            await asyncio.sleep(poll_interval / 1000)
+            curr_fp = await _get_dom_fingerprint(page)
+            if curr_fp == last_fp:
+                consecutive_matches += 1
+                if consecutive_matches >= 2:
+                    break
+            else:
+                consecutive_matches = 0
+            last_fp = curr_fp
+    except Exception:
+        pass
 
 
 async def _make_action_result(
@@ -252,6 +288,55 @@ async def _make_action_result(
         else:
             status = "failure"
 
+    # Auto-generate stable new page state summary into extracted_content of success results
+    if success:
+        title = ""
+        try:
+            title = await page.title()
+        except Exception:
+            pass
+
+        input_values_summary = ""
+        try:
+            inputs_data = await page.evaluate("""() => {
+                const results = [];
+                const inputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+                for (const el of inputs) {
+                    const rect = el.getBoundingClientRect();
+                    const isVisible = rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).display !== 'none';
+                    if (!isVisible) continue;
+
+                    let val = el.value || '';
+                    const isPassword = el.type === 'password' || el.getAttribute('type') === 'password';
+                    if (isPassword && val) {
+                        val = val.substring(0, 2) + '****';
+                    }
+                    if (val.length > 50) {
+                        val = val.substring(0, 47) + '...';
+                    }
+                    const name = el.name || el.placeholder || el.id || el.tagName.toLowerCase();
+                    results.push(`${name}: "${val}"`);
+                }
+                return results.slice(0, 10).join(', ');
+            }""")
+            if inputs_data:
+                input_values_summary = f", 页面输入框状态: {{{inputs_data}}}"
+        except Exception:
+            pass
+
+        changes_desc = []
+        if before_url != after_url:
+            changes_desc.append(f"URL 已改变 ({before_url} -> {after_url})")
+        if before_fingerprint != after_fingerprint:
+            changes_desc.append("页面内容已更新")
+        changes_str = f", 页面变化: [{', '.join(changes_desc)}]" if changes_desc else ", 页面未发生变化"
+
+        summary = f"【当前页面状态】标题: '{title}', 地址: {after_url}{input_values_summary}{changes_str}"
+        if extracted_content:
+            extracted_content = f"{extracted_content} | {summary}"
+        else:
+            extracted_content = summary
+
     # 缺省 long_term_memory (Phase 2.0D)
     if long_term_memory is None and not success:
         long_term_memory = (
@@ -304,7 +389,7 @@ def _normalize_target(target: Any) -> str:
 
 async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
     """Phase 2.0C: Resolve element via CDP backendNodeId.
-    
+
     1. Normalize target.
     2. Lookup backendNodeId in BackendNodeMap.
     3. Resolve backendNodeId using CDP resolveNode.
@@ -429,14 +514,95 @@ async def _resolve_via_cdp(page: Any, target: str, task_id: str) -> Any:
     return None
 
 
-async def _resolve_element(target: str, page: Any) -> Any:
+async def _get_live_element_metadata(locator: Any) -> dict[str, str]:
+    """Helper to extract accessibility role and text/label of a resolved locator."""
+    role = ""
+    text = ""
+    try:
+        if await locator.count() > 0:
+            role = await locator.get_attribute("role") or ""
+            if not role:
+                tag = await locator.evaluate("el => el.tagName.toLowerCase()")
+                role_map = {
+                    "button": "button",
+                    "a": "link",
+                    "input": "textbox",
+                    "select": "combobox",
+                }
+                role = role_map.get(tag, tag)
+
+            text = await locator.text_content() or ""
+            text = text.strip()
+            if not text:
+                aria_label = await locator.get_attribute("aria-label")
+                if aria_label:
+                    text = aria_label.strip()
+                else:
+                    title = await locator.get_attribute("title")
+                    if title:
+                        text = title.strip()
+                    else:
+                        placeholder = await locator.get_attribute("placeholder")
+                        if placeholder:
+                            text = placeholder.strip()
+    except Exception:
+        pass
+    return {"role": role.lower(), "text": text.lower()}
+
+
+def _score_element_match(orig_info: dict[str, Any], live_el: dict[str, Any]) -> float:
+    """Helper to compute match score between original observed element and live element."""
+    score = 0.0
+
+    # 1. Role match
+    orig_role = (orig_info.get("role") or orig_info.get("type") or "").lower()
+    live_role = (live_el.get("role") or live_el.get("type") or "").lower()
+    if orig_role and live_role:
+        if orig_role == live_role:
+            score += 40.0
+        elif orig_role in ("button", "link") and live_role in ("button", "link"):
+            score += 20.0
+
+    # 2. Text / Label match
+    orig_raw = orig_info.get("text") or orig_info.get("label") or orig_info.get("placeholder") or ""
+    orig_text = str(orig_raw).strip().lower()
+
+    live_raw = live_el.get("text") or live_el.get("label") or live_el.get("placeholder") or ""
+    live_text = str(live_raw).strip().lower()
+
+    if orig_text and live_text:
+        if orig_text == live_text:
+            score += 50.0
+        elif orig_text in live_text or live_text in orig_text:
+            score += 30.0
+    elif not orig_text and not live_text:
+        score += 10.0
+
+    # 3. Position proximity
+    orig_coords = orig_info.get("coords") or {}
+    live_coords = live_el.get("coords") or {}
+    if orig_coords and live_coords:
+        ox, oy = orig_coords.get("x"), orig_coords.get("y")
+        lx, ly = live_coords.get("x"), live_coords.get("y")
+        if ox is not None and oy is not None and lx is not None and ly is not None:
+            dist = ((ox - lx) ** 2 + (oy - ly) ** 2) ** 0.5
+            if dist < 50:
+                score += 10.0
+            elif dist < 200:
+                score += 5.0
+
+    return score
+
+
+async def _resolve_element(target: str, page: Any, allow_reanchor: bool = True) -> Any:
     """Resolve a target string to a Playwright Locator.
 
     Strategy:
-    1. Normalize target. If target is digit or [digit] or starts with #, look up in element_map
-    2. If L2_USE_CDP is enabled, try resolving via CDP backendNodeId.
-    3. If found, try xpath or other specific fallback attributes
-    4. Otherwise, try text-based locators in order
+    1. Normalize target. If target is digit or [digit] or starts with #, look up in element_map.
+    2. Try resolving via CDP backendNodeId (if L2_USE_CDP is enabled) or normal xpath/properties.
+    3. Verify the resolved locator's role and text/label match original metadata.
+    4. If resolution fails or mismatch is detected, perform semantic re-anchoring by scanning
+       the current page, scoring live elements against original metadata, and selecting the best match.
     """
     # Global cleanup of stale CDP temporary attributes before resolving
     try:
@@ -459,65 +625,118 @@ async def _resolve_element(target: str, page: Any) -> Any:
     except Exception:
         pass
 
-    # CDP Integration Branch (Phase 2.0C)
-    if os.getenv("L2_USE_CDP") == "1" and tid:
-        try:
-            cdp_locator = await _resolve_via_cdp(page, target, tid)
-            if cdp_locator:
-                return cdp_locator
-        except Exception as cdp_err:
-            logger.warning(f"  [CDP Resolve Error] {cdp_err}")
+    resolved_locator = None
+    el_info = element_map.get(lookup_key)
 
-    if lookup_key in element_map:
-        el_info = element_map[lookup_key]
-        
-        # If we have an exact xpath from browser-use, use it directly!
-        if "xpath" in el_info and el_info["xpath"]:
-            locator = page.locator(f"xpath={el_info['xpath']}")
-            if await locator.count() > 0:
-                return locator.first
-                
-        # Build locator from element info (Fallback)
-        el_type = el_info.get("type", "")
-        if el_type == "input":
-            input_type = el_info.get("input_type", "text")
-            # Try by label, placeholder, or CSS
-            label = el_info.get("label", "")
-            if label:
-                locator = page.get_by_label(label)
-                if await locator.count() > 0:
-                    return locator.first
-            placeholder = el_info.get("placeholder", "")
-            if placeholder:
-                locator = page.get_by_placeholder(placeholder)
-                if await locator.count() > 0:
-                    return locator.first
-        elif el_type in ["button", "input"]:
-            text = ""
-            if el_type == "input" and el_info.get("input_type") in ["submit", "button"]:
-                text = el_info.get("value", "") or el_info.get("text", "")
-            else:
-                text = el_info.get("text", "")
-                
-            if text:
-                locator = page.get_by_role("button", name=text)
-                if await locator.count() > 0:
-                    return locator.first
+    if el_info:
+        # Step 2. Try CDP resolution first
+        if os.getenv("L2_USE_CDP") == "1" and tid:
+            try:
+                resolved_locator = await _resolve_via_cdp(page, lookup_key, tid)
+            except Exception as cdp_err:
+                logger.warning(f"  [CDP Resolve Error] {cdp_err}")
 
-        # Fallback: try text content
-        text = el_info.get("text", "") or el_info.get("label", "")
-        if text:
-            locator = page.get_by_text(text, exact=False)
-            if await locator.count() > 0:
-                return locator.first
+        # Step 3. Fallback resolution using xpath/labels/texts
+        if not resolved_locator:
+            if "xpath" in el_info and el_info["xpath"]:
+                loc = page.locator(f"xpath={el_info['xpath']}")
+                try:
+                    if await loc.count() > 0:
+                        resolved_locator = loc.first
+                except Exception:
+                    pass
 
-    # Not an ID — try as description (使用 str 安全转换, 防止整数 target 崩溃)
+            if not resolved_locator:
+                el_type = el_info.get("type", "")
+                if el_type == "input":
+                    label = el_info.get("label", "")
+                    if label:
+                        loc = page.get_by_label(label)
+                        try:
+                            if await loc.count() > 0:
+                                resolved_locator = loc.first
+                        except Exception:
+                            pass
+                    placeholder = el_info.get("placeholder", "")
+                    if placeholder and not resolved_locator:
+                        loc = page.get_by_placeholder(placeholder)
+                        try:
+                            if await loc.count() > 0:
+                                resolved_locator = loc.first
+                        except Exception:
+                            pass
+                elif el_type in ["button", "input"] and not resolved_locator:
+                    text = ""
+                    if el_type == "input" and el_info.get("input_type") in ["submit", "button"]:
+                        text = el_info.get("value", "") or el_info.get("text", "")
+                    else:
+                        text = el_info.get("text", "")
+                    if text:
+                        loc = page.get_by_role("button", name=text)
+                        try:
+                            if await loc.count() > 0:
+                                resolved_locator = loc.first
+                        except Exception:
+                            pass
+
+            if not resolved_locator:
+                text = el_info.get("text", "") or el_info.get("label", "")
+                if text:
+                    loc = page.get_by_text(text, exact=False)
+                    try:
+                        if await loc.count() > 0:
+                            resolved_locator = loc.first
+                    except Exception:
+                        pass
+
+        # Step 4. Verify resolved element against original metadata
+        is_match = False
+        if resolved_locator:
+            meta = await _get_live_element_metadata(resolved_locator)
+            score = _score_element_match(el_info, meta)
+            if score >= 50.0:
+                is_match = True
+
+        # Step 5. Semantic re-anchoring if mismatch or resolution failed
+        if allow_reanchor and (not resolved_locator or not is_match):
+            logger.info(f"  [Resolve] Mismatch or resolution failure for {lookup_key}. Performing semantic re-anchoring...")
+            from core.page_semantic import _collect_interactive_elements
+            live_elements = await _collect_interactive_elements(page)
+
+            best_live_el = None
+            best_score = 0.0
+            for live_el in live_elements:
+                score = _score_element_match(el_info, live_el)
+                if score > best_score:
+                    best_score = score
+                    best_live_el = live_el
+
+            if best_live_el and best_score >= 50.0:
+                logger.info(f"  [Resolve] Re-anchored {lookup_key} to new element: {best_live_el.get('text') or best_live_el.get('label')} with score {best_score}")
+                best_live_el_copy = dict(best_live_el)
+                best_live_el_copy["id"] = lookup_key
+                element_map[lookup_key] = best_live_el_copy
+                if tid:
+                    _task_contexts[tid]["element_map"] = element_map
+
+                # Try to use best_live_el's xpath
+                if "xpath" in best_live_el and best_live_el["xpath"]:
+                    loc = page.locator(f"xpath={best_live_el['xpath']}")
+                    if await loc.count() > 0:
+                        return loc.first
+                # Otherwise let recursion resolve it using the updated element_map entry
+                return await _resolve_element(lookup_key, page, allow_reanchor=False)
+
+    # Fallback when no el_info exists or re-anchoring fails (raw text query)
+    if resolved_locator:
+        return resolved_locator
+
     safe_target = str(target)
-    # Priority 1: Try placeholder (most specific for inputs)
+    # Priority 1: Try placeholder
     locator = page.get_by_placeholder(safe_target)
     if await locator.count() > 0:
         return locator.first
-    # Priority 2: Try textbox role (covers search inputs, textareas)
+    # Priority 2: Try textbox role
     locator = page.get_by_role("textbox", name=safe_target)
     if await locator.count() > 0:
         return locator.first
@@ -644,16 +863,22 @@ async def click(target: str) -> dict[str, Any]:
                 click_error_str = None
 
         # Fallback: Playwright locator click
+        el_text = ""
+        try:
+            el_text = await locator.text_content() or ""
+            el_text = el_text.strip()
+        except Exception:
+            pass
         await locator.click(timeout=10000)
         await _wait_for_stable(page)
         evidence_dict = {}
         if "click_error_str" in locals() and click_error_str:
             evidence_dict = {"cdp_fallback": True, "cdp_error": click_error_str}
-            
+
         return await _make_action_result(
             "click", target, True, page, before_url,
             before_fingerprint=before_fp,
-            extracted_content=f"已点击元素 '{target}'",
+            extracted_content=f"已点击元素 '{el_text or target}'",
             duration_ms=int((_time.time() - _t0) * 1000),
             evidence=evidence_dict,
         )
@@ -721,7 +946,7 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
     cdp_sess = get_cdp_session_ctx()
     try:
         locator = await _resolve_element(target, page)
-        
+
         # Check if this input field is a password field (根因 2)
         is_password_field = False
         try:
@@ -745,7 +970,7 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
                 task_config = get_task_config()
                 accounts = task_config.get("accounts", [])
                 matched_password = None
-                
+
                 username_val = ""
                 try:
                     inputs = await page.query_selector_all("input")
@@ -760,7 +985,7 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
                                 if any(k in name or k in id_attr or k in placeholder for k in ["user", "name", "email", "phone", "account", "账号", "用户名"]):
                                     username_val = val
                                     break
-                    
+
                     if not username_val:
                         for ip in inputs:
                             ip_type = await ip.get_attribute("type") or "text"
@@ -771,13 +996,13 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
                                     break
                 except Exception:
                     pass
-                
+
                 if username_val:
                     for a in accounts:
-                        if a.get("username") == username_val:
+                        if a.get("username") is not None and str(a.get("username")) == str(username_val):
                             matched_password = a.get("password")
                             break
-                
+
                 if not matched_password and accounts:
                     try:
                         all_vals = []
@@ -785,20 +1010,20 @@ async def input_text(target: str, value: str) -> dict[str, Any]:
                         for ip in inputs:
                             val = await ip.input_value()
                             if val:
-                                all_vals.append(val.strip())
+                                all_vals.append(str(val).strip())
                         for a in accounts:
                             u = a.get("username")
-                            if u and u.strip() in all_vals:
+                            if u is not None and str(u).strip() in all_vals:
                                 matched_password = a.get("password")
                                 break
                     except Exception:
                         pass
-                
+
                 if not matched_password and accounts:
                     matched_password = accounts[0].get("password")
-                    
-                if matched_password:
-                    value = matched_password
+
+                if matched_password is not None:
+                    value = str(matched_password)
                 actual_filled = value
 
         # Focus first via click
@@ -1187,6 +1412,11 @@ async def search(target: str, query: str) -> dict[str, Any]:
 
         # 4. 回车提交
         await locator.press("Enter")
+        try:
+            await page.wait_for_load_state("load", timeout=5000)
+            await page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
         await _wait_for_stable(page)
 
         return await _make_action_result(
@@ -1265,42 +1495,133 @@ async def evaluate_js(script: str) -> dict[str, Any]:
         return await _make_action_result("evaluate_js", script[:50], False, page, before_url, error=str(e))
 
 
+_MULTI_TARGET_MARKERS = ("和", "及", "与", "、", "；", ";", " and ")
+_URL_HINT_MARKERS = ("http://", "https://", "/", "url", "URL", "网址", "页面地址")
+
+
+def _is_multi_target_expected(expected_text: str) -> bool:
+    """Heuristic: does expected_text describe multiple deliverables that must all be present?
+
+    Covers Chinese (和/及/与/、/；) and English (and/;) conjunctions. Avoids matching
+    bare comma "," because it's also common as a clause separator.
+    """
+    if not expected_text:
+        return False
+    et = expected_text
+    return any(marker in et for marker in _MULTI_TARGET_MARKERS)
+
+
+def _expected_mentions_url(expected_text: str) -> bool:
+    """Heuristic: does expected_text reference a specific URL/path that should be reached?"""
+    if not expected_text:
+        return False
+    return any(marker in expected_text for marker in _URL_HINT_MARKERS)
+
+
 @tool
-async def mark_task_complete(reasoning: str) -> dict[str, Any]:
-    """标记当前任务已成功完成，并结束执行。
+async def mark_task_complete(
+    reasoning: str,
+    extracted_fields: dict[str, Any] | None = None,
+    evidence_url: str | None = None,
+) -> dict[str, Any]:
+    """声明当前测试用例已成功完成, 并结束执行。
+
+    本工具会**严格校验**完成证据。证据不足时, 工具会**拒绝**完成请求
+    (返回 status="completion_rejected"), LLM 应根据返回的指引补齐证据后重试,
+    切勿在没有证据的情况下反复调用。
+
+    强制规则:
+    1. reasoning 必须 ≥ 20 字符, 解释为什么用例已达成
+    2. 当 expected 含 "和"/"及"/"、"/" and " 等多目标关键字时,
+       extracted_fields 必填且 key 数 ≥ 2, 每个 key 对应 expected 中一个字段,
+       value 是从页面实际抓到的字符串值
+    3. evidence_url 可选: 若提供, 会与当前页面 URL 比对, 不匹配时记入告警
 
     Args:
-        reasoning: 任务成功的理由或发现，请尽量详细说明
+        reasoning: 完成理由 (≥20 字)。例: "已查到 Top story 标题为 'X', 分数为 1234, 两个字段都已在 extracted_fields 中"
+        extracted_fields: 字典, 列出 expected 每个字段的实际值。例: {"title": "Show HN: ...", "score": "1234"}
+        evidence_url: 完成时所在的页面 URL。例: "https://news.ycombinator.com/"
     """
     page = get_current_page()
     task_id = get_current_task_id()
-    res = await _make_action_result("mark_task_complete", None, True, page, page.url)
+    expected_text = get_current_expected()
 
-    # P4: Auto-extract final answer from page
-    extracted = ""
+    rejection_reasons: list[str] = []
+
+    # Rule 1: reasoning length
+    if not reasoning or len(reasoning.strip()) < 20:
+        rejection_reasons.append(
+            f"reasoning 过短 ({len(reasoning.strip()) if reasoning else 0} 字 < 20). "
+            f"请用一句话解释每个 expected 字段是怎么满足的, 不要只写'完成'/'OK'/'已成功'。"
+        )
+
+    # Rule 2: multi-target evidence
+    multi_target = _is_multi_target_expected(expected_text)
+    if multi_target:
+        n_fields = len(extracted_fields or {})
+        if not extracted_fields or n_fields < 2:
+            rejection_reasons.append(
+                f"expected 包含多目标 ('{expected_text[:80]}...'), 必须在 extracted_fields 中"
+                f"列出每个字段的实际值, 当前只给了 {n_fields} 个. "
+                f"示例: extracted_fields={{'字段1': '实际值1', '字段2': '实际值2'}}"
+            )
+
+    # Rule 3: evidence_url cross-check (soft warn, not reject)
+    url_warning = ""
+    current_url = page.url
+    if evidence_url and evidence_url.strip():
+        if evidence_url.rstrip("/") != current_url.rstrip("/"):
+            url_warning = (
+                f"⚠️ evidence_url='{evidence_url}' 与当前页面 URL='{current_url}' 不一致 "
+                f"(已记入证据但未拒绝完成)。"
+            )
+
+    # If any rule failed → reject
+    if rejection_reasons:
+        guidance = "\n".join(f"  - {r}" for r in rejection_reasons)
+        rejection_msg = (
+            f"❌ mark_task_complete 被拒绝, 证据不足:\n{guidance}\n"
+            f"\n请在下一步:\n"
+            f"  (a) 用 extract_text 或 find 工具补齐缺失的字段值, 把每个字段写进 extracted_fields\n"
+            f"  (b) 完善 reasoning, 引用具体抓到的值\n"
+            f"  (c) 准备好后再次调用 mark_task_complete"
+        )
+        return await _make_action_result(
+            "mark_task_complete", None, False, page, current_url,
+            error="证据不足, 完成请求被拒绝",
+            status="completion_rejected",
+            extracted_content=rejection_msg,
+        )
+
+    # Completion accepted — build success result with auto-extracted page info
+    res = await _make_action_result("mark_task_complete", None, True, page, current_url)
+
+    auto_extracted = ""
     try:
         from core.page_semantic import extract_page_semantics
         page_info = await extract_page_semantics(page, task_id=task_id)
         title = page_info.get("title", "")
         headings = page_info.get("headings", [])
         if headings:
-            extracted = f"{title} | {headings[0]}"
+            auto_extracted = f"{title} | {headings[0]}"
         else:
-            extracted = title
+            auto_extracted = title
     except Exception:
         pass
 
-    extracted_content = reasoning
-    if extracted:
-        if extracted_content:
-            extracted_content = f"{extracted_content}\n\n[Auto-Extracted Page Info] {extracted}"
-        else:
-            extracted_content = extracted
+    parts: list[str] = [reasoning]
+    if extracted_fields:
+        fields_str = ", ".join(f"{k}={v!r}" for k, v in extracted_fields.items())
+        parts.append(f"[extracted_fields] {fields_str}")
+    if url_warning:
+        parts.append(url_warning)
+    if auto_extracted:
+        parts.append(f"[Auto-Extracted Page Info] {auto_extracted}")
 
     return {
         **res,
-        "display_text": f"任务标记为已成功: {reasoning}",
-        "extracted_content": extracted_content,
+        "display_text": f"任务标记为已成功: {reasoning[:80]}",
+        "extracted_content": "\n\n".join(parts),
     }
 
 

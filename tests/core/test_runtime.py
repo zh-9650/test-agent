@@ -52,6 +52,32 @@ BASIC_TASK_CONFIG = {
     "accounts": [{"role": "test", "username": "test_c", "password": "123456"}],
 }
 
+PASSING_STEP = StepResult(
+    step_index=0,
+    action_type="click",
+    action_target="#1",
+    result="已点击",
+    assertion=AssertionResult(status="pass", reasoning="通过"),
+)
+
+
+@pytest.fixture(autouse=True)
+def mock_generate_case_summary():
+    with patch("core.runtime.generate_case_summary", new_callable=AsyncMock) as m:
+        m.return_value = {"case_id": "TC-001", "summary": "Mocked summary"}
+        yield m
+
+
+@pytest.fixture(autouse=True)
+def mock_browser_session():
+    with patch("browser_use.BrowserSession") as mock_bs:
+        mock_instance = MagicMock()
+        mock_instance.start = AsyncMock()
+        mock_instance.close = AsyncMock()
+        mock_instance.cdp_url = "ws://localhost:9222/playwright"
+        mock_bs.return_value = mock_instance
+        yield mock_bs
+
 
 # ---------------------------------------------------------------------------
 # test_runtime_init
@@ -131,6 +157,7 @@ async def test_run_full_session_mock():
 
     rt._launch_browser = AsyncMock()
     rt._close_browser = AsyncMock()
+    rt._reset_browser_state = AsyncMock()
 
     # Mock planning graph
     mock_planning_graph = MagicMock()
@@ -156,6 +183,7 @@ async def test_run_full_session_mock():
         "state_after": {},
         "task_id": "task-rt-001",
         "task_config": BASIC_TASK_CONFIG,
+        "_collected_steps": [PASSING_STEP],
     })
 
     # Mock execute_setup (the setup_manager)
@@ -191,6 +219,7 @@ async def test_run_full_session_mock():
     assert results[1].status == "passed"
     rt._launch_browser.assert_called_once()
     rt._close_browser.assert_called_once()
+    rt._reset_browser_state.assert_awaited_once()
     mock_save_report.assert_called_once()
     assert len(mock_save_report.call_args.args[0]) == 2
 
@@ -207,7 +236,7 @@ async def test_execute_test_case_mock():
 
     rt = Runtime(BASIC_TASK_CONFIG)
     rt._launch_browser = AsyncMock()
-    rt.page = MagicMock()  # pretend browser is already launched
+    rt.page = AsyncMock()  # pretend browser is already launched
 
     # Mock execution graph to return a state with some steps
     mock_execution_graph = MagicMock()
@@ -225,7 +254,7 @@ async def test_execute_test_case_mock():
         "state_after": {},
         "task_id": "task-rt-001",
         "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [],
+        "_collected_steps": [PASSING_STEP],
     })
 
     with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
@@ -256,7 +285,7 @@ async def test_execute_test_case_failed_status():
     from core.runtime import Runtime
 
     rt = Runtime(BASIC_TASK_CONFIG)
-    rt.page = MagicMock()
+    rt.page = AsyncMock()
 
     mock_execution_graph = MagicMock()
     mock_execution_graph.ainvoke = AsyncMock(return_value={
@@ -278,7 +307,7 @@ async def test_execute_test_case_failed_status():
 
     with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
          patch("core.runtime.execute_setup", new_callable=AsyncMock), \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15"}):
+         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15", "MAX_TEST_CASE_RETRIES": "0"}):
 
         result = await rt._execute_test_case(
             index=0,
@@ -301,7 +330,7 @@ async def test_execute_test_case_incomplete_status():
     from core.runtime import Runtime
 
     rt = Runtime(BASIC_TASK_CONFIG)
-    rt.page = MagicMock()
+    rt.page = AsyncMock()
 
     mock_execution_graph = MagicMock()
     mock_execution_graph.ainvoke = AsyncMock(return_value={
@@ -335,6 +364,34 @@ async def test_execute_test_case_incomplete_status():
     assert result.status == "incomplete"
 
 
+def test_determine_status_without_terminal_evidence_is_incomplete():
+    """A case cannot pass without a passing assertion or terminal evidence."""
+    from core.runtime import Runtime
+
+    rt = Runtime(BASIC_TASK_CONFIG)
+
+    status = rt._determine_status(
+        {"current_step": 1, "consecutive_failures": 0},
+        [],
+    )
+
+    assert status == "incomplete"
+
+
+def test_determine_status_max_steps_overrides_earlier_pass():
+    """Hitting the safety limit cannot be hidden by an earlier passing step."""
+    from core.runtime import Runtime
+
+    rt = Runtime(BASIC_TASK_CONFIG)
+
+    status = rt._determine_status(
+        {"current_step": 15, "consecutive_failures": 0},
+        [PASSING_STEP],
+    )
+
+    assert status == "incomplete"
+
+
 # ---------------------------------------------------------------------------
 # test_execute_test_case_failing_assertion
 # ---------------------------------------------------------------------------
@@ -346,7 +403,7 @@ async def test_execute_test_case_failing_assertion():
     from core.runtime import Runtime
 
     rt = Runtime(BASIC_TASK_CONFIG)
-    rt.page = MagicMock()
+    rt.page = AsyncMock()
 
     failing_step = StepResult(
         step_index=2,
@@ -376,7 +433,7 @@ async def test_execute_test_case_failing_assertion():
 
     with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
          patch("core.runtime.execute_setup", new_callable=AsyncMock), \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15"}):
+         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15", "MAX_TEST_CASE_RETRIES": "0"}):
 
         result = await rt._execute_test_case(
             index=0,
@@ -430,7 +487,7 @@ async def test_browser_crash_recovery():
         "state_after": {},
         "task_id": "task-rt-001",
         "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [],
+        "_collected_steps": [PASSING_STEP],
     }
 
     # TC-001 execution raises, TC-002 succeeds
@@ -439,7 +496,7 @@ async def test_browser_crash_recovery():
     with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
          patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
          patch("core.runtime.execute_setup", new_callable=AsyncMock), \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15"}):
+         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15", "MAX_TEST_CASE_RETRIES": "0"}):
 
         results = await rt.run()
 
@@ -477,8 +534,10 @@ async def test_browser_lifecycle_mock():
     mock_page = MagicMock()
 
     mock_pw.start = AsyncMock(return_value=mock_pw)
-    mock_pw.chromium.launch = AsyncMock(return_value=mock_browser)
+    mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+    mock_browser.contexts = [mock_context]
     mock_browser.new_context = AsyncMock(return_value=mock_context)
+    mock_context.pages = []
     mock_context.new_page = AsyncMock(return_value=mock_page)
     mock_context.tracing.start = AsyncMock()
     mock_page.goto = AsyncMock()
@@ -495,16 +554,15 @@ async def test_browser_lifecycle_mock():
 
     # Verify browser was launched and closed
     mock_pw.start.assert_called_once()
-    mock_pw.chromium.launch.assert_called_once()
-    mock_browser.new_context.assert_called_once()
+    mock_pw.chromium.connect_over_cdp.assert_called_once_with("ws://localhost:9222/playwright")
     mock_context.new_page.assert_called_once()
-    mock_page.goto.assert_called_once_with("http://example.com/login", wait_until="networkidle", timeout=30000)
+    mock_page.goto.assert_called_once_with("http://example.com/login", wait_until="load", timeout=30000)
     mock_context.tracing.start.assert_called_once()
     mock_context.tracing.stop.assert_called_once()
     mock_context.close.assert_called_once()
     mock_browser.close.assert_called_once()
     mock_pw.stop.assert_called_once()
-    mock_set_page.assert_called_once_with(mock_page)
+    mock_set_page.assert_called_once_with(mock_page, task_id=rt.task_id)
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +610,7 @@ async def test_run_stream_yields_updates():
     with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
          patch.object(rt, "_execute_test_case_stream", side_effect=mock_execute_stream), \
          patch.object(rt, "_save_report", new_callable=AsyncMock) as mock_save_report:
+        mock_save_report.return_value = "data/reports/task-rt-001/report.html"
 
         updates = []
         async for update in rt.run_stream():
@@ -575,6 +634,8 @@ async def test_run_stream_yields_updates():
     final_update = updates[2]
     assert final_update["type"] == "session_complete"
     assert final_update["data"]["phase"] == "final"
+    assert final_update["data"]["report_data"]["report_path"] == "data/reports/task-rt-001/report.html"
+    assert final_update["data"]["report_data"]["test_plan"][0]["status"] == "passed"
     mock_save_report.assert_called_once()
     assert mock_save_report.call_args.args[0][0].test_case_id == "TC-001"
 
@@ -813,7 +874,7 @@ async def test_run_preserves_partial_results_on_error():
         "state_after": {},
         "task_id": "task-rt-001",
         "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [],
+        "_collected_steps": [PASSING_STEP],
     }
 
     mock_execution_graph = MagicMock()
@@ -823,7 +884,7 @@ async def test_run_preserves_partial_results_on_error():
     with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
          patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
          patch("core.runtime.execute_setup", new_callable=AsyncMock), \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15"}):
+         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15", "MAX_TEST_CASE_RETRIES": "0"}):
 
         results = await rt.run()
 
@@ -846,7 +907,7 @@ async def test_execute_test_case_with_setup():
     from core.runtime import Runtime
 
     rt = Runtime(BASIC_TASK_CONFIG)
-    rt.page = MagicMock()
+    rt.page = AsyncMock()
 
     mock_execution_graph = MagicMock()
     mock_execution_graph.ainvoke = AsyncMock(return_value={
@@ -917,8 +978,10 @@ async def test_data_directory_creation():
 
     mock_pw_instance = MagicMock()
     mock_pw_instance.start = AsyncMock(return_value=mock_pw_instance)
-    mock_pw_instance.chromium.launch = AsyncMock(return_value=mock_browser)
+    mock_pw_instance.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+    mock_browser.contexts = [mock_context]
     mock_browser.new_context = AsyncMock(return_value=mock_context)
+    mock_context.pages = []
     mock_context.new_page = AsyncMock(return_value=mock_page)
     mock_context.tracing.start = AsyncMock()
     mock_page.goto = AsyncMock()

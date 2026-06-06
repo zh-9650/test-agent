@@ -58,7 +58,7 @@ def test_should_compact_both_above():
         "current_step": COMPACT_EVERY_N_STEPS + 5,
     }
     # mock count_tokens 返回 40000, 阈值 patch 到 100
-    with patch("core.interfaces.count_tokens", return_value=40000), \
+    with patch("core.llm_client.count_tokens", return_value=40000), \
          patch.object(context_manager, "COMPACT_TRIGGER_TOKENS", 100):
         assert should_compact(state) is True
 

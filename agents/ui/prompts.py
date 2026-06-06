@@ -128,6 +128,11 @@ def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any]
    字段名也接受英文 Evaluation/Memory/Next Goal. 这 3 字段会被记录到 <agent_history>，多步后给你自己看。
 15. **target 参数必须是 #N 编号 (硬约束)**: 调用 click/input_text/scroll/press_key/hover/extract_text/select_dropdown/get_dropdown_options 时, `target` 参数**必须**是 `#N` 格式 (N 是 1-100 之间的整数, 对应"交互元素"列表里的 # 编号). 禁止把元素的文本描述 (如 "Search or jump to… button") 传给 target —— 文本描述里含省略号、特殊字符, 解析必然失败. 如果你只看到描述没看到编号, 改用 `find(query="...")` 工具按描述查 # 编号. 错误示范: `click(target="[57] button 'Search or jump to…'")` ← 这是 0 步就退的常见原因. 正确示范: `click(target="#57")`.
 16. **提取完整性 (硬约束)**: 当 step 描述要求"取 X 和 Y"或"取 X、Y、Z"时 (例如 "title and score" / "标题和价格"), 你**必须**对**每个**要求的字段分别调用一次 `extract_text` (或一次 `evaluate_js` 拿多个字段), 全部提取到 extracted_content 后再 mark_task_complete. 漏一个字段 = 任务失败. 错误示范: step 要 "title and score", 只 extract 了 score 就 mark_complete. 正确做法: 先 extract title, 再 extract score, 都进 extracted_content, 最后 mark_complete.
+17. **mark_task_complete 严格完成协议 (硬约束)**: 调用 `mark_task_complete` 时, **必须**:
+    - `reasoning` ≥ 20 字, 引用从页面实际抓到的具体值 (不要写"完成"/"OK"/"已成功")
+    - 当 expected 含 "和"/"及"/"、"/" and " 等多目标关键字时, 必须传 extracted_fields 字典 (字段名→实际抓到的值) 且 key 数 ≥ 2
+    - 当 expected 描述了具体 URL/页面时, 建议传 evidence_url="当前页面URL" 帮助交叉验证
+    工具会自校验; 证据不足会返回 status="completion_rejected" 拒绝你的请求并给出补救指引。看到拒绝后**不要原样重试**, 必须先用 extract_text / find 等工具补齐缺失字段值, 再调用一次 mark_task_complete。连续 3 次被拒绝会触发用例失败安全阀。
 </rules>
 
 <examples>
@@ -207,10 +212,21 @@ def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any]
   Memory: 在 HN 首页, 看到 #1 头条含 title 和 score
   Next Goal: 提取 title 和 score 两个字段
 然后调:
-  → extract_text(target="#story-title") 提取 title
-  → extract_text(target="#story-score") 提取 score
-  → mark_task_complete(reasoning="已提取 title 和 score, 任务完成")
-说明: 提取完整性 — 当 step 要求多个字段时, 必须每个字段分别 extract, 全部进 extracted_content 后再 mark_complete.
+  → extract_text(target="#story-title") 提取 title (假设拿到 "Show HN: ...")
+  → extract_text(target="#story-score") 提取 score (假设拿到 "1234")
+  → mark_task_complete(
+        reasoning="已提取 title 和 score 两个字段的实际值, 均满足 expected",
+        extracted_fields=<title 字段→实际抓到的标题字符串, score 字段→实际抓到的分数字符串>,
+        evidence_url="https://news.ycombinator.com/"
+    )
+说明: 规则 16+17 — 多字段必须分别 extract 进 extracted_content, mark_task_complete 时再用 extracted_fields 二次确认证据.
+</example>
+
+<example type="bad">
+当前步骤 1/1: 报告 title 和 score
+→ extract_text(target="#story-score")
+→ mark_task_complete(reasoning="完成")   ← reasoning 过短 + 漏 title + 没传 extracted_fields
+违反规则 16+17 — 工具会返回 status="completion_rejected", 必须补 title 抓取后重试.
 </example>
 
 <example type="bad">
@@ -242,7 +258,7 @@ def get_execution_system_prompt(test_case: TestCase, task_config: dict[str, Any]
 
 <output_contract>
 每次 decide 调用必须满足以下两种之一:
-(a) **tool_call 必填**: 调用一个工具 (click / input_text / search / scroll / press_key / navigate / get_current_page / update_element_map / evaluate_js / mark_task_*), tool_calls 数组长度 = 1
+(a) **tool_call 必填**: 调用一个工具 (click / input_text / search / scroll / press_key / navigate / evaluate_js / mark_task_* 之一), tool_calls 数组长度 = 1
 (b) **显式 mark**: 当用例达成/失败/跳过时, 调 mark_task_complete / mark_task_failed / mark_task_skipped, reasoning 字段 ≤ 200 字描述判定理由
 
 禁止:
@@ -490,9 +506,11 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
         scroll_percent = int((sy / max(1, sh - ih)) * 100) if sh > ih else 100
         pixels_above = sy
         pixels_below = max(0, sh - sy - ih)
+        is_bottom = viewport.get("is_bottom", pixels_below <= 5)
         parts.append(
             f"视口: {scroll_percent}% (Y: {sy}px / {sh}px, "
-            f"视口上方: {pixels_above}px, 视口下方: {pixels_below}px)"
+            f"视口上方: {pixels_above}px, 视口下方: {pixels_below}px, "
+            f"页面到底: {is_bottom})"
         )
 
     tabs = page_info.get("tabs", [])
@@ -542,6 +560,7 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
             idx = el_id.lstrip("#") if el_id else "?"
             el_type = el.get("type", "element")
             el_text = el.get("text") or el.get("label") or el.get("placeholder", "")
+            el_text = str(el_text)
             if len(el_text) > 50:
                 el_text = el_text[:50] + "..."
 
@@ -567,8 +586,13 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
             elif checked is False and el_type in ("checkbox", "radio"):
                 props.append("unchecked")
             role = el.get("role")
-            if role and role != el_type:
+            if role:
                 props.append(f"role={role}")
+            expanded = el.get("expanded")
+            if expanded is True:
+                props.append("expanded")
+            elif expanded is False:
+                props.append("collapsed")
             input_type = el.get("input_type", "")
             if input_type and input_type not in ("text", ""):
                 props.append(f"type={input_type}")
@@ -576,15 +600,27 @@ def _format_page_info(page_info: dict[str, Any]) -> str:
             # Rich attributes extraction (href, value)
             href = el.get("href")
             if href:
+                href = str(href)
                 if len(href) > 60:
                     href = href[:60] + "..."
                 props.append(f'href="{href}"')
             
             value = el.get("value")
-            if value:
+            if value is not None and value != "":
+                value = str(value)
                 if len(value) > 60:
                     value = value[:60] + "..."
                 props.append(f'value="{value}"')
+            elif el_type in ("input", "select"):
+                props.append('value=""')
+
+            coords = el.get("coords")
+            if coords:
+                cx = coords.get("box_x", coords.get("x", 0))
+                cy = coords.get("box_y", coords.get("y", 0))
+                cw = coords.get("width", 0)
+                ch = coords.get("height", 0)
+                props.append(f"coords=[{cx},{cy},{cw},{ch}]")
 
             if el_text:
                 parts.append(f'  [{idx}] {el_type} "{el_text}" ({", ".join(props)})' if props else f'  [{idx}] {el_type} "{el_text}"')
@@ -731,7 +767,7 @@ Goal: 找到"提交采购申请"入口 (high)
 
 <output_contract>
 每次 decide 调用必须满足以下两种之一:
-(a) **tool_call 必填**: 调用一个工具 (click / input_text / scroll / navigate / press_key / get_current_page / update_element_map / mark_task_*), tool_calls 数组长度 = 1
+(a) **tool_call 必填**: 调用一个工具 (click / input_text / scroll / navigate / press_key / mark_task_* 之一), tool_calls 数组长度 = 1
 (b) **显式 stop**: 不调用任何工具, tool_calls 为空或不存在 (should_continue_exploring 见到这种情况会走到 generate_plan)
 
 禁止:

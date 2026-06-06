@@ -243,9 +243,9 @@ async def test_input_text_success_returns_filled_value(page):
 @pytest.mark.asyncio
 async def test_mark_task_complete_has_extracted_content(page):
     """mark_task_* 工具 → extracted_content = reasoning"""
-    res = await mark_task_complete.ainvoke({"reasoning": "测试成功"})
-    assert res["status"] == "success"
-    assert res["extracted_content"] == "测试成功"
+    res = await mark_task_complete.ainvoke({"reasoning": "测试成功并且满足证据链要求，已成功提取所有页面字段。"})
+    assert res["status"] == "success", f"res={res}"
+    assert "测试成功并且满足证据链要求" in res["extracted_content"]
     assert res["is_terminal"]() if hasattr(res, 'is_terminal') else True  # dict 没有 is_terminal
 
 

@@ -11,7 +11,7 @@ export function useWebSocket(taskId: string | number | undefined) {
 
     // Connect to WebSocket using hardcoded 8000 or derive from window.location
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/tasks/${taskId}`);
+    const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/tasks/${taskId}`);
     wsRef.current = ws;
 
     ws.onopen = () => setConnected(true);

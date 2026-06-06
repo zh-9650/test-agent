@@ -9,8 +9,9 @@ NOTE (2026-06-01): removed dead code from V1.5 that duplicated the LLM path with
 a deprecated `llm.with_structured_output` call.
 """
 from pydantic import BaseModel, Field
-from core.llm_client import safe_structured_invoke
+from core.llm_client import safe_structured_invoke, get_last_raw
 from core.interfaces import ExplorationGoal
+from core.diag_logger import get_diag_auto
 
 
 class ExplorationGoalList(BaseModel):
@@ -38,6 +39,9 @@ async def extract_goals(use_case_model: dict, mode: str = "direct") -> list[Expl
                     goal=f"找到【{name}】的能力入口",
                     priority="high",
                 ))
+        # Diag: direct 模式 dump (N3 在 planning_graph 里调, 改 skill 内部自动覆盖)
+        get_diag_auto().dump("05_l1_goals", node="N3", output=goals, status="ok",
+                             mode="direct", goals_count=len(goals), raw_content="N/A (no LLM call, direct mapping)")
         return goals
 
     prompt = f"""<role>
@@ -87,5 +91,11 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
 """
     result = await safe_structured_invoke(prompt, ExplorationGoalList, model_type="default")
     if result is None:
+        # Diag: LLM 失败, 记录空结果
+        get_diag_auto().dump("05_l1_goals", node="N3", output=[], status="llm_failure",
+                             mode="llm", goals_count=0, raw_content=get_last_raw())
         return []
+    # Diag: LLM 路径成功 dump
+    get_diag_auto().dump("05_l1_goals", node="N3", output=result.goals, status="ok",
+                         mode="llm", goals_count=len(result.goals), raw_content=get_last_raw())
     return result.goals

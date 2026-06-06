@@ -12,6 +12,20 @@ from __future__ import annotations
 
 import math
 from typing import Any
+import asyncio
+
+def _patch_session_if_needed(cdp_session: Any) -> None:
+    if cdp_session is not None:
+        if not getattr(cdp_session, "_l2_patched", False):
+            orig_send = cdp_session.send
+            async def patched_send(method, params=None):
+                try:
+                    return await asyncio.wait_for(orig_send(method, params or {}), timeout=10.0)
+                except asyncio.TimeoutError:
+                    raise RuntimeError(f"CDP command {method} timed out after 10.0s")
+            cdp_session.send = patched_send
+            cdp_session._l2_patched = True
+
 
 # ---------------------------------------------------------------------------
 # CDP Session Management
@@ -66,6 +80,7 @@ async def get_cdp_session(page: Any, task_id: str = "") -> Any | None:
             except Exception as e:
                 print(f"  [CDP init] Failed to enable Accessibility/DOM: {e}", flush=True)
 
+    _patch_session_if_needed(cdp_session)
     return cdp_session
 
 
@@ -90,6 +105,7 @@ STRUCTURAL_ROLES = {
 
 
 async def get_full_ax_tree(cdp_session: Any, max_depth: int = 10) -> list[dict]:
+    _patch_session_if_needed(cdp_session)
     """Get the full accessibility tree via CDP.
 
     Returns:
@@ -108,6 +124,7 @@ async def get_full_ax_tree(cdp_session: Any, max_depth: int = 10) -> list[dict]:
 
 
 async def get_node_attributes(cdp_session: Any, backend_node_id: int) -> dict[str, str]:
+    _patch_session_if_needed(cdp_session)
     """Get HTML attributes for a backendNodeId via DOM.describeNode."""
     try:
         desc = await cdp_session.send("DOM.describeNode", {
@@ -120,12 +137,17 @@ async def get_node_attributes(cdp_session: Any, backend_node_id: int) -> dict[st
             key = attrs_list[i]
             val = attrs_list[i + 1] if i + 1 < len(attrs_list) else ""
             attrs[key] = val
+
+        # Inject tagName/nodeName for upstream consumption (e.g. xpath, role logic)
+        tag_name = node.get("localName") or node.get("nodeName") or ""
+        attrs["tagName"] = tag_name.lower()
         return attrs
     except Exception:
         return {}
 
 
 async def get_node_box_model(cdp_session: Any, backend_node_id: int) -> dict | None:
+    _patch_session_if_needed(cdp_session)
     """Get the bounding box for a node via DOM.getBoxModel.
 
     Returns:
@@ -151,6 +173,7 @@ async def get_node_box_model(cdp_session: Any, backend_node_id: int) -> dict | N
 
 
 async def resolve_node(cdp_session: Any, backend_node_id: int) -> dict[str, Any] | None:
+    _patch_session_if_needed(cdp_session)
     """Resolve a backendNodeId to its runtime objectId and frameId via DOM.resolveNode.
 
     This is the key to Phase 2.0D backendNodeId persistence: once an element
@@ -178,6 +201,7 @@ async def resolve_node(cdp_session: Any, backend_node_id: int) -> dict[str, Any]
 
 
 async def release_object(cdp_session: Any, object_id: str) -> None:
+    _patch_session_if_needed(cdp_session)
     """Release a runtime object handle obtained from resolveNode.
 
     CDP requires this to avoid leaks; should be called after the action that
@@ -212,7 +236,7 @@ def _ax_name(node: dict) -> str:
     """Get the name (accessible name) from an AX node."""
     name = node.get("name", {})
     if isinstance(name, dict):
-        return name.get("value", "")
+        return str(name.get("value", ""))
     return str(name)
 
 
@@ -220,7 +244,7 @@ def _ax_value(node: dict) -> str:
     """Get the value from an AX node."""
     val = node.get("value", {})
     if isinstance(val, dict):
-        return val.get("value", "")
+        return str(val.get("value", ""))
     return str(val)
 
 
@@ -278,6 +302,10 @@ async def extract_elements_via_cdp(page: Any, cdp_session: Any) -> list[dict[str
 
         # Get HTML attributes and box model
         attrs = await get_node_attributes(cdp_session, backend_id) if cdp_session else {}
+        tag_name = attrs.get("tagName", "")
+        if tag_name in ("script", "style", "meta", "link", "head", "noscript", "svg"):
+            continue
+
         box = await get_node_box_model(cdp_session, backend_id) if cdp_session else None
 
         el_type = _ax_role_to_type(role, attrs)
@@ -318,7 +346,7 @@ async def extract_elements_via_cdp(page: Any, cdp_session: Any) -> list[dict[str
         label = name or ""
         placeholder = attrs.get("placeholder", "")
 
-        el_text = label or placeholder or value
+        el_text = str(label or placeholder or value)
 
         # Build element dict compatible with existing format
         el = {
@@ -378,6 +406,7 @@ def _ax_role_to_type(role: str, attrs: dict[str, str]) -> str:
 
 
 async def get_dom_fingerprint(page: Any, cdp_session: Any | None = None) -> str:
+    _patch_session_if_needed(cdp_session)
     """Get DOM fingerprint via CDP for more reliable page change detection.
 
     Uses DOM.getDocument to get node count + document URL.
@@ -409,6 +438,7 @@ async def get_dom_fingerprint(page: Any, cdp_session: Any | None = None) -> str:
 
 
 async def cdp_click(page: Any, cdp_session: Any, x: float, y: float) -> bool:
+    _patch_session_if_needed(cdp_session)
     """Click at viewport coordinates via CDP Input.dispatchMouseEvent.
 
     Args:
@@ -442,6 +472,7 @@ async def cdp_click(page: Any, cdp_session: Any, x: float, y: float) -> bool:
 
 
 async def cdp_input_text(cdp_session: Any, text: str) -> bool:
+    _patch_session_if_needed(cdp_session)
     """Type text into the focused element via CDP Input.dispatchKeyEvent.
 
     Uses raw keyDown/keyUp events for each character to trigger
@@ -522,6 +553,7 @@ def _char_to_key_code(char: str) -> str | None:
 
 
 async def get_viewport_size(cdp_session: Any) -> dict[str, int]:
+    _patch_session_if_needed(cdp_session)
     """Get the current viewport size via CDP."""
     try:
         result = await cdp_session.send("Browser.getWindowForTarget")
@@ -537,6 +569,7 @@ async def get_viewport_size(cdp_session: Any) -> dict[str, int]:
 
 
 async def get_frame_tree(cdp_session: Any) -> list[dict[str, Any]]:
+    _patch_session_if_needed(cdp_session)
     """Discover all frames via CDP Page.getFrameTree.
 
     Returns:
@@ -561,6 +594,7 @@ async def get_frame_tree(cdp_session: Any) -> list[dict[str, Any]]:
 
 
 async def cdp_right_click(page: Any, cdp_session: Any, x: float, y: float) -> bool:
+    _patch_session_if_needed(cdp_session)
     """Right-click at viewport coordinates via CDP Input.dispatchMouseEvent.
 
     Args:
@@ -599,6 +633,7 @@ async def cdp_right_click(page: Any, cdp_session: Any, x: float, y: float) -> bo
 
 
 async def cdp_hover(cdp_session: Any, x: float, y: float) -> bool:
+    _patch_session_if_needed(cdp_session)
     """Move mouse to viewport coordinates via CDP Input.dispatchMouseEvent.
 
     Args:

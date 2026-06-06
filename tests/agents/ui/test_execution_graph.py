@@ -255,17 +255,15 @@ async def test_observe_node_mock():
 async def test_decide_node_mock():
     """Mock LLM, verify it receives tools and returns AIMessage with tool_calls."""
     from agents.ui.execution_graph import decide_node
+    from core.interfaces import AgentDecision
 
-    # Create a mock LLM that returns an AIMessage with tool_call
-    mock_llm = MagicMock()
-    mock_llm_with_tools = MagicMock()
-
-    response = AIMessage(
-        content="",
-        tool_calls=[{"name": "click", "args": {"target": "#3"}, "id": "call_1"}],
+    mock_decision = AgentDecision(
+        evaluation="上一步操作成功",
+        memory="继续执行测试",
+        next_goal="点击登录按钮",
+        action="click",
+        action_input={"target": "#3"}
     )
-    mock_llm_with_tools.ainvoke = AsyncMock(return_value=response)
-    mock_llm.bind_tools = MagicMock(return_value=mock_llm_with_tools)
 
     state = make_sample_state(
         messages=[
@@ -274,12 +272,9 @@ async def test_decide_node_mock():
         ]
     )
 
-    # V2.0 A (2026-06-02): pre-existing test bug — 源码用 `tools` 不是 `ui_tools`,
-    # 且 retrieve_memories 会被真调, 要 mock 掉
-    with patch("agents.ui.execution_graph.get_llm_client", return_value=mock_llm), \
+    with patch("agents.ui.execution_graph.safe_structured_invoke", new_callable=AsyncMock, return_value=mock_decision), \
          patch("agents.ui.execution_graph.get_execution_system_prompt", return_value="执行系统提示"), \
          patch("agents.ui.execution_graph.get_step_prompt", return_value="当前步骤: 输入用户名"), \
-         patch("agents.ui.execution_graph.tools", return_value=[]), \
          patch("agents.ui.execution_graph._format_page_info", return_value="URL: http://example.com/login\n交互元素:\n  #1: input - 用户名"), \
          patch("core.memory_utils.retrieve_memories", new=AsyncMock(return_value="")), \
          patch("agents.ui.tools.set_current_task"):
@@ -290,6 +285,7 @@ async def test_decide_node_mock():
         assert "messages" in result
         assert len(result["messages"]) == 1
         assert result["messages"][0].tool_calls[0]["name"] == "click"
+        assert result["messages"][0].tool_calls[0]["args"] == {"target": "#3"}
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +493,97 @@ async def test_assert_node_inconclusive_result():
         result = await assert_node(state)
 
         assert result["_last_assertion"].status == "inconclusive"
+
+
+# ---------------------------------------------------------------------------
+# test_assert_node_completion_rejected: strict completion protocol integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_assert_node_treats_completion_rejected_as_soft_failure():
+    """When mark_task_complete tool returns status='completion_rejected', assert_node
+    must NOT mark the case as complete. It should surface as a soft failure so the
+    LLM gets the rejection guidance and can retry with more evidence.
+    """
+    from agents.ui.execution_graph import assert_node
+    from core.interfaces import ActionResult
+
+    ai_msg = AIMessage(
+        content="标记完成",
+        tool_calls=[{"name": "mark_task_complete", "args": {"reasoning": "ok"}, "id": "call_x"}],
+    )
+    tool_msg = ToolMessage(content="rejected", tool_call_id="call_x")
+
+    rejected_ar = ActionResult(
+        action="mark_task_complete",
+        success=False,
+        status="completion_rejected",
+        before_url="http://example.com/",
+        after_url="http://example.com/",
+        extracted_content="❌ reasoning 过短 + 多目标 expected 缺 extracted_fields",
+    )
+
+    state = make_sample_state(
+        messages=[ai_msg, tool_msg],
+        consecutive_failures=1,
+    )
+    state["_last_action_result"] = rejected_ar
+    state["_last_tool_calls"] = ai_msg.tool_calls
+
+    result = await assert_node(state)
+
+    # Must fail (not pass/inconclusive), so the case keeps running
+    assert result["_last_assertion"].status == "fail"
+    assert "拒绝" in result["_last_assertion"].reasoning or "证据" in result["_last_assertion"].reasoning
+    # consecutive_failures incremented so safety valve eventually fires after repeated rejections
+    assert result["consecutive_failures"] == 2
+
+
+@pytest.mark.asyncio
+async def test_assert_node_normal_completion_still_passes():
+    """Regression: a successful mark_task_complete (status='success') with page change
+    must still be treated as case-complete (status='pass') through LLM assertion.
+    """
+    from agents.ui.execution_graph import assert_node
+    from core.interfaces import ActionResult, AssertionResult as _AR
+
+    ai_msg = AIMessage(
+        content="标记完成",
+        tool_calls=[{"name": "mark_task_complete", "args": {"reasoning": "登录成功，跳转到 dashboard"}, "id": "call_y"}],
+    )
+    tool_msg = ToolMessage(content="completed", tool_call_id="call_y")
+
+    success_ar = ActionResult(
+        action="mark_task_complete",
+        success=True,
+        status="success",
+        before_url="http://example.com/login",
+        after_url="http://example.com/dashboard",
+        url_changed=True,
+        extracted_content="登录成功，跳转到 dashboard",
+    )
+
+    state = make_sample_state(
+        messages=[ai_msg, tool_msg],
+        state_before={"url": "http://example.com/login"},
+        state_after={"url": "http://example.com/dashboard"},
+        consecutive_failures=0,
+    )
+    state["_last_action_result"] = success_ar
+    state["_last_tool_calls"] = ai_msg.tool_calls
+
+    mock_assertion = _AR(status="pass", reasoning="LLM 判定通过")
+
+    with patch("agents.ui.execution_graph.detect_changes") as mock_detect, \
+         patch("agents.ui.execution_graph.get_assertion_prompt", return_value="prompt"), \
+         patch("agents.ui.execution_graph.safe_structured_invoke", new=AsyncMock(return_value=mock_assertion)):
+
+        mock_detect.return_value = ChangeReport(url_changed=True)
+        result = await assert_node(state)
+
+        assert result["_last_assertion"].status == "pass"
+        assert result["consecutive_failures"] == 0
 
 
 # ---------------------------------------------------------------------------

@@ -26,6 +26,20 @@ T = TypeVar("T", bound=BaseModel)
 # Cache for LLM client instances, keyed by model_type.
 _client_cache: dict[str, ChatAnthropic] = {}
 
+# Tier 2 (2026-06-06): raw content 缓存 (供 diag 日志落盘)
+# 单变量 (非 per-call) — 假定 L1 串行调用. 入口清空, raw fallback 后设.
+_last_raw_content: str = ""
+_DIAG_RAW_MAX_BYTES = 4096
+
+
+def get_last_raw() -> str:
+    """返回最近一次 safe_structured_invoke 走 raw fallback 的内容 (前 4KB).
+
+    用法: dump 时 raw_content=get_last_raw()
+    注意: 异步并发场景下可能被覆盖, 但 L1 流水线串行调用安全.
+    """
+    return _last_raw_content
+
 # Model type → environment variable name mapping.
 _MODEL_ENV_MAP = {
     "default": "ANTHROPIC_MODEL",
@@ -285,6 +299,51 @@ def _coerce_to_pydantic(payload: Any, schema: type[T]) -> T:
     raise ValueError(f"unsupported payload type: {type(payload).__name__}")
 
 
+def sanitize_messages_for_structured_output(messages: list[AnyMessage]) -> list[AnyMessage]:
+    """Sanitize message history to avoid 'Unknown tool type' errors from strict LLM APIs.
+
+    Converts AIMessage with tool_calls and ToolMessage into plain text messages.
+    """
+    from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
+
+    sanitized = []
+    for msg in messages:
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            # Convert tool calls to plain text description in content
+            tool_calls_desc = []
+            for tc in msg.tool_calls:
+                tool_calls_desc.append(f"[调用工具: {tc['name']}, 参数: {tc['args']}]")
+            text_content = msg.content or ""
+            if isinstance(text_content, list):
+                parts = []
+                for item in text_content:
+                    if isinstance(item, dict):
+                        if item.get("type") == "text" and isinstance(item.get("text"), str):
+                            parts.append(item["text"])
+                        elif "text" in item and isinstance(item["text"], str):
+                            parts.append(item["text"])
+                    elif isinstance(item, str):
+                        parts.append(item)
+                text_content = "\n".join(parts)
+            else:
+                text_content = str(text_content)
+
+            if text_content:
+                text_content = f"{text_content}\n" + "\n".join(tool_calls_desc)
+            else:
+                text_content = "\n".join(tool_calls_desc)
+
+            # Create a new AIMessage without tool_calls
+            sanitized.append(AIMessage(content=text_content, id=msg.id))
+        elif isinstance(msg, ToolMessage):
+            # Convert ToolMessage to a HumanMessage
+            text_content = f"[工具 {msg.name} 执行结果]: {msg.content}"
+            sanitized.append(HumanMessage(content=text_content, id=msg.id))
+        else:
+            sanitized.append(msg)
+    return sanitized
+
+
 async def safe_structured_invoke(
     prompt: str | list[AnyMessage],
     schema: type[T],
@@ -295,20 +354,46 @@ async def safe_structured_invoke(
     Tries the native structured-output wrapper first; on None/exception, falls back
     to a raw LLM call + manual JSON extraction. Returns None only if both paths
     fail or produce an empty result.
+
+    Tier 2 (2026-06-06): 暴露 raw content 缓存 — 调 get_last_raw() 拿最近一次
+    raw fallback 的文本 (前 4KB). 供 diag 日志落盘.
     """
     from langchain_core.messages import HumanMessage
+
+    global _last_raw_content
+    _last_raw_content = ""  # 入口清空, 避免上一调用残留
 
     llm = get_llm_client(model_type)
 
     if isinstance(prompt, str):
         messages = [HumanMessage(content=prompt)]
     else:
-        messages = prompt
+        messages = sanitize_messages_for_structured_output(prompt)
 
     try:
-        result = await llm.with_structured_output(schema).ainvoke(messages)
-        if result is not None:
-            return _coerce_to_pydantic(result, schema)
+        # include_raw=True → 拿原始 LLM 响应 + parsed result, 用于 diag 落盘
+        wrapper = llm.with_structured_output(schema, include_raw=True)
+        raw_result = await wrapper.ainvoke(messages)
+        # raw_result: {"raw": BaseMessage, "parsed": T | None, "parsing_error": Exception | None}
+        parsed = raw_result.get("parsed") if isinstance(raw_result, dict) else None
+        raw_msg = raw_result.get("raw") if isinstance(raw_result, dict) else None
+        if raw_msg is not None:
+            try:
+                # 优先取 tool_calls args (LLM 实际生成的结构化数据, 比 text block 完整)
+                tool_calls = getattr(raw_msg, "tool_calls", None) or []
+                if tool_calls and isinstance(tool_calls, list) and tool_calls[0]:
+                    args = tool_calls[0].get("args") if isinstance(tool_calls[0], dict) else getattr(tool_calls[0], "args", None)
+                    if args:
+                        import json as _json
+                        _last_raw_content = _json.dumps(args, ensure_ascii=False, default=str)[:_DIAG_RAW_MAX_BYTES]
+                    else:
+                        _last_raw_content = _unwrap_content(raw_msg.content)[:_DIAG_RAW_MAX_BYTES]
+                else:
+                    _last_raw_content = _unwrap_content(raw_msg.content)[:_DIAG_RAW_MAX_BYTES]
+            except Exception:
+                pass
+        if parsed is not None:
+            return _coerce_to_pydantic(parsed, schema)
         print(f"[LLM] structured_output returned None for {schema.__name__}, falling back to raw parse")
     except Exception as e:
         print(f"[LLM] structured_output errored for {schema.__name__}: {e}; falling back to raw parse")
@@ -316,11 +401,29 @@ async def safe_structured_invoke(
     try:
         raw = await llm.ainvoke(messages)
         text = _unwrap_content(raw.content)
+        _last_raw_content = text[:_DIAG_RAW_MAX_BYTES]  # 缓存供 diag 落盘
         blob = _extract_json_blob(text)
         if not blob:
             print(f"[LLM] raw fallback: no JSON found in response for {schema.__name__}")
             return None
-        payload = json.loads(blob)
+
+        try:
+            payload = json.loads(blob)
+        except json.JSONDecodeError as je:
+            print(f"[LLM] json.loads failed: {je}. Attempting auto-recovery...", flush=True)
+            # Try to fix illegal backslashes (e.g. C:\Users -> C:\\Users)
+            fixed_blob = re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', blob)
+            try:
+                payload = json.loads(fixed_blob)
+                print("[LLM] auto-recovery succeeded after fixing illegal backslashes", flush=True)
+            except Exception as recovery_err:
+                print(
+                    f"[LLM] auto-recovery failed for {schema.__name__} "
+                    f"(payload length={len(blob)})",
+                    flush=True,
+                )
+                raise recovery_err
+
         return _coerce_to_pydantic(payload, schema)
     except Exception as e:
         print(f"[LLM] raw fallback also failed for {schema.__name__}: {e}")

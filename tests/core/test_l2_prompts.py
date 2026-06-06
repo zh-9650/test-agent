@@ -234,6 +234,7 @@ async def test_decide_node_injects_session_summary_into_system_message(
     而不是依赖 caller 在 messages[0] 塞 SystemMessage (V1.7 漏: decide_node 每步
     insert(0, SystemMessage(...)) 会覆盖前一个 case 留下的 session summary)."""
     from agents.ui.execution_graph import decide_node
+    from core.interfaces import AgentDecision
     from langchain_core.messages import SystemMessage, HumanMessage
 
     state = {
@@ -251,17 +252,19 @@ async def test_decide_node_injects_session_summary_into_system_message(
         "messages": [],
     }
 
-    mock_llm = MagicMock()
-    mock_llm_with_tools = MagicMock()
     captured: dict[str, Any] = {}
-    async def fake_ainvoke(messages):
-        captured["messages"] = list(messages)
-        from langchain_core.messages import AIMessage
-        return AIMessage(content="ok", tool_calls=[])
-    mock_llm_with_tools.ainvoke = fake_ainvoke
-    mock_llm.bind_tools = MagicMock(return_value=mock_llm_with_tools)
 
-    with patch("agents.ui.execution_graph.get_llm_client", return_value=mock_llm), \
+    async def fake_invoke(messages, schema, model_type=None):
+        captured["messages"] = list(messages)
+        return AgentDecision(
+            evaluation="ok",
+            memory="ok",
+            next_goal="continue",
+            action="mark_task_complete",
+            action_input={"reasoning": "test"},
+        )
+
+    with patch("agents.ui.execution_graph.safe_structured_invoke", side_effect=fake_invoke), \
          patch("agents.ui.execution_graph.get_execution_system_prompt", return_value="BASE_SYS_PROMPT"), \
          patch("agents.ui.execution_graph.get_step_prompt", return_value="STEP"), \
          patch("agents.ui.execution_graph._format_page_info", return_value="PAGE"), \
@@ -270,7 +273,7 @@ async def test_decide_node_injects_session_summary_into_system_message(
         await decide_node(state)
 
     msgs = captured.get("messages", [])
-    assert msgs, "decide_node should have called the LLM"
+    assert msgs, "decide_node should have called safe_structured_invoke"
     sys_msg = next((m for m in msgs if isinstance(m, SystemMessage) and "[cached-block-end]" not in str(m.content)), None)
     assert sys_msg is not None, "system message missing"
     assert "TC-000" in sys_msg.content, "session_summary not injected into system message"
@@ -839,15 +842,18 @@ async def test_b4_format_page_info_used_in_decide_prompt(sample_test_case, sampl
         "messages": [],
     }
     captured = {}
-    async def fake_ainvoke(messages):
+    async def fake_safe_structured_invoke(messages, schema, **kwargs):
         captured["msgs"] = list(messages)
-        return AIMessage(content="ok", tool_calls=[])
-    mock_llm = MagicMock()
-    mock_llm_with_tools = MagicMock()
-    mock_llm_with_tools.ainvoke = fake_ainvoke
-    mock_llm.bind_tools = MagicMock(return_value=mock_llm_with_tools)
+        from core.interfaces import AgentDecision
+        return AgentDecision(
+            evaluation="evaluation_text",
+            memory="memory_text",
+            next_goal="next_goal_text",
+            action="click",
+            action_input={"target": "#1"}
+        )
 
-    with patch("agents.ui.execution_graph.get_llm_client", return_value=mock_llm), \
+    with patch("agents.ui.execution_graph.safe_structured_invoke", new=AsyncMock(side_effect=fake_safe_structured_invoke)), \
          patch("agents.ui.execution_graph.get_execution_system_prompt", return_value="BASE_SYS"), \
          patch("agents.ui.execution_graph.get_step_prompt", return_value="STEP"), \
          patch("core.memory_utils.retrieve_memories", new=AsyncMock(return_value="")), \

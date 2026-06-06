@@ -39,11 +39,18 @@ function formatMessageData(msg: WSMessage): string {
     case 'assertion_result':
       return `断言: ${data.status === 'pass' ? '✅ 通过' : '❌ 失败'} | ${data.reasoning || ''}`;
     case 'ai_thinking': {
-      let thought = data.thought || data.thinking || data.text;
+      let thought: unknown = data.thought || data.thinking || data.text;
       if (Array.isArray(thought)) {
-        thought = thought.map((t: any) => t.thinking || t.text || JSON.stringify(t)).join('\n');
+        thought = thought.map((item) => {
+          if (item && typeof item === 'object') {
+            const record = item as Record<string, unknown>;
+            return String(record.thinking || record.text || JSON.stringify(item));
+          }
+          return String(item);
+        }).join('\n');
       } else if (typeof thought === 'object' && thought !== null) {
-        thought = thought.thinking || thought.text || JSON.stringify(thought);
+        const record = thought as Record<string, unknown>;
+        thought = record.thinking || record.text || JSON.stringify(thought);
       }
       return typeof thought === 'string' ? thought : JSON.stringify(data);
     }
@@ -63,8 +70,6 @@ export default function Monitor() {
   const numericTaskId = taskId ? parseInt(taskId, 10) : undefined;
   const { messages, connected, sendStop } = useWebSocket(numericTaskId);
   const [task, setTask] = useState<Task | null>(null);
-  const [screenshot, setScreenshot] = useState<string | null>(null);
-  const [isComplete, setIsComplete] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -75,17 +80,17 @@ export default function Monitor() {
       .catch((err) => console.error('Failed to fetch task:', err));
   }, [numericTaskId]);
 
-  useEffect(() => {
-    const latest = messages[messages.length - 1];
-    if (!latest) return;
-
-    if (latest.type === 'page_update' && latest.data && typeof latest.data.screenshot === 'string') {
-      setScreenshot(latest.data.screenshot as string);
-    }
-    if (latest.type === 'session_complete' && latest.data?.phase !== 'planning_complete') {
-      setIsComplete(true);
-    }
-  }, [messages]);
+  const screenshotMessage = [...messages].reverse().find(
+    (message) => message.type === 'page_update'
+      && typeof message.data?.screenshot === 'string',
+  );
+  const screenshot = typeof screenshotMessage?.data.screenshot === 'string'
+    ? screenshotMessage.data.screenshot
+    : null;
+  const isComplete = messages.some(
+    (message) => message.type === 'session_complete'
+      && message.data?.phase !== 'planning_complete',
+  );
 
   useEffect(() => {
     if (logRef.current) {

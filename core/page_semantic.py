@@ -154,13 +154,19 @@ async def extract_page_semantics(page: Any, task_id: str | None = None,
     # Viewport Info
     viewport_info = {}
     try:
-        viewport_info = await page.evaluate("""() => ({
-            scrollY: window.scrollY,
-            scrollX: window.scrollX,
-            innerHeight: window.innerHeight,
-            innerWidth: window.innerWidth,
-            scrollHeight: document.body.scrollHeight
-        })""")
+        viewport_info = await page.evaluate("""() => {
+            const scrollY = window.scrollY;
+            const innerHeight = window.innerHeight;
+            const scrollHeight = document.body.scrollHeight;
+            return {
+                scrollY: scrollY,
+                scrollX: window.scrollX,
+                innerHeight: innerHeight,
+                innerWidth: window.innerWidth,
+                scrollHeight: scrollHeight,
+                is_bottom: scrollY + innerHeight >= scrollHeight - 5
+            };
+        }""")
         result["viewport"] = viewport_info
     except Exception:
         pass
@@ -211,29 +217,36 @@ async def extract_page_semantics(page: Any, task_id: str | None = None,
 
     # Layer 1: Interactive elements (collected last so we can truncate)
     all_interactive_elements = await _collect_interactive_elements(page)
-    
-    # Viewport filtering — uses box_x/box_y (top-left corner)
+
+    # Fallback truncation if still too many elements (env-overridable, default 100)
+    import os as _os
+    max_elements = int(_os.getenv("L2_MAX_INTERACTIVE_ELEMENTS", "100"))
+
+    # Viewport filtering — only apply if total elements > max_elements to avoid blind spots (issue 5)
     interactive_elements = []
-    if viewport_info:
+    if viewport_info and len(all_interactive_elements) > max_elements:
         sy = viewport_info.get("scrollY", 0)
         sx = viewport_info.get("scrollX", 0)
         ih = viewport_info.get("innerHeight", 1080)
         iw = viewport_info.get("innerWidth", 1920)
-        
+
+        # Generous buffers so sidebar/navigation and nearby off-screen elements remain visible
+        buffer_y = 1000
+        buffer_x = 500
         for el in all_interactive_elements:
             coords = el.get("coords")
             if not coords:
                 interactive_elements.append(el)
                 continue
-            
+
             # Use top-left corner (box_x/box_y) for intersection, not center
             top = coords.get("box_y", coords.get("y", 0))
             left = coords.get("box_x", coords.get("x", 0))
             h = coords.get("height", 0)
             w = coords.get("width", 0)
-            
-            # Intersection check with 100px buffer
-            if (top + h > sy - 100) and (top < sy + ih + 100) and (left + w > sx - 100) and (left < sx + iw + 100):
+
+            # Intersection check with buffers
+            if (top + h > sy - buffer_y) and (top < sy + ih + buffer_y) and (left + w > sx - buffer_x) and (left < sx + iw + buffer_x):
                 interactive_elements.append(el)
     else:
         interactive_elements = all_interactive_elements
@@ -241,9 +254,6 @@ async def extract_page_semantics(page: Any, task_id: str | None = None,
     # Set viewport filtering hint flag
     result["_off_viewport_filter_skipped"] = (len(all_interactive_elements) > len(interactive_elements))
 
-    # Fallback truncation if still too many elements (env-overridable, default 100)
-    import os as _os
-    max_elements = int(_os.getenv("L2_MAX_INTERACTIVE_ELEMENTS", "100"))
     if len(interactive_elements) > max_elements:
         interactive_elements = interactive_elements[:max_elements]
         result["truncated"] = True
@@ -514,6 +524,27 @@ async def _get_element_semantics(el: Any, el_type: str, page: Any = None) -> dic
     except Exception:
         pass
 
+    expanded = None
+    required = False
+
+    try:
+        exp = await el.get_attribute("aria-expanded")
+        if exp is not None:
+            expanded = exp.lower() == "true"
+    except Exception:
+        pass
+
+    try:
+        req = await el.get_attribute("required")
+        if req is not None:
+            required = True
+        else:
+            aria_req = await el.get_attribute("aria-required")
+            if aria_req is not None:
+                required = aria_req.lower() == "true"
+    except Exception:
+        pass
+
     tag = ""
     try:
         tag = await el.evaluate("el => el.tagName.toLowerCase()")
@@ -530,6 +561,8 @@ async def _get_element_semantics(el: Any, el_type: str, page: Any = None) -> dic
         "checked": checked,
         "selected": selected,
         "role": role,
+        "expanded": expanded,
+        "required": required,
     }
 
 
@@ -598,6 +631,16 @@ async def _extract_input(page: Any, el: Any, counter: int) -> dict[str, Any] | N
 async def _extract_button(el: Any, counter: int) -> dict[str, Any] | None:
     """Extract info from a button element."""
     text = await el.text_content() or ""
+    text = text.strip()
+    if not text:
+        aria_label = await el.get_attribute("aria-label")
+        if aria_label:
+            text = aria_label.strip()
+        else:
+            title = await el.get_attribute("title")
+            if title:
+                text = title.strip()
+
     button_type = await el.get_attribute("type") or "button"
     disabled = False
     try:
@@ -611,7 +654,7 @@ async def _extract_button(el: Any, counter: int) -> dict[str, Any] | None:
     return {
         "id": f"#{counter}",
         "type": "button",
-        "text": text.strip(),
+        "text": text,
         "button_type": button_type,
         "disabled": disabled,
         "coords": coords,
@@ -622,6 +665,16 @@ async def _extract_button(el: Any, counter: int) -> dict[str, Any] | None:
 async def _extract_link(el: Any, counter: int) -> dict[str, Any] | None:
     """Extract info from a link element."""
     text = await el.text_content() or ""
+    text = text.strip()
+    if not text:
+        aria_label = await el.get_attribute("aria-label")
+        if aria_label:
+            text = aria_label.strip()
+        else:
+            title = await el.get_attribute("title")
+            if title:
+                text = title.strip()
+
     href = await el.get_attribute("href") or ""
 
     semantics = await _get_element_semantics(el, "link")
@@ -630,7 +683,7 @@ async def _extract_link(el: Any, counter: int) -> dict[str, Any] | None:
     return {
         "id": f"#{counter}",
         "type": "link",
-        "text": text.strip(),
+        "text": text,
         "href": href,
         "coords": coords,
         **semantics,

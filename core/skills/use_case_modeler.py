@@ -5,8 +5,9 @@ L1 Pipeline Position:
   下游: N1.7 自检 + N3 直接映射 goals
   本节点职责: 把零散事实聚合成带 trigger/outcome 的原子级 UseCase,作为状态机的脚手架
 """
-from core.llm_client import safe_structured_invoke
+from core.llm_client import safe_structured_invoke, get_last_raw
 from core.interfaces import KnowledgeBase, UseCaseModel
+from core.diag_logger import get_diag_auto
 
 
 async def generate_use_case_model(knowledge: KnowledgeBase) -> UseCaseModel:
@@ -68,5 +69,8 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
     result = await safe_structured_invoke(prompt, UseCaseModel, model_type="default")
     if result is None or not result.use_cases:
         print("[UseCaseModeler] LLM returned no usable use cases, falling back to empty UseCaseModel")
+        get_diag_auto().dump("02_l1_use_case", node="N15_use_case_modeler", output=UseCaseModel(use_cases=[]), status="empty_fallback", raw_content=get_last_raw())
         return UseCaseModel(use_cases=[])
+    get_diag_auto().dump("02_l1_use_case", node="N15_use_case_modeler", output=result, status="ok",
+                          use_cases_count=len(result.use_cases), raw_content=get_last_raw())
     return result

@@ -51,5 +51,10 @@ export interface CreateTaskRequest {
     accounts?: { role: string; username: string; password: string }[];
     rules?: string;
     focus_areas?: string;
+    prd?: string;
+    swagger?: string;
+    tech_doc?: string;
+    prototype_url?: string;
+    changelog?: string;
   };
 }

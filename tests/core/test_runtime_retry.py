@@ -104,6 +104,7 @@ def _make_runtime_instance():
     rt.context.clear_cookies = AsyncMock()
     rt.page = _make_mock_page()
     rt.coverage_tracker = None
+    rt._reset_browser_state = AsyncMock()
     return rt
 
 

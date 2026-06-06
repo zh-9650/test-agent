@@ -66,10 +66,9 @@ pipeline as production-stable until these are fixed and reverified:
    totals can diverge.
 4. Assertion exceptions may be converted to `inconclusive`, obscuring their
    original cause.
-5. Focused runtime tests still depend on a live database and can fail with
-   missing-task or closed-event-loop errors instead of remaining isolated.
-6. The frontend production build succeeds, but `npm run lint` still reports
-   existing explicit `any`, effect state-update, and unused-binding errors.
+5. Database-backed API/logger test modules pass independently, but the full
+   pytest process still has global async-engine and event-loop isolation
+   failures when those modules run together.
 
 The next development priority is lifecycle/result accounting and diagnostic
 reproduction, not broad prompt tuning.

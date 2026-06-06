@@ -138,9 +138,9 @@ class ActionResult(BaseModel):
     filled_value: str = Field(default="", description="B1.3: input_text 实际填入的值, 密码脱敏为前2位+****")
 
     # ---- Phase 2.0D: 结构化结果扩展 (对标 browser-use ActionResult) ----
-    status: Literal["success", "failure", "timeout", "not_found", "inconclusive"] = Field(
+    status: Literal["success", "failure", "timeout", "not_found", "inconclusive", "completion_rejected"] = Field(
         default="success",
-        description="细粒度状态, 比 success bool 更有信息量"
+        description="细粒度状态, 比 success bool 更有信息量。completion_rejected = mark_task_complete 的证据不足被工具自身拒绝, LLM 需补完后重试。"
     )
     extracted_content: str | None = Field(
         default=None,
@@ -193,6 +193,49 @@ class AssertionResult(BaseModel):
     reasoning: str = Field(default="", description="判断理由 (LLM 必填, 但 B3.1 fast_assert / record 兜底时允许空)")
     # BUG-02 fix (2026-06-04 audit): default="" 防止 LLM 漏传 reasoning 触发 Pydantic ValidationError
     # 之前: reasoning 必填 → 漏传 → ValidationError → 走兜底分支 → 第二次 LLM 调用 (浪费)
+
+
+ToolName = Literal[
+    "navigate",
+    "click",
+    "input_text",
+    "search",
+    "scroll",
+    "wait",
+    "press_key",
+    "hover",
+    "request_human_intervention",
+    "go_back",
+    "extract_text",
+    "select_dropdown",
+    "evaluate_js",
+    "mark_task_complete",
+    "mark_task_failed",
+    "mark_task_skipped",
+    "screenshot_on_demand",
+    "parallel_tool_calls",
+    "find",
+    "get_dropdown_options",
+    "get_specific_elements",
+    "switch_tab",
+    "close_tab",
+    "refresh",
+    "get_page_links",
+]
+
+
+class AgentDecision(BaseModel):
+    """LLM 决策结果。单步 decide 节点的结构化输出。
+
+    action 字段使用 Literal 枚举约束, 防止 LLM 拼错工具名 (Click/clicker 等),
+    一旦写错会在 pydantic 校验阶段就被 safe_structured_invoke 的 fallback 兜住。
+    """
+
+    evaluation: str = Field(description="对上一步操作和目标的评价/复盘 (Evaluation)")
+    memory: str = Field(description="长期或短期记忆，记录当前任务进度和需要记住的状态 (Memory)")
+    next_goal: str = Field(description="下一步的目标是什么 (Next Goal)")
+    action: ToolName = Field(description="要调用的工具名称, 必须是 ToolName 中列出的工具之一")
+    action_input: dict[str, Any] = Field(default_factory=dict, description="传给工具的参数，以键值对表示")
 
 
 class ChangeReport(BaseModel):
@@ -278,6 +321,9 @@ class TestState(MessagesState):
     _last_tool_calls: list[dict[str, Any]]  # V2.0-A (2026-06-02): execute_node 传给 assert_node 的工具调用列表 (供 Rule 0.5 mark_task_complete 使用)
     _last_change_report: Optional[ChangeReport]  # assert_node 设置的变化报告
     _last_assertion: Optional[AssertionResult]  # assert_node 设置的断言结果
+    _last_evaluation: str  # LLM 对上一步操作和目标的评价/复盘
+    _last_memory: str  # LLM 对任务进度和需要记住的状态的记忆
+    _last_next_goal: str  # LLM 对下一步的目标
 
     # Phase 2.0A Sprint 2: 标准化动作执行结果 (execute_node 写入, assert_node 读取)
     _last_action_result: Optional[ActionResult]  # 上一步工具的结构化执行结果

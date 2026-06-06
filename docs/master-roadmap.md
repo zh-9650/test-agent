@@ -26,12 +26,11 @@ Exit criteria:
 
 ## P1: Fast Health Checks And Frontend Contracts
 
-1. Fix current frontend lint and type-quality errors, including explicit
-   `any`, effect state updates, and unused bindings.
-2. Define a fast backend test subset for routine development.
-3. Add focused tests for diagnostic logger flush/redaction behavior.
-4. Remove remaining debug prints from runtime hot paths.
-5. Document and verify stop/resume semantics.
+1. Define a fast backend test subset for routine development.
+2. Isolate database-backed test modules so the full pytest suite can run in
+   one process without global engine or event-loop contamination.
+3. Remove remaining debug prints from runtime hot paths.
+4. Document and verify stop/resume semantics.
 
 Exit criteria:
 

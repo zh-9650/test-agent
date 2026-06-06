@@ -26,6 +26,8 @@ class TestGetLlmClient:
             "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k2.6",
             "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.1",
         }
+        from core import llm_client
+        llm_client._client_cache.clear()
 
     def test_get_default_client(self):
         """Returns ChatAnthropic with default model name."""
@@ -119,3 +121,33 @@ class TestCountTokens:
         messages = [HumanMessage(content="Test message.")]
         result = count_tokens(messages, model="some-model")
         assert result > 0
+
+
+def test_sanitize_messages_for_structured_output():
+    from core.llm_client import sanitize_messages_for_structured_output
+    from langchain_core.messages import AIMessage, ToolMessage, HumanMessage, SystemMessage
+
+    messages = [
+        SystemMessage(content="sys"),
+        AIMessage(content="evaluating", tool_calls=[{"name": "click", "args": {"target": "#btn"}, "id": "1"}]),
+        ToolMessage(content="success", name="click", tool_call_id="1"),
+        HumanMessage(content="next step")
+    ]
+
+    sanitized = sanitize_messages_for_structured_output(messages)
+    assert len(sanitized) == 4
+
+    assert isinstance(sanitized[0], SystemMessage)
+    assert sanitized[0].content == "sys"
+
+    assert isinstance(sanitized[1], AIMessage)
+    assert not sanitized[1].tool_calls
+    assert "调用工具: click" in sanitized[1].content
+    assert "evaluating" in sanitized[1].content
+
+    assert isinstance(sanitized[2], HumanMessage)
+    assert "工具 click 执行结果" in sanitized[2].content
+    assert "success" in sanitized[2].content
+
+    assert isinstance(sanitized[3], HumanMessage)
+    assert sanitized[3].content == "next step"

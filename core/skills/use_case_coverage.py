@@ -9,8 +9,9 @@ import json
 import re
 from typing import Any
 from pydantic import BaseModel, Field
-from core.llm_client import safe_structured_invoke
+from core.llm_client import safe_structured_invoke, get_last_raw
 from core.interfaces import KnowledgeBase, UseCaseModel
+from core.diag_logger import get_diag_auto
 
 
 _FAST_PATH_COVERAGE_THRESHOLD = 0.9
@@ -111,6 +112,7 @@ async def check_use_case_coverage(knowledge: KnowledgeBase, use_case_model: UseC
     """
     if not knowledge.business_rules:
         unknown_count, unknown_names = _compute_unknown_actors(use_case_model, knowledge)
+        get_diag_auto().dump("03_l1_coverage", node="N17_use_case_coverage", output=CoverageReport(unknown_actor_count=unknown_count, unknown_actor_names=unknown_names), status="empty_rules", fast_path_used=True, raw_content="N/A (no LLM call)")
         return use_case_model, CoverageReport(
             unknown_actor_count=unknown_count,
             unknown_actor_names=unknown_names,
@@ -127,6 +129,9 @@ async def check_use_case_coverage(knowledge: KnowledgeBase, use_case_model: UseC
     unknown_count, unknown_names = _compute_unknown_actors(use_case_model, knowledge)
     if not missing and covered:
         print(f"[UseCaseCoverage] Fast path: 100% coverage detected ({len(covered)} rules), skipping LLM check.")
+        get_diag_auto().dump("03_l1_coverage", node="N17_use_case_coverage",
+                              output=CoverageReport(covered_rules=covered, unknown_actor_count=unknown_count, unknown_actor_names=unknown_names),
+                              status="fast_path_100", fast_path_used=True, covered_count=len(covered), missing_count=0, raw_content="N/A (no LLM call)")
         return use_case_model, CoverageReport(
             covered_rules=covered,
             unknown_actor_count=unknown_count,
@@ -137,6 +142,9 @@ async def check_use_case_coverage(knowledge: KnowledgeBase, use_case_model: UseC
             f"[UseCaseCoverage] Near-complete fast path: {rate:.0%} coverage "
             f"({len(missing)} potential gaps), skipping LLM check."
         )
+        get_diag_auto().dump("03_l1_coverage", node="N17_use_case_coverage",
+                              output=CoverageReport(covered_rules=covered, missing_rules=missing, unknown_actor_count=unknown_count, unknown_actor_names=unknown_names),
+                              status="fast_path_near_complete", fast_path_used=True, covered_count=len(covered), missing_count=len(missing), raw_content="N/A (no LLM call)")
         return use_case_model, CoverageReport(
             covered_rules=covered, missing_rules=missing,
             unknown_actor_count=unknown_count,
@@ -209,6 +217,9 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
     if result is None:
         print("[UseCaseCoverage] LLM returned no usable refinement, using original model")
         unknown_count, unknown_names = _compute_unknown_actors(use_case_model, knowledge)
+        get_diag_auto().dump("03_l1_coverage", node="N17_use_case_coverage",
+                              output=CoverageReport(covered_rules=covered, missing_rules=missing, unknown_actor_count=unknown_count, unknown_actor_names=unknown_names),
+                              status="llm_fallback", fast_path_used=False, covered_count=len(covered), missing_count=len(missing), raw_content=get_last_raw())
         return use_case_model, CoverageReport(
             covered_rules=covered, missing_rules=missing,
             unknown_actor_count=unknown_count,
@@ -219,6 +230,9 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
     except Exception as e:
         print(f"[UseCaseCoverage] Could not coerce refined use_case_model: {e}")
         unknown_count, unknown_names = _compute_unknown_actors(use_case_model, knowledge)
+        get_diag_auto().dump("03_l1_coverage", node="N17_use_case_coverage",
+                              output=CoverageReport(covered_rules=covered, missing_rules=missing, unknown_actor_count=unknown_count, unknown_actor_names=unknown_names),
+                              status="coerce_failed", fast_path_used=False, error=str(e), raw_content=get_last_raw())
         return use_case_model, CoverageReport(
             covered_rules=covered, missing_rules=missing,
             unknown_actor_count=unknown_count,
@@ -231,6 +245,10 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
     unknown_count, unknown_names = _compute_unknown_actors(refined, knowledge)
     result.report.unknown_actor_count = unknown_count
     result.report.unknown_actor_names = unknown_names
+    get_diag_auto().dump("03_l1_coverage", node="N17_use_case_coverage", output=result.report, status="ok",
+                          use_case_model=refined, covered_count=len(result.report.covered_rules),
+                          missing_count=len(result.report.missing_rules),
+                          unknown_actor_count=unknown_count, fast_path_used=False, raw_content=get_last_raw())
     return refined, result.report
 
 

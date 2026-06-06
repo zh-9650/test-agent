@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ from langchain_core.messages import AIMessage, SystemMessage
 from playwright.async_api import async_playwright
 
 from core.interfaces import AssertionResult, ChangeReport, Setup, StepResult, TestCase, TestResult
-from core.execution_logger import _task_id_map, log_step, log_test_result
+from core.execution_logger import _task_id_map, log_step, log_test_result, clear_test_case_steps
 from agents.ui.planning_graph import build_planning_graph
 from agents.ui.execution_graph import build_execution_graph
 from agents.ui.setup_manager import execute_setup
@@ -30,8 +31,59 @@ from agents.ui.tools import cleanup_task_context, set_cdp_session, set_current_p
 from core.report_builder import ReportBuilder
 from core.skills.session_summary import generate_case_summary
 from core.skills.coverage_tracker import CoverageTracker
+from core.diag_logger import get_diag, get_current_task
 from database.connection import async_session
 from database.models import Report, Task
+
+
+# Tier 2 (2026-06-05): astream 监听 → 落 06-13 stage
+# 节点名 → (stage 标识, mode) 映射
+_PLANNING_NODE_STAGE: dict[str, tuple[str, str]] = {
+    "extract_goals": ("06_l2_planning_extract_goals", "overwrite"),
+    "explore_observe": ("07_l2_planning_explore_step", "append"),
+    "explore_decide": ("07_l2_planning_explore_step", "append"),
+    "explore_execute": ("07_l2_planning_explore_step", "append"),
+    "generate_system_map": ("08_l2_planning_generate_system_map", "overwrite"),
+    "extract_scenarios": ("09_l2_planning_extract_scenarios", "overwrite"),
+    "generate_plan": ("10_l2_planning_generate_plan", "overwrite"),
+}
+_EXEC_NODE_STAGE: dict[str, tuple[str, str]] = {
+    "observe": ("11_l3_execution_step", "append"),
+    "decide": ("11_l3_execution_step", "append"),
+    "execute": ("11_l3_execution_step", "append"),
+    "assert": ("12_l3_execution_assert", "append"),
+    "record": ("13_l3_execution_record", "append"),
+}
+
+
+def _dump_node(node_name: str, state_update: dict[str, Any], stage_map: dict[str, tuple[str, str]]) -> None:
+    """Tier 2 helper: 按 stage_map 把 node 输出 dump 到 diag. 不抛错."""
+    if node_name not in stage_map:
+        return
+    stage, mode = stage_map[node_name]
+    try:
+        diag = get_diag(get_current_task())
+        # 精简 fields: 保留 _last_node_* 观测字段 + 关键 state (去掉 messages / screenshot base64)
+        slim = {
+            "node": node_name,
+            "duration_ms": state_update.get("_last_node_duration_ms", "N/A"),
+            "token_count": state_update.get("_last_token_count", "N/A"),
+        }
+        # 保留非巨型字段
+        for k in ("current_step", "case_id", "test_case_id", "action_name", "action_result", "assertion"):
+            if k in state_update:
+                v = state_update[k]
+                if isinstance(v, str) and len(v) > 1000:
+                    slim[k] = v[:1000] + "..."
+                else:
+                    slim[k] = v
+        # page_info 走 slim_page_info
+        if "page_info" in state_update:
+            from core.diag_logger import slim_page_info
+            slim["page_info"] = slim_page_info(state_update["page_info"])
+        diag.dump(stage, mode=mode, **slim)
+    except Exception as e:
+        sys.stderr.write(f"[Diag] dump_node {node_name}→{stage} failed: {e}\n")
 
 
 def _now_iso() -> str:
@@ -107,6 +159,7 @@ class Runtime:
         """
         results: list[TestResult] = []
         set_current_task(self.task_id)
+        get_diag(self.task_id).start()
         try:
             # 1. Launch browser
             await self._launch_browser()
@@ -145,6 +198,8 @@ class Runtime:
             traceback.print_exc()
         finally:
             await self._close_browser()
+            # Diag: 兜底 finalize (api/app.py:_run_test_session 的 finally 也会调, 但 Runtime 单独用时必须自兜底)
+            await get_diag(self.task_id).finalize()
 
         return results
 
@@ -158,6 +213,8 @@ class Runtime:
         - test_case_complete
         """
         set_current_task(self.task_id)
+        get_diag(self.task_id).start()
+        report_saved = False
         try:
             await self._launch_browser()
             self._stream_results = []
@@ -175,6 +232,7 @@ class Runtime:
 
             async for stream_update in planning_graph.astream(planning_state):
                 for node_name, state_update in _stream_items(stream_update):
+                    _dump_node(node_name, state_update, _PLANNING_NODE_STAGE)
                     if node_name == "explore_decide":
                         messages = state_update.get("messages", [])
                         if messages:
@@ -258,14 +316,27 @@ class Runtime:
                 ):
                     yield update
 
-            report_path = ""
-            if self._stream_results:
-                report_path = await self._save_report(self._stream_results)
-
+            report_path = await self._save_report(self._stream_results)
+            report_saved = True
+            result_statuses = {
+                result.test_case_id: result.status
+                for result in self._stream_results
+            }
+            final_plan = [
+                {
+                    **test_case.model_dump(),
+                    "status": result_statuses.get(test_case.id, "incomplete"),
+                }
+                for test_case in test_plan
+            ]
             final_report = {
                 "task_id": self.task_id,
-                "status": "completed",
-                "test_plan": [{**tc.model_dump(), "status": getattr(tc, "status", "pending")} for tc in test_plan],
+                "status": (
+                    "completed"
+                    if len(self._stream_results) == len(test_plan)
+                    else "failed"
+                ),
+                "test_plan": final_plan,
                 "report_path": report_path,
             }
             yield {
@@ -289,7 +360,15 @@ class Runtime:
                 "timestamp": _now_iso(),
             }
         finally:
+            # Error/partial-run fallback. Successful runs save before final completion.
+            if not report_saved:
+                try:
+                    await self._save_report(self._stream_results)
+                except Exception as _report_err:
+                    print(f"[Runtime] finally _save_report failed: {_report_err}", flush=True)
             await self._close_browser()
+            # Diag: 兜底 finalize
+            await get_diag(self.task_id).finalize()
 
     async def _launch_browser(self):
         """Launch Playwright browser with trace and video recording.
@@ -329,6 +408,9 @@ class Runtime:
 
         print("DEBUG: Getting page")
         self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
+        from core.page_semantic import track_page_requests
+        track_page_requests(self.page)
+        self.context.on("page", lambda p: track_page_requests(p))
         # Attach the browser_session to the page object so page_semantic.py can use it
         self.page._browser_session = self.browser_session
         set_current_task(self.task_id)
@@ -356,6 +438,7 @@ class Runtime:
             if getattr(self, "context", None):
                 trace_path = os.path.join("data", "sessions", self.task_id, "trace.zip")
                 await self.context.tracing.stop(path=trace_path)
+                await self.context.close()
         except Exception:
             pass
         try:
@@ -437,27 +520,58 @@ class Runtime:
 
         复用自 _execute_test_case / _execute_test_case_stream 的内联代码 (2026-06-04 抽取).
         """
+        is_closed = False
+        try:
+            if not getattr(self, "page", None) or self.page.is_closed():
+                is_closed = True
+        except Exception:
+            is_closed = True
+
+        if is_closed:
+            print("[Runtime] [ResetState] 浏览器页面已关闭/损坏，正在重新启动浏览器...", flush=True)
+            try:
+                await self._close_browser()
+            except Exception:
+                pass
+            await self._launch_browser()
+            return
+
+        print("[Runtime] [ResetState] Starting browser-state reset...", flush=True)
         try:
             if getattr(self, "context", None):
+                print("[Runtime] [ResetState] Clearing cookies...", flush=True)
                 await self.context.clear_cookies()
             if getattr(self, "page", None):
                 try:
+                    print("[Runtime] [ResetState] Clearing localStorage & sessionStorage...", flush=True)
                     await self.page.evaluate("localStorage.clear(); sessionStorage.clear();")
+                    print("[Runtime] [ResetState] Navigating to about:blank...", flush=True)
                     await self.page.goto("about:blank", wait_until="domcontentloaded", timeout=15000)
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[Runtime] [ResetState] (Non-fatal) Clear/blank failed: {e}", flush=True)
+                print("[Runtime] [ResetState] Navigating to target URL...", flush=True)
                 await self.page.goto(self.target_url, wait_until="networkidle", timeout=30000)
                 from agents.ui.tools import _wait_for_stable
                 try:
+                    print("[Runtime] [ResetState] Waiting for DOM stability...", flush=True)
                     await _wait_for_stable(self.page, timeout=3000, poll_interval=300)
                 except Exception:
                     pass
                 current_url = self.page.url
                 if not current_url.startswith(self.target_url.rstrip("/")):
-                    print(f"[Runtime] 状态重置后 URL 不匹配: {current_url} != {self.target_url}, 重试一次")
+                    print("[Runtime] [ResetState] URL mismatch after reset, retrying navigation...", flush=True)
                     await self.page.goto(self.target_url, wait_until="load", timeout=30000)
+            print("[Runtime] [ResetState] Browser state reset completed.", flush=True)
         except Exception as e:
-            print(f"[Runtime] 增强状态重置失败: {e}")
+            print(f"[Runtime] [ResetState] 增强状态重置失败: {e}，将强制重新启动浏览器以恢复连接...", flush=True)
+            try:
+                await self._close_browser()
+            except Exception:
+                pass
+            try:
+                await self._launch_browser()
+            except Exception as launch_err:
+                print(f"[Runtime] [ResetState] 强制重新启动浏览器失败: {launch_err}", flush=True)
 
     async def _capture_failure_context(
         self,
@@ -637,17 +751,9 @@ class Runtime:
             return "failed"
         if final_state.get("current_step", 0) >= max_steps:
             return "incomplete"
-        if any(
-            s.assertion and s.assertion.status == "fail"
-            for s in collected_steps
-            if hasattr(s, "assertion")
-        ):
+        if any(s.assertion and s.assertion.status == "fail" for s in collected_steps if getattr(s, "assertion", None) is not None):
             return "failed"
-        if any(
-            s.assertion and s.assertion.status == "pass"
-            for s in collected_steps
-            if hasattr(s, "assertion")
-        ):
+        if any(s.assertion and s.assertion.status == "pass" for s in collected_steps if getattr(s, "assertion", None) is not None):
             return "passed"
         return "incomplete"
 
@@ -679,8 +785,8 @@ class Runtime:
         for attempt in range(max_retries + 1):
             attempts_used = attempt + 1
 
-            # 重试时: 重置 browser state
-            if attempt > 0:
+            # 重试或后续用例首尝时: 重置 browser state
+            if attempt > 0 or index > 0:
                 await self._reset_browser_state()
 
             # Execute setups (每次重试都重新跑, 假设 setup 可能被前次失败污染)
@@ -702,6 +808,8 @@ class Runtime:
             )
 
             # Run execution subgraph
+            if self.task_id in _task_id_map:
+                await clear_test_case_steps(self.task_id, test_case.id)
             execution_graph = build_execution_graph()
             try:
                 result_state = await execution_graph.ainvoke(execution_state)
@@ -809,22 +917,23 @@ class Runtime:
         for attempt in range(max_retries + 1):
             attempts_used = attempt + 1
 
-            # ── 重试: yield 事件 + 重置浏览器 ──────────────────────────
-            if attempt > 0:
-                last_fc = failure_contexts[-1]
-                yield {
-                    "type": "test_case_retry",
-                    "test_case_id": test_case.id,
-                    "step_index": 0,
-                    "data": {
-                        "attempt": attempt + 1,  # 1-indexed for human
-                        "max_retries": max_retries + 1,
-                        "previous_status": last_fc.get("assertion_status", "unknown"),
-                        "previous_reasoning": last_fc.get("assertion_reasoning", ""),
-                        "screenshot_path": last_fc.get("screenshot_path", ""),
-                    },
-                    "timestamp": _now_iso(),
-                }
+            # ── 重试或后续用例首尝: yield 事件 + 重置浏览器 ──────────────────────────
+            if attempt > 0 or index > 0:
+                if attempt > 0:
+                    last_fc = failure_contexts[-1]
+                    yield {
+                        "type": "test_case_retry",
+                        "test_case_id": test_case.id,
+                        "step_index": 0,
+                        "data": {
+                            "attempt": attempt + 1,  # 1-indexed for human
+                            "max_retries": max_retries + 1,
+                            "previous_status": last_fc.get("assertion_status", "unknown"),
+                            "previous_reasoning": last_fc.get("assertion_reasoning", ""),
+                            "screenshot_path": last_fc.get("screenshot_path", ""),
+                        },
+                        "timestamp": _now_iso(),
+                    }
                 await self._reset_browser_state()
 
             # ── Execute setups ───────────────────────────────────────────
@@ -858,6 +967,8 @@ class Runtime:
             )
 
             # ── Run execution subgraph with streaming ────────────────────
+            if self.task_id in _task_id_map:
+                await clear_test_case_steps(self.task_id, test_case.id)
             execution_graph = build_execution_graph()
             collected_steps: list[StepResult] = []
             final_state = dict(execution_state)
@@ -865,6 +976,8 @@ class Runtime:
             try:
                 async for stream_update in execution_graph.astream(execution_state):
                     for node_name, state_update in _stream_items(stream_update):
+                        _dump_node(node_name, state_update, _EXEC_NODE_STAGE)
+                        print(f"[DEBUG RUNTIME] node_name={node_name}, keys={list(state_update.keys()) if isinstance(state_update, dict) else type(state_update)}", flush=True)
                         # Accumulate state from each node
                         final_state.update(state_update)
 
@@ -1117,11 +1230,21 @@ class Runtime:
                 if task:
                     task.total_tests = len(results)
                     task.passed_tests = sum(1 for r in results if r.status == "passed")
-                    task.failed_tests = sum(1 for r in results if r.status == "failed")
+                    task.failed_tests = sum(1 for r in results if r.status in ("failed", "incomplete", "human_review_required"))
                 session.add(Report(task_id=db_task_id, report_path=saved_path, summary=summary))
                 await session.commit()
         except Exception:
-            # Report file is still useful even when DB persistence is unavailable.
-            return saved_path
-
+            # Report file is still useful when DB persistence is unavailable.
+            pass
+        # Diag: 报告层 dump
+        from core.diag_logger import get_diag
+        get_diag(self.task_id).dump("15_report_summary", node="ReportBuilder",
+                                    report_path=saved_path,
+                                    total_tests=len(results),
+                                    passed_tests=sum(1 for r in results if r.status == "passed"),
+                                    failed_tests=sum(1 for r in results if r.status == "failed"),
+                                    incomplete=sum(1 for r in results if r.status == "incomplete"),
+                                    human_review_required=sum(1 for r in results if r.status == "human_review_required"),
+                                    ai_summary_preview=ai_summary[:200] if ai_summary else "",
+                                    l1_coverage_present=bool(l1_coverage))
         return saved_path

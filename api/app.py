@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from datetime import datetime, timezone
 from typing import Any
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from pathlib import Path
 
@@ -143,6 +147,77 @@ async def get_task_steps(
         return StepListResponse(steps=steps, total=total)  # type: ignore[arg-type]
 
 
+# GET /api/tasks/{task_id}/diag — List diag log files for a task
+@app.get("/api/tasks/{task_id}/diag")
+async def get_diag_list(task_id: int) -> dict:
+    """Return diag log index for a task. Files are loaded lazily via /diag/{stage}."""
+    import json
+    from pathlib import Path
+
+    diag_dir = Path("data") / "diag" / str(task_id)
+    if not diag_dir.is_dir():
+        return {"task_id": task_id, "exists": False, "stages": [], "index": None}
+
+    index_path = diag_dir / "index.json"
+    index_data = None
+    if index_path.is_file():
+        try:
+            index_data = json.loads(index_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            index_data = {"_error": f"index.json unreadable: {e}"}
+
+    files = []
+    for p in sorted(diag_dir.glob("*.json")):
+        if p.name == "index.json":
+            continue
+        try:
+            st = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            files.append({
+                "stage": p.stem,
+                "size": p.stat().st_size,
+                "status": "unreadable",
+                "error": str(e),
+            })
+            continue
+        files.append({
+            "stage": p.stem,
+            "size": p.stat().st_size,
+            "started_at": st.get("started_at"),
+            "node": st.get("node"),
+            "status": st.get("status"),
+        })
+
+    return {
+        "task_id": task_id,
+        "exists": True,
+        "stages": files,
+        "index": index_data,
+    }
+
+
+# GET /api/tasks/{task_id}/diag/{stage} — Get a single diag log file
+@app.get("/api/tasks/{task_id}/diag/{stage}")
+async def get_diag_file(task_id: int, stage: str) -> dict:
+    """Return a single diag stage JSON. stage is filename without .json extension."""
+    import json
+    from pathlib import Path
+
+    # 安全: stage 不允许路径分隔符
+    if "/" in stage or "\\" in stage or ".." in stage:
+        raise HTTPException(status_code=400, detail="invalid stage name")
+
+    diag_dir = Path("data") / "diag" / str(task_id)
+    f = diag_dir / f"{stage}.json"
+    if not f.is_file():
+        raise HTTPException(status_code=404, detail=f"diag stage '{stage}' not found for task {task_id}")
+
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"diag file '{stage}' unreadable: {e}")
+
+
 # GET /api/tasks/{task_id}/report — Get report
 @app.get("/api/tasks/{task_id}/report")
 async def get_report(task_id: int, download: bool = Query(False)) -> Any:
@@ -215,7 +290,7 @@ async def resume_task(task_id: int, req: ResumeRequest) -> MessageResponse:
     task_id_str = str(task_id)
     if task_id_str not in _hitl_events:
         raise HTTPException(status_code=400, detail="Task is not waiting for human intervention")
-    
+
     _hitl_responses[task_id_str] = req.message
     _hitl_events[task_id_str].set()
     return MessageResponse(message="Task resumed")
@@ -230,7 +305,7 @@ async def test_layer1_endpoint(req: Layer1TestRequest):
     """Test the Layer 1 extraction pipeline with SSE streaming"""
     if not any([req.prd, req.api_doc, req.changelog]):
         raise HTTPException(status_code=400, detail="至少提供一个文档")
-    
+
     # 截断保护
     req.prd = req.prd[:15000]
     req.api_doc = req.api_doc[:15000]
@@ -243,22 +318,22 @@ async def test_layer1_endpoint(req: Layer1TestRequest):
             from core.skills.use_case_coverage import check_use_case_coverage
             from core.skills.system_modeler import generate_system_model
             from core.skills.goal_extractor import extract_goals
-            
+
             yield json.dumps({"progress": "[Node 1] 正在提取无损事实库 (KnowledgeBase)..."}, ensure_ascii=False) + "\n"
             knowledge = await extract_knowledge(req.prd, req.api_doc, req.changelog)
-            
+
             yield json.dumps({"progress": "[Node 1.5] 正在构建角色用例脚手架 (UseCaseModel)..."}, ensure_ascii=False) + "\n"
             use_case_model = await generate_use_case_model(knowledge)
-            
+
             yield json.dumps({"progress": "[Node 1.7] 正在进行覆盖率自检 (Coverage Check)..."}, ensure_ascii=False) + "\n"
             use_case_model, coverage_report = await check_use_case_coverage(knowledge, use_case_model)
-            
+
             yield json.dumps({"progress": "[Node 2] 正在构建状态机流转网络 (SystemModel)..."}, ensure_ascii=False) + "\n"
             system_model = await generate_system_model(knowledge, use_case_model)
-            
+
             yield json.dumps({"progress": "[Node 3] 正在派生探索目标 (Goals)..."}, ensure_ascii=False) + "\n"
             goals = await extract_goals(use_case_model.model_dump())
-            
+
             final_result = {
                 "progress": "done",
                 "knowledge_base": knowledge.model_dump(),
@@ -272,7 +347,7 @@ async def test_layer1_endpoint(req: Layer1TestRequest):
             yield json.dumps({"progress": "error", "error": str(e)}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(
-        generate(), 
+        generate(),
         media_type="application/x-ndjson",
         headers={
             "Cache-Control": "no-cache",
@@ -293,7 +368,7 @@ async def list_memories(
         query = select(AgentMemory)
         if scope_type:
             query = query.where(AgentMemory.scope_type == scope_type)
-        
+
         total_result = await session.execute(select(func.count(AgentMemory.id)))
         total = total_result.scalar() or 0
 
@@ -371,12 +446,27 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
                 task.started_at = datetime.now(timezone.utc)
                 await session.commit()
 
+        # Diag: 启动 + 入口 dump + 注入 task context
+        from core.diag_logger import get_diag, set_current_task
+        task_id_str = str(task_db_id)
+        set_current_task(task_id_str)
+        diag = get_diag(task_id_str)
+        diag.start()
+        diag.dump("00_entry", target_url=target_url, task_name=f"Test {target_url}",
+                  config_keys=list((config or {}).keys()),
+                  has_prd=bool((config or {}).get("prd")),
+                  has_swagger=bool((config or {}).get("api_doc") or (config or {}).get("swagger")),
+                  has_changelog=bool((config or {}).get("changelog")),
+                  has_focus=bool((config or {}).get("focus_areas")),
+                  accounts_count=len((config or {}).get("accounts", [])),
+                  rules_count=len((config or {}).get("rules", [])))
+
         has_error = False
         try:
             from core.runtime import Runtime
             from agents.ui.tools import _hitl_callbacks
             from core.document_parser import parse_and_fetch_links
-            
+
             async def hitl_callback(reason: str):
                 await websocket_manager.send_message(str(task_db_id), {
                     "type": "hitl_requested",
@@ -385,56 +475,110 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
                     "data": {"reason": reason},
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 })
-                
+
             _hitl_callbacks[str(task_db_id)] = hitl_callback
-            
+
             from core.skills.system_modeler import generate_system_model
             from core.skills.knowledge_extractor import extract_knowledge
             from core.skills.use_case_modeler import generate_use_case_model
             from core.skills.use_case_coverage import check_use_case_coverage
-            
+
+            from core.interfaces import KnowledgeBase
+            from core.skills.use_case_modeler import UseCaseModel
+            from core.skills.use_case_coverage import CoverageReport
+            from core.skills.system_modeler import SystemModel
+
+            print("  [DEBUG SESSION] Starting retrieve_memories...", flush=True)
             memory_context = await retrieve_memories(target_url)
+            print("  [DEBUG SESSION] Starting parse_and_fetch_links...", flush=True)
             enriched_config = await parse_and_fetch_links(config or {})
-            
+            print("  [DEBUG SESSION] parse_and_fetch_links done.", flush=True)
+
             # Node 1: Knowledge Extraction
-            knowledge = await extract_knowledge(
-                prd_content=enriched_config.get("prd", ""),
-                api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
-                changelog_content=enriched_config.get("changelog", "")
-            )
-            enriched_config["_knowledge_base"] = knowledge.model_dump()
-            
+            if "_knowledge_base" in enriched_config and enriched_config["_knowledge_base"]:
+                print("  [DEBUG SESSION] Found _knowledge_base cache in config. Using cached version.", flush=True)
+                knowledge = KnowledgeBase.model_validate(enriched_config["_knowledge_base"])
+            else:
+                print("  [DEBUG SESSION] Starting extract_knowledge...", flush=True)
+                knowledge = await extract_knowledge(
+                    prd_content=enriched_config.get("prd", ""),
+                    api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
+                    changelog_content=enriched_config.get("changelog", "")
+                )
+                enriched_config["_knowledge_base"] = knowledge.model_dump()
+                print("  [DEBUG SESSION] extract_knowledge done.", flush=True)
+
             # Node 1.5 + 1.7: Use Case Modeling & Coverage
-            use_case_model = await generate_use_case_model(knowledge)
-            use_case_model, coverage_report = await check_use_case_coverage(knowledge, use_case_model)
-            enriched_config["_use_case_model"] = use_case_model.model_dump()
-            enriched_config["_coverage_report"] = coverage_report.model_dump()
-            
+            if "_use_case_model" in enriched_config and enriched_config["_use_case_model"] and "_coverage_report" in enriched_config and enriched_config["_coverage_report"]:
+                print("  [DEBUG SESSION] Found _use_case_model & _coverage_report cache in config. Using cached version.", flush=True)
+                use_case_model = UseCaseModel.model_validate(enriched_config["_use_case_model"])
+                coverage_report = CoverageReport.model_validate(enriched_config["_coverage_report"])
+            else:
+                print("  [DEBUG SESSION] Starting generate_use_case_model...", flush=True)
+                use_case_model = await generate_use_case_model(knowledge)
+                print("  [DEBUG SESSION] Starting check_use_case_coverage...", flush=True)
+                use_case_model, coverage_report = await check_use_case_coverage(knowledge, use_case_model)
+                enriched_config["_use_case_model"] = use_case_model.model_dump()
+                enriched_config["_coverage_report"] = coverage_report.model_dump()
+                print("  [DEBUG SESSION] Use Case modeling & Coverage done.", flush=True)
+
             # Node 2: System Modeling (State Machine)
-            system_model = await generate_system_model(knowledge, use_case_model)
-            enriched_config["_system_model"] = system_model.model_dump()
-            
+            if "_system_model" in enriched_config and enriched_config["_system_model"]:
+                print("  [DEBUG SESSION] Found _system_model cache in config. Using cached version.", flush=True)
+                system_model = SystemModel.model_validate(enriched_config["_system_model"])
+            else:
+                print("  [DEBUG SESSION] Starting generate_system_model...", flush=True)
+                system_model = await generate_system_model(knowledge, use_case_model)
+                enriched_config["_system_model"] = system_model.model_dump()
+                print("  [DEBUG SESSION] generate_system_model done.", flush=True)
+
+            # Diag: task_config 演化快照 (L1 5 节点之后, 落 enriched_config 状态)
+            from core.diag_logger import get_diag_auto
+            get_diag_auto().dump("99_task_config_evolution", snapshot_at="after_l1_n2",
+                                 config_keys=list(enriched_config.keys()),
+                                 has_kb="_knowledge_base" in enriched_config,
+                                 has_ucm="_use_case_model" in enriched_config,
+                                 has_cov="_coverage_report" in enriched_config,
+                                 has_sm="_system_model" in enriched_config,
+                                 l1_outputs_summary={
+                                     "kb_rules": len(knowledge.business_rules),
+                                     "ucm_cases": len(use_case_model.use_cases),
+                                     "cov_covered": len(coverage_report.covered_rules),
+                                     "sm_flows": len(system_model.flows),
+                                 })
+
             async with async_session() as session:
                 task = await session.get(Task, task_db_id)
                 if task:
                     task.config = enriched_config
                     await session.commit()
-            
+
+            print("  [DEBUG SESSION] Initializing Runtime...", flush=True)
             runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, "memory_context": memory_context, **enriched_config})
-            
+            print("  [DEBUG SESSION] Runtime initialized. Running stream...", flush=True)
+
             async for update in runtime.run_stream():
                 # Detect error messages yielded by the runtime
                 if isinstance(update, dict) and isinstance(update.get("data"), dict):
                     if "error" in update["data"]:
                         has_error = True
+                    # Check if final session complete event indicates aborted/pending cases (issue 3)
+                    if update.get("type") == "session_complete" and update["data"].get("phase") == "final":
+                        report_data = update["data"].get("report_data", {})
+                        test_cases = report_data.get("test_plan", [])
+                        executed_cases = [
+                            tc for tc in test_cases
+                            if tc.get("status") in ("passed", "failed", "skipped", "incomplete", "human_review_required")
+                        ]
+                        if len(executed_cases) < len(test_cases):
+                            has_error = True
                 await websocket_manager.send_message(str(task_db_id), update)
         except asyncio.CancelledError:
             has_error = False
             raise
         except Exception as e:
-            import traceback
-            print(f"[_run_test_session] Caught exception in background task: {e}")
-            traceback.print_exc()
+            import logging
+            logging.exception(f"[_run_test_session] Caught exception in background task: {e}")
             has_error = True
         finally:
             # ALWAYS update final status, even if unexpected exception
@@ -446,12 +590,17 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
                         task.status = final_status
                     task.completed_at = datetime.now(timezone.utc)
                     await session.commit()
-                    
+
             # Trigger reflection post-task
             await reflect_on_task(task_db_id)
-            
+
             # Cleanup HITL callbacks
             from agents.ui.tools import _hitl_callbacks, _hitl_events, _hitl_responses
             _hitl_callbacks.pop(str(task_db_id), None)
             _hitl_events.pop(str(task_db_id), None)
             _hitl_responses.pop(str(task_db_id), None)
+
+            # Diag: await finalize (关键 — 进程退出 / 异常时也必须等所有 pending 写完)
+            from core.diag_logger import get_diag
+            diag_final = get_diag(str(task_db_id))
+            await diag_final.finalize()

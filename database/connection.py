@@ -125,9 +125,24 @@ def _create_database_if_not_exists(db_name: str, admin_url: str) -> None:
 
 
 def _run_create_all(sync_url: str) -> None:
-    """Run Base.metadata.create_all() using a sync engine."""
+    """Create tables and apply the small Phase 1 compatibility upgrades."""
     engine = create_engine(sync_url)
-    Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        Base.metadata.create_all(bind=connection)
+        # create_all() does not add columns to existing tables. Phase 1 avoids
+        # Alembic, so additive schema changes must remain idempotent here.
+        connection.execute(text(
+            "ALTER TABLE task_step "
+            "ADD COLUMN IF NOT EXISTS test_case_status VARCHAR(50)"
+        ))
+        connection.execute(text(
+            "ALTER TABLE task_step "
+            "ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0"
+        ))
+        connection.execute(text(
+            "ALTER TABLE task_step "
+            "ADD COLUMN IF NOT EXISTS failure_context JSONB"
+        ))
     engine.dispose()
 
 

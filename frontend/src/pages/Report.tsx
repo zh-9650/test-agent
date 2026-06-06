@@ -1,10 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getTask, getTaskSteps, getReportUrl } from '../api/client';
+import { getTask, getTaskSteps, getReportUrl, getDiagList, getDiagFile } from '../api/client';
+import type { DiagStageInfo } from '../api/client';
 import type { Task, TaskStep } from '../types';
 
 interface GroupedSteps {
   [testCaseId: string]: TaskStep[];
+}
+
+interface TestPlanEntry {
+  id?: string;
+  title?: string;
+  steps?: unknown[];
+}
+
+interface DiagPanelState {
+  exists: boolean;
+  stages: DiagStageInfo[];
+  index: unknown;
 }
 
 /**
@@ -47,6 +60,7 @@ export default function Report() {
   const [grouped, setGrouped] = useState<GroupedSteps>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'report' | 'diag'>('report');
 
   useEffect(() => {
     if (!numericTaskId) return;
@@ -128,6 +142,14 @@ export default function Report() {
         </div>
       </div>
 
+      {/* Tabs: 测试报告 | 诊断日志 */}
+      <div style={{ display: 'flex', gap: '0', borderBottom: '2px solid #f0f0f0', marginBottom: '1.5rem' }}>
+        <TabButton label="测试报告" active={activeTab === 'report'} onClick={() => setActiveTab('report')} />
+        <TabButton label="诊断日志" active={activeTab === 'diag'} onClick={() => setActiveTab('diag')} />
+      </div>
+
+      {activeTab === 'report' && (
+        <>
       {/* Summary Stats */}
       {task && (
         <div
@@ -161,9 +183,14 @@ export default function Report() {
           const isExpanded = expanded.has(testCaseId);
           
           // Try to find the corresponding test case in the test plan to get semantic steps
-          let testCaseInfo: any = null;
+          let testCaseInfo: TestPlanEntry | undefined;
           if (task?.test_plan && Array.isArray(task.test_plan)) {
-            testCaseInfo = task.test_plan.find((tc: any) => tc.id === testCaseId);
+            testCaseInfo = task.test_plan.find((entry): entry is TestPlanEntry => (
+              typeof entry === 'object'
+              && entry !== null
+              && 'id' in entry
+              && (entry as TestPlanEntry).id === testCaseId
+            ));
           }
 
           return (
@@ -272,7 +299,172 @@ export default function Report() {
           );
         })}
       </div>
+        </>
+      )}
+
+      {activeTab === 'diag' && <DiagPanel taskId={numericTaskId} />}
     </div>
+  );
+}
+
+// ============================================================================
+// DiagPanel: 树状展示 9 stage JSON 诊断日志
+// ============================================================================
+function DiagPanel({ taskId }: { taskId: number }) {
+  const [list, setList] = useState<DiagPanelState | null>(null);
+  const [activeStage, setActiveStage] = useState<string | null>(null);
+  const [content, setContent] = useState<unknown>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    getDiagList(taskId)
+      .then((d) => {
+        if (!mounted) return;
+        setList({ exists: d.exists, stages: d.stages, index: d.index });
+        setLoading(false);
+        if (d.stages.length > 0) {
+          setActiveStage((current) => current ?? d.stages[0].stage);
+        }
+      })
+      .catch((e) => {
+        if (!mounted) return;
+        setError(String(e));
+        setLoading(false);
+      });
+    return () => { mounted = false; };
+  }, [taskId]);
+
+  useEffect(() => {
+    if (!activeStage) return;
+    let mounted = true;
+    getDiagFile(taskId, activeStage)
+      .then((d) => { if (mounted) setContent(d); })
+      .catch((e) => { if (mounted) setError(String(e)); });
+    return () => { mounted = false; };
+  }, [activeStage, taskId]);
+
+  if (loading) return <div style={{ padding: '1rem' }}>加载诊断日志…</div>;
+  if (error) return <div style={{ padding: '1rem', color: '#ff4d4f' }}>加载失败: {error}</div>;
+  if (!list || !list.exists) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center', color: '#999', background: '#fafafa', borderRadius: '6px' }}>
+        该任务尚无诊断日志 (DIAG_ENABLED=false 或 task 未开始)
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '1rem' }}>
+      {/* 左侧: 9 stage 列表 */}
+      <div style={{ background: '#fff', border: '1px solid #eee', borderRadius: '6px', padding: '0.5rem' }}>
+        <div style={{ fontSize: '0.85rem', color: '#666', padding: '0.5rem', borderBottom: '1px solid #eee' }}>
+          {list.stages.length} 个阶段日志
+        </div>
+        {list.stages.map((s) => (
+          <div
+            key={s.stage}
+            onClick={() => setActiveStage(s.stage)}
+            style={{
+              padding: '0.6rem 0.75rem',
+              cursor: 'pointer',
+              borderRadius: '4px',
+              marginBottom: '0.25rem',
+              backgroundColor: activeStage === s.stage ? '#e6f7ff' : 'transparent',
+              borderLeft: `3px solid ${activeStage === s.stage ? '#1890ff' : 'transparent'}`,
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{s.stage}</div>
+            <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.15rem' }}>
+              {s.node && <span style={{ marginRight: '0.5rem' }}>node: {s.node}</span>}
+              {s.status && <span style={{ marginRight: '0.5rem' }}>status: {s.status}</span>}
+              {s.size && <span>{s.size}B</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 右侧: 选中 stage 的 JSON 内容 */}
+      <div style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: '6px', padding: '1rem' }}>
+        {content ? <JsonTree data={content} /> : <div style={{ color: '#999' }}>选择左侧阶段查看详情</div>}
+      </div>
+    </div>
+  );
+}
+
+// 简易 JSON 树 (嵌套对象可展开)
+function JsonTree({ data }: { data: unknown }) {
+  return (
+    <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.85rem' }}>
+      <JsonNode value={data} keyName="(root)" depth={0} />
+    </div>
+  );
+}
+
+function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string; depth: number }) {
+  const [open, setOpen] = useState(true);
+  const pad = depth * 16;
+  if (value === null) {
+    return <div style={{ paddingLeft: pad }}><span style={{ color: '#888' }}>{keyName}:</span> <span style={{ color: '#d4380d' }}>null</span></div>;
+  }
+  if (typeof value === 'string') {
+    const display = value.length > 200 ? value.slice(0, 200) + `…(共${value.length}字)` : value;
+    return (
+      <div style={{ paddingLeft: pad, wordBreak: 'break-all' }}>
+        <span style={{ color: '#888' }}>{keyName}:</span> <span style={{ color: '#096dd9' }}>"{display}"</span>
+      </div>
+    );
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return <div style={{ paddingLeft: pad }}><span style={{ color: '#888' }}>{keyName}:</span> <span style={{ color: '#d4380d' }}>{String(value)}</span></div>;
+  }
+  if (Array.isArray(value)) {
+    return (
+      <div style={{ paddingLeft: pad }}>
+        <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setOpen(!open)}>
+          {open ? '▼' : '▶'} <span style={{ color: '#888' }}>{keyName}:</span> <span style={{ color: '#666' }}>[{value.length}]</span>
+        </span>
+        {open && value.map((v, i) => <JsonNode key={i} value={v} keyName={`[${i}]`} depth={depth + 1} />)}
+      </div>
+    );
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record);
+    return (
+      <div style={{ paddingLeft: pad }}>
+        <span style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setOpen(!open)}>
+          {open ? '▼' : '▶'} <span style={{ color: '#888' }}>{keyName}:</span> <span style={{ color: '#666' }}>{`{${keys.length}}`}</span>
+        </span>
+        {open && keys.map((k) => <JsonNode key={k} value={record[k]} keyName={k} depth={depth + 1} />)}
+      </div>
+    );
+  }
+  return <div style={{ paddingLeft: pad }}>{String(value)}</div>;
+}
+
+// ============================================================================
+// TabButton / StatCard / StatusBadge (原文件保留)
+// ============================================================================
+function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '0.6rem 1.5rem',
+        border: 'none',
+        background: 'none',
+        cursor: 'pointer',
+        fontSize: '1rem',
+        fontWeight: active ? 700 : 500,
+        color: active ? '#1890ff' : '#666',
+        borderBottom: active ? '2px solid #1890ff' : '2px solid transparent',
+        marginBottom: '-2px',
+      }}
+    >
+      {label}
+    </button>
   );
 }
 

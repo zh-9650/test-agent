@@ -14,8 +14,9 @@ V1.6.1 加固 (2026-06-02):
 """
 from __future__ import annotations
 
-from core.llm_client import safe_structured_invoke
+from core.llm_client import safe_structured_invoke, get_last_raw
 from core.interfaces import SystemModel, KnowledgeBase, UseCaseModel, BusinessFlow, StateTransition
+from core.diag_logger import get_diag_auto
 
 
 # 节点名后缀黑名单 (LLM 经常在节点名加这些尾巴, 违反 rule 1)
@@ -257,9 +258,64 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
 ```
 """
     result = await safe_structured_invoke(prompt, SystemModel, model_type="default")
+
+    diag = get_diag_auto()  # 当前 task 的 logger (None 时返回 NullLogger, 0 副作用)
+
     if result is None:
         print("[SystemModeler] LLM returned None, falling back to UseCaseModel-derived minimal skeleton (V1.6.1)")
-        return _derive_minimal_system_model(use_case_model)
+        minimal = _derive_minimal_system_model(use_case_model)
+        # Diag: fallback 路径也记录 (不进 normalize, 没 raw 可比)
+        diag.dump("04_l1_system_model", node="N2", output=minimal, status="fallback_minimal",
+                  source="derive_minimal", flows_count=len(minimal.flows),
+                  normalize_diff_summary="no_normalize_due_to_llm_failure", raw_content=get_last_raw())
+        return minimal
+
+    # Diag: 落 normalize 前的 raw (parsed object; raw string 因 safe_structured_invoke 不返无法拿, 按用户拍板不强求)
+    diag.dump_raw("04_l1_system_model", raw=result)
+
     # V1.6.1: 总是过 normalize (LLM 输出即使 parse 成功, 也常有违规)
     normalized = _normalize_system_model(result, use_case_model)
+
+    # Diag: 算 normalize 前后 diff, 落 normalize 后
+    diff_summary = _compute_normalize_diff(result, normalized)
+    diag.dump("04_l1_system_model", node="N2", output=normalized, status="ok",
+              normalize_diff_summary=diff_summary, flows_count=len(normalized.flows), raw_content=get_last_raw())
     return normalized
+
+
+def _compute_normalize_diff(raw: SystemModel, norm: SystemModel) -> str:
+    """计算 normalize 前后差异, 落 04_l1_system_model.json.normalize_diff_summary.
+
+    用户 #2: 不强求内容必须不同, 只要求字段存在. 真的没变就返 "no_change".
+    """
+    # 1. nodes 后缀剥除: 找 raw 中带后缀黑名单、norm 中被剥的节点
+    raw_nodes: set[str] = set()
+    norm_nodes: set[str] = set()
+    for f in raw.flows:
+        for n in f.nodes:
+            raw_nodes.add(n)
+    for f in norm.flows:
+        for n in f.nodes:
+            norm_nodes.add(n)
+    stripped = sorted(raw_nodes - norm_nodes)
+
+    # 2. transitions 去重: 数 (from, action) 重复
+    def _tcount(sm: SystemModel) -> tuple[int, int]:
+        all_t: list[tuple[str, str, str]] = []
+        for f in sm.flows:
+            for t in f.transitions:
+                all_t.append((t.from_state, t.action, t.to_state))
+        uniq = {(x[0], x[1]) for x in all_t}
+        return len(all_t), len(uniq)
+
+    raw_total, raw_uniq = _tcount(raw)
+    norm_total, _ = _tcount(norm)
+
+    parts: list[str] = []
+    if stripped:
+        parts.append(f"stripped suffix from {stripped}")
+    if raw_total > norm_total:
+        parts.append(f"removed {raw_total - norm_total} duplicate transitions (raw={raw_total}, norm={norm_total})")
+    if not parts:
+        return "no_change"
+    return "; ".join(parts)

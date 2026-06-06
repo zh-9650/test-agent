@@ -25,12 +25,12 @@ from langgraph.graph import END, START, StateGraph
 
 from core.change_detector import detect_changes
 from core.execution_logger import log_node_event
-from core.interfaces import ActionResult, AssertionResult, ChangeReport, StepResult, TestCase, TestState
+from core.interfaces import ActionResult, AgentDecision, AssertionResult, ChangeReport, StepResult, TestCase, TestState
 from core.llm_client import count_tokens, get_llm_client, safe_structured_invoke
 from core.page_semantic import extract_page_semantics, take_screenshot, take_screenshot_compressed
 
 from agents.ui.prompts import _format_page_info, get_assertion_prompt, get_execution_system_prompt, get_step_prompt
-from agents.ui.tools import get_current_page, set_current_task, set_task_config, tools_by_name, tools, update_element_map
+from agents.ui.tools import get_current_page, set_current_task, set_task_config, tools_by_name, update_element_map
 
 
 # =============================================================================
@@ -203,31 +203,29 @@ def _fast_assert(state: dict[str, Any]) -> dict[str, Any] | None:
             
             if name == "mark_task_complete":
                 reasoning = reasoning or "LLM 主动标记任务成功"
-                state_before = state.get("state_before", {})
-                state_after = state.get("state_after", {})
                 ar = state.get("_last_action_result")
-                url_before = ar.before_url if ar else ""
-                url_after = ar.after_url if ar else ""
-                page_really_changed = (url_before != url_after)
-                if not page_really_changed and (state_before or state_after):
-                    cr = detect_changes(state_before, state_after)
-                    page_really_changed = cr.url_changed or cr.new_elements or cr.gone_elements or cr.modal_appeared
-                if page_really_changed:
+
+                # Strict completion protocol: mark_task_complete tool may itself reject
+                # the completion request when evidence (reasoning length / multi-target
+                # extracted_fields / evidence_url) is insufficient. In that case do NOT
+                # treat the case as complete — surface as soft failure so the LLM gets
+                # the rejection guidance and tries again with proper evidence.
+                if ar and getattr(ar, "status", "") == "completion_rejected":
                     return {
                         "_last_change_report": ChangeReport(),
-                        "_last_assertion": AssertionResult(status="pass", reasoning=reasoning),
-                        "consecutive_failures": 0,
+                        "_last_assertion": AssertionResult(
+                            status="fail",
+                            reasoning=(
+                                "mark_task_complete 被工具的严格完成协议拒绝, 证据不足。"
+                                f" 详细指引: {(ar.extracted_content or '')[:500]}"
+                            ),
+                        ),
+                        "consecutive_failures": state.get("consecutive_failures", 0) + 1,
                     }
-                else:
-                    downgrade = (
-                        f"⚠️ LLM 标记任务成功但页面无实质变化 (URL: {url_before} → {url_after}), "
-                        f"降级为 inconclusive 请人工确认。LLM 理由: {reasoning}"
-                    )
-                    return {
-                        "_last_change_report": ChangeReport(url_changed=False),
-                        "_last_assertion": AssertionResult(status="inconclusive", reasoning=downgrade),
-                        "consecutive_failures": 0,
-                    }
+
+                # Zero-tolerance on early complete: bypass auto-PASS for mark_task_complete
+                # to force strict verification by Layer 2 LLM Assertion Judge.
+                return None
             elif name == "mark_task_failed":
                 reasoning = reasoning or "LLM 主动标记任务失败"
                 return {
@@ -536,8 +534,9 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
     - 修复: 从 state.session_summary 读取, 拼到 system_prompt 顶部, 跨 case 续传
     """
     try:
-        llm = get_llm_client("sonnet")  # kimi-k2.6 for execution
-        llm_with_tools = llm.bind_tools(tools)
+        # Note: decide_node now drives the LLM via safe_structured_invoke(AgentDecision)
+        # rather than bind_tools, so the tool schema is enforced server-side by the
+        # pydantic Literal on AgentDecision.action. assert_node still uses get_llm_client.
 
         # Get current test case
         test_plan = state.get("test_plan", [])
@@ -713,41 +712,83 @@ async def decide_node(state: dict[str, Any]) -> dict[str, Any]:
         # count_messages_token() handles multimodal content + 中文 tokenize via tiktoken
         decide_token_count = count_tokens(messages)
 
-        # Call LLM
-        # Robust Retry Loop for API Rate Limits (429)
+        # Call LLM via safe_structured_invoke with retry/backoff for transient failures
+        # (429 rate-limit, 5xx, network blips). Each attempt re-enters with the same messages;
+        # safe_structured_invoke already does (a) native with_structured_output, (b) raw JSON
+        # fallback, so a None result means both code paths failed for this attempt.
         import asyncio
         import logging
         max_retries = 3
+        decision: AgentDecision | None = None
         for attempt in range(max_retries):
             try:
-                response = await llm_with_tools.ainvoke(messages)
-                if os.getenv("L2_DEBUG_LLM") == "1":
-                    try:
-                        import sys
-                        encoding = sys.stdout.encoding or "utf-8"
-                        safe_content = str(response.content).encode(encoding, errors="replace").decode(encoding)
-                        print(f"  [Decide] LLM response: {safe_content}", flush=True)
-                        if response.tool_calls:
-                            safe_calls = str(response.tool_calls).encode(encoding, errors="replace").decode(encoding)
-                            print(f"  [Decide] Tool calls: {safe_calls}", flush=True)
-                    except Exception:
-                        pass
-                return {
-                    "messages": [response],
-                    "_last_token_count": decide_token_count,
-                    "_last_ai_text": str(response.content or ""),
-                }
+                decision = await safe_structured_invoke(messages, AgentDecision, model_type="sonnet")
+                if decision is not None:
+                    break
+                logging.getLogger(__name__).warning(
+                    f"[decide attempt={attempt}] safe_structured_invoke returned None"
+                )
             except Exception as e:
                 logging.getLogger(__name__).error(
                     f"[decide attempt={attempt}] {type(e).__name__}: {e}", exc_info=True
                 )
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
-                else:
-                    return {"messages": [AIMessage(content=f"LLM调用失败: {str(e)}")], "_last_token_count": decide_token_count}
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+
+        if decision is None:
+            # All 3 retries exhausted. The LLM service is genuinely unavailable or the
+            # schema is permanently rejected. Hard-fail this case so the case-level retry
+            # (MAX_TEST_CASE_RETRIES) can try a fresh attempt rather than thrash here.
+            decision = AgentDecision(
+                evaluation="LLM 结构化解析连续 3 次失败 (可能是 429/5xx/JSON 损坏), 已耗尽 decide 内重试",
+                memory="本 case 因 LLM 不可用提前结束, 等待 case-level 重试或人工介入",
+                next_goal="标记用例失败, 触发上层重试机制",
+                action="mark_task_failed",
+                action_input={"reasoning": "LLM 结构化决策连续 3 次失败"},
+            )
+
+        import uuid
+        call_id = f"call_{uuid.uuid4().hex[:8]}"
+
+        tool_calls = []
+        if decision.action:
+            tool_calls.append({
+                "name": decision.action,
+                "args": decision.action_input or {},
+                "id": call_id
+            })
+
+        ai_message_content = f"Evaluation: {decision.evaluation}\nMemory: {decision.memory}\nNext Goal: {decision.next_goal}"
+        response = AIMessage(
+            content=ai_message_content,
+            tool_calls=tool_calls
+        )
+
+        _last_ai_text = (
+            f"评价: {decision.evaluation}\n"
+            f"记忆: {decision.memory}\n"
+            f"下一步: {decision.next_goal}"
+        )
+
+        if os.getenv("L2_DEBUG_LLM") == "1":
+            print(
+                f"  [Decide] Structured response action={decision.action}",
+                flush=True,
+            )
+
+        return {
+            "messages": [response],
+            "_last_token_count": decide_token_count,
+            "_last_ai_text": _last_ai_text,
+            "_last_evaluation": decision.evaluation,
+            "_last_memory": decision.memory,
+            "_last_next_goal": decision.next_goal,
+        }
 
     except Exception as e:
         # Never crash: return error as AI message
+        import logging
+        logging.getLogger(__name__).error(f"[decide_node] caught exception: {e}", exc_info=True)
         return {"messages": [AIMessage(content=f"LLM调用失败: {str(e)}")]}
 
 
@@ -791,9 +832,11 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
     current_step_index = state.get("current_step", 0)
     if current_index < len(test_plan):
         current_test_case = test_plan[current_index]
+        # Register expected text so mark_task_complete can verify multi-target evidence
+        from agents.ui.tools import set_current_expected, set_current_step_text
+        set_current_expected(current_test_case.expected or "")
         steps = current_test_case.steps
         if current_step_index < len(steps):
-            from agents.ui.tools import set_current_step_text
             set_current_step_text(steps[current_step_index])
 
     # Execute all tools sequentially
@@ -806,6 +849,110 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
         tool_name = tool_call.get("name", "")
         tool_args = tool_call.get("args", {})
         tool_call_id = tool_call.get("id", "")
+
+        # ── Parameter Compatibility and Defense Layer ──────────────────
+        normalized_args = dict(tool_args)
+        modified = False
+        if tool_name == "evaluate_js":
+            if "script" not in normalized_args:
+                for k in ["js_code", "code", "js"]:
+                    if k in normalized_args:
+                        normalized_args["script"] = normalized_args.pop(k)
+                        modified = True
+                        break
+            if "script" not in normalized_args:
+                normalized_args["script"] = ""
+                modified = True
+        elif tool_name == "screenshot_on_demand":
+            if "reason" not in normalized_args:
+                for k in ["why", "comment", "reasoning", "reason_str"]:
+                    if k in normalized_args:
+                        normalized_args["reason"] = normalized_args.pop(k)
+                        modified = True
+                        break
+            if "reason" not in normalized_args:
+                normalized_args["reason"] = "LLM 主动请求截图分析"
+                modified = True
+        elif tool_name == "scroll":
+            if "direction" not in normalized_args:
+                for k in ["target", "dir", "direction_str"]:
+                    if k in normalized_args:
+                        normalized_args["direction"] = normalized_args.pop(k)
+                        modified = True
+                        break
+            direction_val = normalized_args.get("direction", "down")
+            if isinstance(direction_val, str):
+                import re as _re
+                m = _re.search(r"(up|down)[_-]?(\d+)", direction_val, _re.IGNORECASE)
+                if m:
+                    normalized_args["direction"] = m.group(1).lower()
+                    normalized_args["amount"] = int(m.group(2))
+                    modified = True
+                else:
+                    new_dir = "down" if "down" in direction_val.lower() else "up"
+                    if new_dir != direction_val:
+                        normalized_args["direction"] = new_dir
+                        modified = True
+            else:
+                normalized_args["direction"] = "down"
+                modified = True
+            if "amount" in normalized_args:
+                try:
+                    val = int(normalized_args["amount"])
+                    if val != normalized_args["amount"]:
+                        normalized_args["amount"] = val
+                        modified = True
+                except Exception:
+                    normalized_args["amount"] = 300
+                    modified = True
+        elif tool_name == "wait":
+            if "seconds" not in normalized_args:
+                for k in ["time", "duration", "sec", "seconds_str"]:
+                    if k in normalized_args:
+                        normalized_args["seconds"] = normalized_args.pop(k)
+                        modified = True
+                        break
+            if "seconds" in normalized_args:
+                try:
+                    val = float(normalized_args["seconds"])
+                    if val != normalized_args["seconds"]:
+                        normalized_args["seconds"] = val
+                        modified = True
+                except Exception:
+                    normalized_args["seconds"] = 1.0
+                    modified = True
+            else:
+                normalized_args["seconds"] = 1.0
+                modified = True
+        elif tool_name in ("mark_task_complete", "mark_task_failed", "mark_task_skipped"):
+            if "reasoning" not in normalized_args:
+                for k in ["reason", "comment", "detail"]:
+                    if k in normalized_args:
+                        normalized_args["reasoning"] = normalized_args.pop(k)
+                        modified = True
+                        break
+            if "reasoning" not in normalized_args:
+                normalized_args["reasoning"] = f"LLM 标记任务为 {tool_name.replace('mark_task_', '')}"
+                modified = True
+        elif tool_name == "navigate":
+            if "url" not in normalized_args:
+                for k in ["target", "href", "link", "destination"]:
+                    if k in normalized_args:
+                        normalized_args["url"] = normalized_args.pop(k)
+                        modified = True
+                        break
+        elif tool_name == "press_key":
+            if "key" not in normalized_args:
+                for k in ["target", "button", "char"]:
+                    if k in normalized_args:
+                        normalized_args["key"] = normalized_args.pop(k)
+                        modified = True
+                        break
+        if modified:
+            logging.getLogger(__name__).debug(
+                "Normalized arguments for tool %s", tool_name
+            )
+        tool_args = normalized_args
 
         try:
             if tool_name in tools_by_name:
@@ -844,6 +991,9 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
             else:
                 display_text = f"未知工具: {tool_name}"
         except Exception as e:
+            import traceback
+            print(f"[Execution] Tool '{tool_name}' failed! Exception trace:", flush=True)
+            traceback.print_exc()
             display_text = f"执行失败: {str(e)}"
 
         results.append(display_text)
@@ -883,15 +1033,15 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
     # Phase 2.0A Sprint 2: 将结构化 ActionResult 传给 assert_node
     action_result_text = "\n".join(results)
 
-    # browser-use 对齐: 追加 agent_history (解析 LLM 4 字段)
-    from agents.ui.prompts import parse_browser_use_decision
+    # browser-use 对齐: 追加 agent_history (从 state 读取结构化字段)
     new_history = list(state.get("agent_history", []))
-    parsed_eval = {"evaluation": "", "memory": "", "next_goal": ""}
+    parsed_eval = {
+        "evaluation": state.get("_last_evaluation", ""),
+        "memory": state.get("_last_memory", ""),
+        "next_goal": state.get("_last_next_goal", ""),
+    }
     if tool_calls:
         last_call = tool_calls[0]
-        last_ai_text = state.get("_last_ai_text", "")
-        if last_ai_text:
-            parsed_eval = parse_browser_use_decision(last_ai_text)
         step_n = len(new_history) + 1
         first_result = results[0] if results else "(no result)"
         result_summary = first_result[:300] if first_result else "(无)"
@@ -919,6 +1069,8 @@ async def execute_node(state: dict[str, Any]) -> dict[str, Any]:
         "consecutive_failures": consecutive_failures,
         "recent_failures": recent_failures, # Phase 2.0A Sprint 5: 失败记忆
         "agent_history": new_history,  # browser-use 对齐
+        "_last_assertion": None,  # 清除上一步的 stale 断言
+        "_last_change_report": None,  # 清除上一步的 stale 变化报告
     }
 
 
