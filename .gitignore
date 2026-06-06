@@ -83,3 +83,13 @@ tail.txt
 scratch/
 logs/
 
+# Local agent/browser tooling
+.codegraph/
+.codex/
+.playwright-mcp/
+
+# Diagnostic and ad-hoc output
+data/diag/
+data/bench_*.md
+logs_backend*.txt
+hn.png

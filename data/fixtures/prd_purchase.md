@@ -1,6 +1,6 @@
 # 采购审批系统 PRD
 
-> 简单 fixture，保留自 `scratch/test_layer1.py` 的 MOCK_PRD，验证 fast path 100% 命中场景。
+> 简单 fixture，用于验证 Layer 1 coverage fast path 的确定性场景。
 
 1. 任何员工都可以提交采购申请。
 2. 采购金额如果超过 5000 元，需要部门经理审批。

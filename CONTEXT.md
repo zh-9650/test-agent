@@ -1,147 +1,123 @@
-# Context: Smart Test Agent (AI 智能测试平台)
+# Project Context
 
-## 1. 项目定位与目标 (Project Goal)
+Last verified against the working tree: 2026-06-06.
 
-构建一个重度 AI 参与的**探索与巡检测试工具** —— 这是一个典型的 **Agentic Manual（具身智能体）** 架构。
-系统通过接收自然语言的目标指令或测试用例，利用 AI 主动分析网页结构（基于 Accessibility Tree），并自动规划和执行 Web 自动化交互操作，最终基于页面上下文自动对每一步的执行结果进行智能化双层断言，从而生成详尽的测试报告。
+## Product Position
 
-**主要输入**：URL、测试账号、配置参数、业务说明
-**主要输出**：实时执行日志流（WebSocket）、执行截图、录屏/Trace、断言结果与 HTML 测试报告。
+Smart Test Agent is an AI-native web testing platform. The model acts as the
+tester at runtime: it reads requirements, explores the target application,
+creates a structured plan, operates the browser through tools, evaluates
+outcomes, persists evidence, and generates a report.
 
-> **核心定位说明**：本项目不追求 CI/CD 中毫秒级的绝对确定性和低执行成本，而是定位于“极低维护成本、无需编写任何测试脚本”的智能巡检系统。执行慢、Token 消耗大是其定位带来的合理代价。
+The product does not generate Playwright scripts for later maintenance.
 
-## 2. 核心架构与技术栈
+## Current Runtime
 
-整个测试任务的生命周期由 LangGraph 状态机驱动，分为两个阶段的异步执行子图：
+The production path is:
 
-*   **前端 (Frontend)**：`React` + `Vite`。包含任务创建、监控面板（左侧执行日志流，右侧实时截图）、测试报告页。
-*   **后端 (Backend)**：`FastAPI`。提供 RESTful API，承载前后端的数据通信，并管理后台基于 `asyncio` 的异步测试任务流。
-*   **核心引擎 (Core Engines)**：
-    *   **编排框架**：基于 `LangGraph` 构建的 StateGraph。
-    *   **交互底座**：原生 `Playwright` (支持 Trace 和视频) + `browser-use` 库（负责将复杂 DOM 提纯为扁平化的无障碍交互树）。
-*   **持久化 (Database)**：采用 `PostgreSQL` + `SQLAlchemy` ORM。核心表：`Task`, `TaskStep`, `Report`, `AgentMemory`。
+1. `api/app.py` accepts a rich `task_config`.
+2. Layer 1 extracts a `KnowledgeBase`, builds a `UseCaseModel`, checks rule
+   coverage, and derives a lightweight `SystemModel`.
+3. `agents/ui/planning_graph.py` converts the model into exploration goals,
+   explores the live site, builds a `SystemMap`, extracts scenarios, and
+   generates the test plan.
+4. `core/runtime.py` executes each case through
+   `observe -> decide -> execute -> assert -> record`.
+5. `core/execution_logger.py` persists tasks and steps to PostgreSQL.
+6. `core/report_builder.py` writes the HTML report.
+7. FastAPI streams node and case events to React over WebSocket.
 
-## 3. 架构层级演进蓝图 (Phased Design Roadmap)
+Core state and interface models live in `core/interfaces.py`. There is no
+`core/state.py`.
 
-根据最新的架构研讨，系统路线图调整为聚焦“高收益、低复杂度”的务实演进路线：
+## Implemented Capabilities
 
-### [已完成] Phase 1: 基础闭环固化与端到端联调 (Foundation & MVP)
-*   **当前状态**：基于 LangGraph 的编排入口、UI Agent、WebSocket 与 FastAPI 基础已成型。
-*   **核心目标**：知识注入 -> 探索 -> 生成用例 -> 执行。
-*   **已完成**：并发争抢（加锁串行化）与记忆污染（域名隔离）已解决，前端能稳定跑通主流程。
+- FastAPI task, report, diagnostic, memory, stop, resume, and document helper
+  endpoints.
+- React pages for task creation, monitoring, reports, history, and memory.
+- PostgreSQL persistence with startup table creation.
+- Rich inputs: accounts, requirements, API docs, prototype URL, architecture
+  docs, changelog, rules, and focus areas.
+- Layer 1 knowledge and use-case modeling with structured-output fallback.
+- Goal-driven exploration and live `SystemMap` generation.
+- Playwright/browser-use page semantics with optional CDP resolution.
+- Structured browser tools, hierarchical assertions, retry context, safety
+  limits, session summaries, reports, and diagnostic JSON artifacts.
+- Pytest suites for core, API, UI-agent behavior, and WebVoyager benchmarks.
 
-### [已完成] Phase 1.5: 高价值能力扩充 (Value Amplification)
-*   **修复状态**：2026-05-30 完成 8 个问题修复，端到端测试验证通过。
-*   **Risk Analyzer (风险分析器)**：探索页面后，自动识别高风险元素（金额、库存等），优先生成边界值/异常用例。
-*   **Scenario Extractor (业务场景提取)**：从 PRD 提取具体的业务流程（如“发货流程”），实现 Goal Driven 探索，而非无目的的 Page Driven。
-*   **Session Summary (任务级记忆压缩)**：Case 结束后压缩上下文，形成 Task 级别的局部记忆，同时大幅降低 Token 消耗。
-*   **Coverage Tracking (覆盖率追踪)**：统计并报告“页面覆盖率”和“业务场景覆盖率”，提供直观的测试价值度量。
-*   **断言分级 (Hierarchical Assertion)**：执行后优先走规则断言（URL/元素/接口状态），最后再走大模型判定，降低成本与误判率。
+## Experimental Or Conditional Features
 
-### [进行中] Phase 2: 高级系统架构 (Advanced Architecture) - 【当前焦点】
-*   **V1~V1.4 架构升级 (已完成)**：引入 `KnowledgeExtractionLayer` (含追溯指针) 与 `UseCaseModel`，将 `SystemModelingAgent` 升级为基于脚手架的轻量级状态机，实现带优先级的 `Goal-Driven Explorer`。实现“认知 -> 脚手架 -> 建模 -> 探索 -> 验证 -> 规划”完整闭环，极大地削弱了大模型幻觉。
-*   **V1.5 Layer 1 鲁棒性与可观测性 (已完成)**：在 V1.3/V1.4 基础上，针对 Qwen/DeepSeek/Kimi 等 Anthropic 兼容端点对 `with_structured_output` 支持不完整的问题，在 `core/llm_client.py` 统一 `safe_structured_invoke` 入口（原生结构化 + 手动 JSON 解析双轨，覆盖 content 块列表、code fence、单层包络、list/dict/str 三态输入）。把 Node 1.7 覆盖率自检报告接入 HTML 报告，前端 `testLayer1` 增加 SSE `progress: "error"` 抛错识别，`scratch/test_layer1.py` 端到端跑通。
-*   **后续焦点**：Business Graph 数据库、Reflection 自我反思循环、跨任务的长期 Memory 沉淀、多 Agent 协同。
+- CDP element resolution is feature-gated.
+- Parallel tool execution is disabled by default.
+- Diagnostic logging is environment-controlled.
+- Browser screenshots can be captured on demand.
+- Browser-use alignment benchmarks are evaluation tooling, not release gates.
 
-### V2.0 计划 v2（已落盘 2026-06-01, 修订版）: L2 + Phase 1.6 全面加固
+## Known High-Priority Problems
 
-V1.7 完成后 L1 + Phase 1.5 8 个 skill 全部 V1.6 化。**L2 (execution_graph) 仍是 prompt 调用 hot path**（每步 1 次 LLM，典型 case 6-10 次）但工程标准远落后 L1：3 个 prompt 全是 `##` 自由文本、assert 手剥 JSON、无 L2 回归测试、context 按"条"截断撞 65K token 上限、工具失败不计入 consecutive_failures、L2 ↔ L1 业务模型几乎零耦合。
+The current working tree is under active diagnosis. Do not describe the full
+pipeline as production-stable until these are fixed and reverified:
 
-**V2.0 v2 修订依据**：2026-06-01 收到 GPT 外部评审建议，核心洞察：
-- ✅ "N2 SystemModel 是 L1 真实薄弱节点"（V1.7 报告原文 3/4 fixture 触发 fallback）—— **V2.0 v1 漏了**
-- ❌ GPT 误判"缺 SystemMap"——**V1.2 已存在并被 scenario_extractor 消费**
-- ✅ "补理论 + 真实桥梁"方向对
-- ⭐ **"建 Gap Analyzer"**（SystemModel vs SystemMap 比对）—— V2.1 候选
+1. `Runtime.run_stream()` and API task finalization do not yet share one
+   authoritative lifecycle result.
+2. A case with no reliable terminal evidence can be classified too
+   optimistically.
+3. Plan status, persisted counters, WebSocket completion data, and report
+   totals can diverge.
+4. Assertion exceptions may be converted to `inconclusive`, obscuring their
+   original cause.
+5. Focused runtime tests still depend on a live database and can fail with
+   missing-task or closed-event-loop errors instead of remaining isolated.
+6. The frontend production build succeeds, but `npm run lint` still reports
+   existing explicit `any`, effect state-update, and unused-binding errors.
 
-**V2.0 v2 用 5 阶段让 L2 追平 L1 V1.7 同等工程标准**（执行顺序：1.6 → A → B → C → D）：
+The next development priority is lifecycle/result accounting and diagnostic
+reproduction, not broad prompt tuning.
 
-- **Phase 1.6 (1.5-2d, 新增，先于 A)**：N2 + planning_graph explore + SystemMap 三件套加固
-  - **1.6.1** 修 N2 SystemModel fallback（V1.7 报告点名的 P0）
-  - **1.6.2** planning_graph explore_decide / execute V1.6 化（V1.7 漏点）
-  - **1.6.3** SystemMap 采样 10/15 → 20/30 + invariant 测试
-  - **1.6.4** 文档同步（prompt-engineering §8 扩 planning_graph 章节）
-- **Phase A (1.5d)**: L2 安全网 + 测试基础设施（5 个 L2 P0 漏洞修复 + `test_l2_prompts.py` + `L2_LIVE=1` + e2e）
-- **Phase B (2.5d)**: L2 Prompt V1.6 化（3 个 prompt 5 段 XML + pydantic `AssertionResult` + inter-node 契约 + 账号密码剥离）
-- **Phase C (1d)**: 联动 L1 业务模型（`<prd_rules>` / `<focus_areas>` / `<scenarios>` / `<risk_points>` + ReportBuilder L2 卡片）
-- **Phase D (1d)**: L2 可观测性（tiktoken + node 事件 + WebSocket 告警）
+## Confirmed Design Rules
 
-**5 阶段独立 commit，9-10 天**。完整方案：`docs/layer2-v2.0-plan.md` v2 + devlog 21（v2 修订版）+ handoff。
+- Read `docs/DEVELOPMENT.md` before changing code.
+- Requirements define what and why; code defines how.
+- Prompts are written in Chinese.
+- Browser actions are tool calls, not generated scripts.
+- No hardcoded product-specific login flow.
+- Limits and retries are configurable safety valves.
+- Secrets must never be written to source, fixtures, diagnostic output, or
+  documentation.
+- Feature work is incomplete without backend, frontend, WebSocket, and real
+  target verification when those surfaces are affected.
 
-**不在 V2.0 范围**（明确）：Phase E Reflection（需 50 case 评估）、Gap Analyzer（V2.1 候选）、Business Graph、LangSmith 集成、Multi-Agent、tools.py 14 工具缺陷修复（除 evaluate_js 黑名单）、PostgreSQL checkpointer 升级。
+## Configuration Defaults
 
-### Phase 3: 自主测试团队 (Autonomous Testing Team)
-*   完全自主接管产品迭代的回归测试。
+Source-of-truth defaults come from code and `.env`, not this document.
+Important variables include:
 
-## 4. 关键技术决策 (Key Decisions)
+- `BACKEND_PORT` (code default: `8000`)
+- `FRONTEND_PORT` (code default: `5173`)
+- `START_FRONTEND`
+- `DATABASE_URL`
+- `ANTHROPIC_AUTH_TOKEN`
+- `ANTHROPIC_BASE_URL`
+- model selection variables
+- `MAX_STEPS_PER_CASE`
+- `MAX_CONSECUTIVE_FAILURES`
+- `MAX_TEST_CASE_RETRIES`
+- `MAX_EXPLORE_PAGES`
+- `MAX_EXPLORE_MINUTES`
+- `L2_USE_CDP`
+- `L2_PARALLEL_TOOLS`
+- diagnostic logging variables documented in `docs/DEVELOPMENT.md`
 
-1.  **全面拥抱 browser-use 树**：抛弃极度不稳定的纯 CSS/XPath 抓取，利用 `browser-use` 提取页面 Accessibility Tree，大大提高了大模型对页面的理解能力。
-2.  **动态上下文与记忆 (RAG)**：在执行测试前，通过 `retrieve_memories(target_url)` 向提示词中注入历史学习到的“测试经验”。
-3.  **防 Token 爆炸的上下文管理**：单用例内超过 10 条交互记录时，丢弃中间信息，只保留最近的上下文，依赖 LangGraph Checkpoint 进行状态管理。
-4.  **Action Timeline 设计**：不走“代码生成再跑”的老路，每一步都是“Thought + Action + Result + Assertion”的实时博弈。
-5.  **Robust Retry 重试兜底**：在 AI 调用环节实现异步指数退避重试机制，以应对大模型 API 严格的 Rate Limit 429 报错。
-6.  **配置文件与启动机制**：开发期由 `main.py` 统管，同时拉起 Uvicorn 和 Vite 进程。
-7.  **用例级重试而非步级重试 (2026-06-04)**：同行反馈"失败 3 次才算失败"。选择用例级重试 (整个用例从头跑) 而非步级重试 (同一动作换 context 再试), 因为步级重试容易陷入局部最优, 用例级重试让 LLM 从全局视角重新规划。
-8.  **a11y tree 截断到 10KB (2026-06-04)**：重试 context 注入 a11y tree 时截断到 10KB, 保护 `L2_TOKEN_BUDGET=30K` 不被撑爆。等模型切回 200K context (qwen3.7-max) 后可适当放宽。
+## Documentation Authority
 
-## 5. 最近技术升级与架构演进 (Latest Upgrades - Phase 1.5+)
+- `README.md`: project entry point.
+- `docs/DEVELOPMENT.md`: developer workflow, architecture map, verification,
+  and documentation maintenance policy.
+- `docs/PRD.md`: product scope and acceptance expectations.
+- `docs/master-roadmap.md`: current priorities only.
+- `docs/prompt-engineering.md`: prompt and inter-node contracts.
+- `docs/business_workflow.md`: business workflow reference.
+- `docs/benchmark/`: retained benchmark evidence.
 
-在端到端联调中，为了解决并发争抢、Token 爆炸与断言不准确等问题，系统已实际上线以下硬核架构升级：
-
-### 1. 并发与资源隔离 (Concurrency & Database)
-*   **全局串行锁与浏览器隔离**：在 API 调度层加入了严格的任务串行执行队列（或分布式锁），彻底解决多个任务抢占同一个 Playwright Browser Context 导致的串台问题。
-*   **PostgreSQL 全面接管**：摒弃了初期的 SQLite 方案，现在全部状态持久化（Task, TaskStep, Report, AgentMemory）已平滑迁移至强类型的 PostgreSQL + SQLAlchemy 异步 ORM 架构，支持海量测试数据与并发连接。
-
-### 2. 状态机流转与执行优化 (Execution Optimizations)
-*   **Hierarchical Assertion (层次化规则断言)**：在 `assert_node` 中引入了“规则优先”的熔断机制。如果检测到明显的 JS Error、Network Error，或者中间步骤页面无任何变化，系统会立即使用规则判定（Pass/Fail/Inconclusive）并跳过 LLM。只有发生实质性页面变化时，才由 LLM 执行语义判定。此举大幅减少了“睁眼说瞎话”和 Token 浪费。
-*   **Session Summary (跨 Case 记忆传递)**：在 `runtime.py` 的执行流中，每完成一个 TestCase，会调用轻量级 LLM 将执行过程压缩成百字以内的摘要（`session_summary.py`）。这个摘要会被注入到下一个 Case 的 `SystemMessage` 顶部。这使得大模型能像人类一样拥有“贯穿整个 Test Session 的记忆”，比如能记住“之前已经完成登录了，现在可以直接测业务”。
-
-### 3. 高级探索与展示 (Exploration & Report)
-*   **Knowledge Extraction (层级 1 知识提取)**：引入 `knowledge_extractor` 专门应对长篇复杂的 PRD。模型首先扮演无情的“规则阅读器”，将文本提纯为硬核的带有溯源指针 (quote) 的 `KnowledgeBase`（包括业务实体、角色、规则与约束条件）。这一层避免了后续由于幻觉导致的系统建模偏差（V1.3/V1.4升级）。
-*   **UseCase Scaffold (用例脚手架)**：引入 `use_case_modeler` 在生成状态机前，先将零散知识聚合为带有 trigger 和 outcome 的原子级 `UseCaseModel`，填补了推断状态机的断层鸿沟（V1.4升级）。
-*   **System Modeling Agent (状态机建模)**：强制根据提炼出的脚手架和事实库，推导系统的整体状态流转（Lightweight State Machine），而非松散的业务流文本（`SystemModel`），彻底解决了模型生成脱离实际的“幽灵用例”问题（V1.3/V1.4升级）。
-*   **Goal-Driven Explorer (目标驱动探索)**：引入了 `Goal Extractor`，将状态机转化为带有明确优先级 (High/Medium/Low) 的业务级探索目标。现在大模型带着“作战任务”去页面里翻找入口，极大提升了图谱的导航效率（V1.1/V1.3升级）。
-*   **System Mapper (实际页面地图提取)**：在带目标探索结束后，收集探索历史并输出包含页面真实控件分布的结构化 `SystemMap`。它与文档认知合并，作为 `Scenario Extractor` (场景提取器) 的双管齐下指导，保证了规划出的 Test Case 具备真实执行基础（V1.2升级）。
-*   **Premium Web Report (高端数据看板)**：测试结果的 HTML 报告已抛弃原始模板，重构为现代暗黑极客风（Sleek Dark Mode + Glassmorphism）。不仅具备覆盖率实时进度条，还具备详细的 AI 总结呈现，显著提升产品高级感。
-*   **Layer 1 Use-Case Coverage 自检报告 (V1.5)**：HTML 报告新增"认知自检"卡片，可视化展示 KnowledgeBase 中业务规则的覆盖情况（已覆盖/遗漏/补全三色统计 + 覆盖率进度条 + 折叠规则详情），让用户直观看到 L1 真正"读懂"了多少业务规则。
-*   **统一 LLM 调用兜底 (V1.5)**：`core/llm_client.py` 提供 `safe_structured_invoke()`，所有 7 个 Layer 1/2 skill 统一接入，兼容原生结构化输出与手动 JSON 解析两条路径，消除 Qwen/DeepSeek/Kimi 等兼容端点对 `with_structured_output` 支持不全导致的随机 None/超报错。
-*   **L1 Prompt 最佳实践内化 (V1.6, 2026-06-01)**：5 个 L1 skill 的 prompt 全部重构为 `<role>`/`<context>`/`<task>`/`<rules>`/`<examples>`/`<output_contract>` 的 XML 结构，沉淀 L1↔L2 节点契约（`docs/prompt-engineering.md`），引入 `tests/core/test_l1_prompts.py` 回归测试（4 fixtures × 7 不变量 = 28 用例）。**修复了之前没建 Node 间 schema 契约、没建 prompt 回归测试、adversarial quote fallback 缺失、priority 标准模糊、nodes 拼写不一致、action 不对应 use_case.name 等 6 个设计漏洞**。同时把 `max_tokens` 4096→65536、`timeout` 30s→1800s 解决真实目标系统输入截断/超时。
-*   **L1 + Phase 1.5 全面加固 (V1.7, 2026-06-01, L1 收尾)**：V1.6 模式扩展到 Phase 1.5 三个 skill（`risk_analyzer` / `scenario_extractor` / `session_summary`），后者两个从裸 `llm.ainvoke().content` 切换到 `safe_structured_invoke`。修复 L1 验证报告 3 个盲点。**L1 收尾完成**（详见 `docs/l1-verification-report-v1.7.md` + `docs/devlog/20-layer1-prompt-engineering-v17.md`）。
-*   **N2 SystemModel 三层防御加固 (V1.6.1 / Phase 1.6.1, 2026-06-02, V2.0 v2 先头兵)**：V1.7 报告点名的"N2 fallback 触发 3/4 fixture"P0 漏洞修复。**N2 从 L1 最薄弱节点升级为 L1 最强节点 (3 层防御 + 0 violation)**。详细: `docs/devlog/22-phase16-completion.md`。
-*   **planning_graph explore V1.6 化 + SystemMap 采样加固 (V1.6.2/1.6.3/1.6.4 / Phase 1.6, 2026-06-02)**：V2.0 v2 计划 Phase 1.6 全部完成。**L1 收尾完成: 10 个 V1.6 5 段 XML prompt**。详细: `docs/devlog/23-phase16-2-3-4-completion.md`。
-*   **Phase 2.0A — L2 执行循环 6 Sprint 升级 (2026-06-03)**: 原 V2.0 v2 的计划（Phase A→B→C→D 共 9-10 天）被合并重编为 6 个 Sprint：
-  - Sprint 1: Goal Reminder（任务持久化守卫注入 decide_node）
-  - Sprint 2: ActionResult（工具统一返回结构化结果 + page_changed 检测）
-  - Sprint 3: Wait-for-Stable（DOM 指纹轮询 + 网络空闲兜底，内嵌到每个工具）
-  - Sprint 4: DOM 语义增强（visible/enabled/readonly/required/checked/selected/role 属性 + 紧凑 `[N]` 索引格式）
-  - Sprint 5: Failure Memory（失败动作滑动队列 + 告警注入 _format_page_info 顶部）
-  - Sprint 6: Loop Detection（action_history 动作历史 + AAA/ABAB 模式检测 + 微重规划）
-  - **额外**: 根因修复（元素引用 `_normalize_target` 归一化 + 密码域智能识别关键词扩展 + `str(target)` 安全转换）
-*   **Phase 2.0A 真实运行暴露 4 个设计缺陷**（2026-06-03, Task 8 TC-002）:
-  - 密码注入无意图校验（误填用户名框）
-  - mark_task_complete 零信任（编造跳转仍 pass）
-  - 工具不返回实际填入值（无法判断填错）
-  - 脱轨后无纠正机制（连续 6 步猜）
-*   **Phase 2.0B — Execution Loop 韧性增强（2026-06-03 发布）**: 详见 `docs/phase2.0B.md`。3 个 Sprint：
-  - Sprint B1: Step 语义校验 + 意图校验 + mark 二次确认 + 工具返回值（修复核心缺陷）
-  - Sprint B2: 脱轨纠正 + 职责重分配（context 压缩/loop detection 移至 observe）
-  - Sprint B3: assert 条件边 + Locator 失败率数据采集（为 Phase 2.0C CDP 迁移做决策）
-  - **CDP 迁移推迟到 Phase 2.0C**，触发条件：100 case 后 locator 失败率 > 30%
-*   **全局路线图汇总**：`docs/master-roadmap.md` — 包含所有 GPT 评审建议、架构改进、代码对比优化、PRD 未实现故事，按 P0-P5 6 级组织
-*   **Phase 2.0C+D — CDP 迁移 + 截图按需 (2026-06-04)**: 详见 handoff `docs/handoff/2026-06-04-phase2.0CD-benchmark.md`。
-    - 2.0C: `_resolve_via_cdp()` 用 Chrome DevTools Protocol 替代 Playwright Locator 失败路径 (gate: `L2_USE_CDP=1`)
-    - 2.0D: 截图按需 (`L2_OBSERVE_SCREENSHOT=0` 默认不截, LLM 调 `screenshot_on_demand` 才截) + JPEG 压缩
-    - 2.0D: `ActionResult` 结构化返回 (status/extracted_content/long_term_memory/candidates)
-*   **用例级重试策略 (2026-06-04, 同行反馈)**:
-    - **策略**: 用例 fail → runtime 自动重跑整个用例, 最多 `MAX_TEST_CASE_RETRIES` 次重试 (默认 2, 总 3 次尝试)
-    - **失败 context 注入**: `_capture_failure_context()` 抓 screenshot + a11y tree (10KB 截断) + assertion reasoning, 注入下一次 attempt 的 SystemMessage 顶部
-    - **浏览器完全重置**: 每次重试前 `_reset_browser_state()` 清 cookies/storage/goto blank/goto target
-    - **3 次都 fail → `human_review_required`**: failure_context 持久化到 DB, 供后续人工 review
-    - **新 WebSocket 事件**: `test_case_retry` (attempt/max_retries/previous_reasoning)
-    - **TestResult 扩展**: `retry_count: int`, `failure_context: list[dict]`, status Literal 加 `"human_review_required"`
-    - **env var**: `MAX_TEST_CASE_RETRIES=2` (可配, 0=禁用重试)
-*   **2026-06-04 全项目审计修复 (Opus 审计)**:
-    - Phase 1: BUG-01 `_fast_assert` 结果被边缘函数丢弃 (record_node 兜底恢复), BUG-02 `AssertionResult.reasoning` 加 `default=""`, BUG-08 `page_semantic.py` `toLower()` → `toLowerCase()`
-    - Phase 2: 移除 compaction 二次 LLM 调用, 注入 `_compaction_summary` 到 messages, 移除硬编码 `sleep(2)`, 修 `count_tokens` 错 import
-    - Phase 3: requirements.txt 加版本钉 + 补 browser-use/tiktoken, `request_human_intervention` 返回 dict, Input 重复计数修复, 探索模式密码脱敏
-    - Phase 4: 删 6 个脏文件 + old/(4.35MB) + pdf_images/(7.29MB), 清 API debug prints + 死代码, 端口统一 8002
-
+Historical handoffs, daily devlogs, and completed phase plans are intentionally
+not kept in the repository. Git history is the archive.
