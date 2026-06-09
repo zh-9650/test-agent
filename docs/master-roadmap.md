@@ -1,20 +1,28 @@
 # Master Roadmap
 
-Last updated: 2026-06-06.
+Last updated: 2026-06-08.
 
 This file contains active priorities only. Completed implementation history
 belongs in Git commits, not duplicated phase documents.
 
 ## P0: Trustworthy Lifecycle And Results
 
-1. Make `TestResult` the authoritative case outcome.
-2. Ensure every planned case receives exactly one terminal result.
-3. Treat empty execution, graph crashes, and assertion exceptions explicitly.
-4. Align retry eligibility for `failed`, `incomplete`, and execution errors.
-5. Derive final task status from authoritative results.
-6. Align database counters, WebSocket final payload, and HTML report totals.
-7. Add regression tests for partial execution and premature completion.
-8. Reproduce one real task with diagnostic artifacts and identify the first
+1. M1: unify Review Gate semantics across Phase 1 and Phase 2, introduce strict
+   exploration goals, and add deterministic L1 quality gates.
+2. M2: split Runtime into explicit explore/execute phases and make
+   `CandidateTestCase` the authoritative execution input.
+3. M3: add durable `ExecutionRun` / `CaseResult` authority, preserve retry
+   attempts, and derive counters from persisted terminal results.
+4. Make `TestResult` or its successor a view of the authoritative case outcome.
+5. Ensure every authoritative candidate case receives exactly one terminal
+   result per execution run.
+6. Treat empty execution, graph crashes, assertion exceptions, and analysis
+   failures explicitly.
+7. Align retry eligibility for `failed`, `incomplete`, and execution errors.
+8. Derive final task lifecycle status separately from test outcome summary.
+9. Align database counters, WebSocket final payload, and HTML report totals.
+10. Add regression tests for partial execution and premature completion.
+11. Reproduce one real task with diagnostic artifacts and identify the first
    divergence from a human oracle.
 
 Exit criteria:
@@ -49,11 +57,13 @@ Exit criteria:
 
 ## P3: Planning And Model Quality
 
-1. Establish human-oracle fixtures for Layer 1 and plan quality.
-2. Add SystemModel versus SystemMap gap analysis only after evidence shows it
-   is a material source of failure.
-3. Evaluate plan size and executability together, not plan breadth alone.
-4. Add automated traceability from input rule to planned and executed case.
+1. Establish human-oracle fixtures for requirement facts, assertions,
+   exploration evidence, and plan quality.
+2. Improve exploration evidence quality based on real failure data.
+3. *(Completed)* Test asset coverage and executability evaluation is tracked
+   through `TestAssetPackage.manual_review_items` and `TraceabilityMatrix` status.
+4. *(Completed)* Automated traceability from requirement fact to candidate case
+   is implemented in `core/skills/traceability_builder.py`.
 
 ## P4: Platform Growth
 
