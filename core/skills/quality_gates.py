@@ -268,6 +268,41 @@ def run_quality_gates(package: TestAssetPackage) -> QualityGateReport:
     _check_duplicate_ids(findings, "coverage_item", [c.id for c in package.coverage_items])
     _check_duplicate_ids(findings, "candidate_case", [c.id for c in package.candidate_cases])
 
+    # --- Schema 版本校验 (W2 修复) ---
+    for case in package.candidate_cases:
+        if _is_blank(getattr(case, "schema_version", "")):
+            _add_finding(
+                findings,
+                code="missing_schema_version",
+                message=f"候选用例 {case.id} 缺少 schema_version，无法进行 schema 版本校验。",
+                artifact_type="candidate_test_case",
+                artifact_id=case.id,
+            )
+
+    # --- required_roles 验证 (W3 修复) ---
+    # 如果用例包含 account_role 类型的前置条件 (通过 StructuredPrecondition 表达)，
+    # 但 required_roles 为空，则该用例可能无法解析账号角色。
+    # 注意：当前 CandidateTestCase.preconditions 是 list[str]，尚未结构化。
+    # 此检查仅验证新的 required_roles 字段（如果该用例通过 adapter 已升级）。
+    for case in package.candidate_cases:
+        required_roles = getattr(case, "required_roles", [])
+        if not required_roles:
+            # 检查 preconditions 是否包含 account_role 关键词
+            precond_text = " ".join(case.preconditions or []).lower()
+            has_role_keyword = any(
+                kw in precond_text
+                for kw in ("登录", "login", "账号", "角色", "权限", "role", "admin")
+            )
+            if has_role_keyword:
+                _add_finding(
+                    findings,
+                    code="missing_required_roles",
+                    message=f"候选用例 {case.id} 的前置条件涉及账号角色，但 required_roles 为空。",
+                    artifact_type="candidate_test_case",
+                    artifact_id=case.id,
+                    severity="warning",
+                )
+
     return QualityGateReport(
         passed=not any(finding.severity == "error" for finding in findings),
         findings=findings,

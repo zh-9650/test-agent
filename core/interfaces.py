@@ -191,8 +191,12 @@ class CoverageItem(BaseModel):
 class CandidateTestCase(BaseModel):
     """从覆盖项实例化的候选测试用例。
 
-    对应 ai-development-guide.md §3.8。
+    对应 ai-development-guide.md §3.8 + 设计文档 §5.5。
     """
+    schema_version: str = Field(
+        default="candidate_test_case.v1",
+        description="Schema 版本，支持 legacy adapter 校验",
+    )
     id: str = Field(description="稳定 ID，如 TC-CAND-001")
     title: str = Field(description="用例标题")
     goal: str = Field(description="测试目标")
