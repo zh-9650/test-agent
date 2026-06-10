@@ -204,6 +204,7 @@ class CandidateTestCase(BaseModel):
     category: str = Field(default="functional", description="类别")
     trace_references: list[str] = Field(min_length=1, description="可追溯引用（覆盖项 ID 列表，至少 1 条）")
     execution_hint: str = Field(default="", description="执行提示（轻量级、发现友好的建议）")
+    required_roles: list[str] = Field(default_factory=list, description="所需账号角色列表")
 
 
 class TraceabilityRow(BaseModel):
@@ -263,6 +264,118 @@ class TestAssetPackage(BaseModel):
     conflicts: list[str] = Field(default_factory=list)
     manual_review_items: list[str] = Field(default_factory=list)
     runtime_hints: dict[str, Any] = Field(default_factory=dict)
+
+
+# =============================================================================
+# M2: Runtime explore/execute 拆分 — 目标驱动执行模型
+# =============================================================================
+
+
+class GoalResult(BaseModel):
+    """每个探索目标的可计算结果。
+
+    探索阶段每个 StrictExplorationGoal 必须产出一个 GoalResult，
+    用于判断是否可以进入设计/执行阶段。
+    """
+    schema_version: str = Field(default="goal_result.v1", description="Schema 版本")
+    goal_id: str = Field(description="对应的 ExplorationGoal.id")
+    status: Literal["found", "not_found", "blocked", "insufficient"] = Field(
+        description="探索结果状态"
+    )
+    evidence_refs: list[str] = Field(default_factory=list, description="支持证据引用")
+    stop_reason: str = Field(default="", description="停止原因说明")
+    observed_at: str = Field(default="", description="观察时间 ISO 格式")
+
+
+class StructuredPrecondition(BaseModel):
+    """结构化前置条件，替代自然语言 list[str]。
+
+    账号角色必须显式声明，禁止通过 assertion 类型猜测。
+    """
+    type: Literal["account_role", "business_state", "environment", "data"] = Field(
+        description="前置条件类型"
+    )
+    description: str = Field(description="前置条件描述")
+    required_role: str | None = Field(default=None, description="所需角色（account_role 类型必填）")
+    satisfiable_by_agent: bool = Field(default=True, description="是否可由 agent 自动满足")
+    failure_policy: Literal["skipped", "incomplete", "failed", "human_review_required"] = Field(
+        default="incomplete",
+        description="无法满足时的失败策略"
+    )
+
+
+class RuntimeExecutableCase(BaseModel):
+    """Runtime 无损适配的执行用例。
+
+    只做协议适配，不生成固定步骤、不改写 goal/expected_result、
+    不重新分配 ID、不生成第二套权威测试意图。
+    """
+    id: str = Field(description="等于 CandidateTestCase.id")
+    objective: str = Field(description="等于 CandidateTestCase.goal")
+    expected: str = Field(default="", description="等于 CandidateTestCase.expected_result")
+    hints: str = Field(default="", description="等于 CandidateTestCase.execution_hint")
+    preconditions: list[StructuredPrecondition] = Field(
+        default_factory=list, description="结构化前置条件"
+    )
+    trace_references: list[str] = Field(default_factory=list, description="等于 CandidateTestCase.trace_references")
+    priority: Literal["high", "medium", "low"] = Field(default="medium", description="等于 CandidateTestCase.priority")
+    required_roles: list[str] = Field(default_factory=list, description="所需账号角色")
+
+
+class TerminalAssertion(BaseModel):
+    """终态判定三条件。
+
+    只有三者均满足，case 才能 passed。
+    """
+    objective_satisfied: bool = Field(description="目标是否满足")
+    expected_result_supported: bool = Field(description="预期结果是否被支持")
+    terminal_evidence_sufficient: bool = Field(description="终态证据是否充分")
+    reasoning: str = Field(default="", description="判定理由")
+
+
+class ExplorationResult(BaseModel):
+    """探索阶段的输出结果。
+
+    包含系统地图证据和每个目标的探索结果。
+    """
+    system_map: SystemMapEvid = Field(default_factory=SystemMapEvid, description="系统地图证据")
+    goal_results: list[GoalResult] = Field(default_factory=list, description="每个目标的探索结果")
+
+
+class ExecutionRun(BaseModel):
+    """权威运行模型。
+
+    记录一次完整执行的所有用例结果和状态。
+    """
+    run_id: str = Field(description="运行 ID")
+    task_id: str = Field(description="关联任务 ID")
+    schema_version: str = Field(default="execution_run.v1", description="Schema 版本")
+    status: Literal["running", "completed", "failed", "cancelled"] = Field(
+        default="running", description="运行状态"
+    )
+    started_at: str = Field(default="", description="开始时间 ISO 格式")
+    completed_at: str | None = Field(default=None, description="完成时间 ISO 格式")
+    candidate_case_ids: list[str] = Field(default_factory=list, description="候选 case ID 列表")
+    summary: dict[str, Any] = Field(default_factory=dict, description="运行摘要")
+
+
+class CaseResult(BaseModel):
+    """权威用例结果模型。
+
+    一个 run_id + candidate_case_id 只能有一个 terminal CaseResult。
+    retry 更新同一 CaseResult 的 attempt_count 和最终状态，不创建第二个逻辑结果。
+    """
+    run_id: str = Field(description="关联运行 ID")
+    candidate_case_id: str = Field(description="等于 CandidateTestCase.id")
+    terminal_status: Literal["passed", "failed", "skipped", "incomplete", "human_review_required"] = Field(
+        description="终态结果"
+    )
+    attempt_count: int = Field(default=1, description="尝试次数")
+    started_at: str = Field(default="", description="开始时间 ISO 格式")
+    completed_at: str = Field(default="", description="完成时间 ISO 格式")
+    summary: str = Field(default="", description="执行摘要")
+    evidence_refs: list[str] = Field(default_factory=list, description="证据引用")
+    failure_reason: str | None = Field(default=None, description="失败原因")
 
 
 # =============================================================================

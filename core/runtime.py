@@ -22,7 +22,11 @@ from typing import Any, AsyncGenerator
 from langchain_core.messages import AIMessage, SystemMessage
 from playwright.async_api import async_playwright
 
-from core.interfaces import AssertionResult, ChangeReport, Setup, StepResult, TestCase, TestResult
+from core.interfaces import (
+    AssertionResult, ChangeReport, Setup, StepResult, TestCase, TestResult,
+    ExplorationGoal, GoalResult, RuntimeExecutableCase, TerminalAssertion,
+    CaseResult, ExplorationResult, SystemMapEvid,
+)
 from core.execution_logger import _task_id_map, log_step, log_test_result, clear_test_case_steps
 from agents.ui.planning_graph import build_planning_graph
 from agents.ui.execution_graph import build_execution_graph
@@ -291,6 +295,12 @@ class Runtime:
                         explored_urls = cfg.get("_explored_urls", [])
                         scenarios = cfg.get("_scenarios", [])
                         self.coverage_tracker = CoverageTracker(explored_urls, scenarios)
+
+                        # Sync exploration evidence back to self.task_config
+                        # so callers (api/app.py) can access it after run_stream()
+                        for key in ("_exploration_history", "_system_map", "_scenarios", "_explored_urls"):
+                            if key in cfg:
+                                self.task_config[key] = cfg[key]
                         
                         if self.task_id in _task_id_map:
                             from core.execution_logger import log_test_plan
@@ -495,12 +505,19 @@ class Runtime:
                 task_prd, 
                 task_changelog, 
                 task_focus,
-                system_model=self.task_config.get("_system_model")
+                system_map=self.task_config.get("_system_map", {})
             )
             self.task_config["_scenarios"] = scenarios
 
         planning_graph = build_planning_graph()
         result = await planning_graph.ainvoke(self._build_initial_state())
+
+        # Sync exploration evidence back to self.task_config
+        result_tc = result.get("task_config", {})
+        for key in ("_exploration_history", "_system_map", "_scenarios", "_explored_urls"):
+            if key in result_tc:
+                self.task_config[key] = result_tc[key]
+
         return result.get("test_plan", []), result.get("setups", {})
 
     # ========================================================================
@@ -1200,10 +1217,6 @@ class Runtime:
         if getattr(self, "coverage_tracker", None):
             builder.set_coverage(self.coverage_tracker.get_coverage_report())
 
-        l1_coverage = self.task_config.get("_coverage_report")
-        if l1_coverage:
-            builder.set_layer1_coverage(l1_coverage)
-
         # Generate AI summary
         ai_summary = ""
         try:
@@ -1245,6 +1258,387 @@ class Runtime:
                                     failed_tests=sum(1 for r in results if r.status == "failed"),
                                     incomplete=sum(1 for r in results if r.status == "incomplete"),
                                     human_review_required=sum(1 for r in results if r.status == "human_review_required"),
-                                    ai_summary_preview=ai_summary[:200] if ai_summary else "",
-                                    l1_coverage_present=bool(l1_coverage))
+                                    ai_summary_preview=ai_summary[:200] if ai_summary else "")
         return saved_path
+
+    # ========================================================================
+    # M2: Runtime explore/execute 拆分 — 目标驱动执行
+    # ========================================================================
+
+    async def explore(
+        self, goals: list[ExplorationGoal]
+    ) -> ExplorationResult:
+        """目标驱动探索阶段。
+
+        为每个 Goal 产出 GoalResult，收集 SystemMapEvid 作为唯一权威探索证据。
+
+        Args:
+            goals: 严格探索目标列表
+
+        Returns:
+            ExplorationResult 包含 system_map 和 goal_results
+        """
+        from core.interfaces import GoalResult, SystemMapEvid, PageMap
+
+        goal_results: list[GoalResult] = []
+        all_pages: list[PageMap] = []
+
+        for goal in goals:
+            try:
+                result = await self._explore_single_goal(goal)
+                goal_results.append(result)
+
+                # 收集探索证据到 SystemMapEvid
+                if result.status == "found":
+                    page_info = getattr(self, "_last_page_info", {})
+                    if page_info:
+                        page_map = PageMap(
+                            name=page_info.get("title", ""),
+                            url_pattern=page_info.get("url", ""),
+                            title=page_info.get("title", ""),
+                            elements=page_info.get("elements", []),
+                        )
+                        all_pages.append(page_map)
+            except Exception as e:
+                goal_results.append(GoalResult(
+                    goal_id=goal.id,
+                    status="blocked",
+                    stop_reason=f"探索异常: {str(e)}",
+                    observed_at=_now_iso(),
+                ))
+
+        system_map = SystemMapEvid(pages=all_pages)
+
+        return ExplorationResult(
+            system_map=system_map,
+            goal_results=goal_results,
+        )
+
+    async def _explore_single_goal(self, goal: ExplorationGoal) -> GoalResult:
+        """探索单个目标，返回 GoalResult。"""
+        max_steps = int(os.getenv("MAX_EXPLORE_STEPS_PER_GOAL", "10"))
+        step_count = 0
+
+        while step_count < max_steps:
+            page_info = await self._observe_page()
+            self._last_page_info = page_info
+
+            if self._check_stop_condition(goal, page_info):
+                return GoalResult(
+                    goal_id=goal.id,
+                    status="found",
+                    evidence_refs=[page_info.get("url", "")],
+                    stop_reason=f"满足停止条件: {goal.stop_condition}",
+                    observed_at=_now_iso(),
+                )
+
+            action = await self._decide_explore_action(goal, page_info, step_count)
+            if action is None:
+                return GoalResult(
+                    goal_id=goal.id,
+                    status="insufficient",
+                    stop_reason="无法决定下一步探索行动",
+                    observed_at=_now_iso(),
+                )
+
+            await self._execute_explore_action(action)
+            step_count += 1
+
+        return GoalResult(
+            goal_id=goal.id,
+            status="insufficient",
+            stop_reason=f"达到最大探索步数 {max_steps}，未找到充分证据",
+            observed_at=_now_iso(),
+        )
+
+    async def _observe_page(self) -> dict[str, Any]:
+        """观察当前页面状态。"""
+        try:
+            from core.page_semantic import extract_page_semantics
+            return await extract_page_semantics(self.page)
+        except Exception as e:
+            return {"url": self.page.url if self.page else "", "error": str(e)}
+
+    def _check_stop_condition(
+        self, goal: ExplorationGoal, page_info: dict[str, Any]
+    ) -> bool:
+        """检查是否满足 Goal 的 stop_condition。"""
+        page_text = str(page_info).lower()
+        for evidence in goal.expected_evidence:
+            if evidence.lower() in page_text:
+                return True
+        return False
+
+    async def _decide_explore_action(
+        self, goal: ExplorationGoal, page_info: dict[str, Any], step_count: int
+    ) -> dict[str, Any] | None:
+        """LLM 决定探索下一步行动。"""
+        from langchain_core.messages import SystemMessage, HumanMessage
+
+        prompt = f"""你是一个探索 agent，目标是找到支持以下断言的证据:
+
+目标: {goal.goal}
+预期证据: {', '.join(goal.expected_evidence)}
+停止条件: {goal.stop_condition}
+
+当前页面:
+URL: {page_info.get('url', '')}
+标题: {page_info.get('title', '')}
+
+已完成 {step_count} 步探索。请决定下一步行动。
+返回 JSON: {{"tool": "click|navigate|scroll|wait", "args": {{"selector": "..." or "url": "..." or "direction": "down"}}}}
+如果已找到证据: {{"tool": "mark_task_complete", "args": {{"summary": "证据"}}}}
+如果无法继续: {{"tool": "mark_task_failed", "args": {{"reason": "原因"}}}}
+"""
+        try:
+            from core.llm_client import get_llm_client
+            llm = get_llm_client("haiku")
+            response = await llm.ainvoke([
+                SystemMessage(content="你是探索 agent。"),
+                HumanMessage(content=prompt),
+            ])
+            content = response.content if isinstance(response.content, str) else str(response.content)
+            import json
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start >= 0 and end > start:
+                return json.loads(content[start:end])
+        except Exception as e:
+            print(f"[Runtime] explore decide error: {e}")
+        return None
+
+    async def _execute_explore_action(self, action: dict[str, Any]) -> None:
+        """执行探索行动。"""
+        tool_name = action.get("tool", "")
+        args = action.get("args", {})
+        try:
+            if tool_name == "click":
+                selector = args.get("selector", "")
+                if selector:
+                    await self.page.click(selector)
+            elif tool_name == "navigate":
+                url = args.get("url", "")
+                if url:
+                    await self.page.goto(url, wait_until="load", timeout=30000)
+            elif tool_name == "scroll":
+                direction = args.get("direction", "down")
+                delta = 500 if direction == "down" else -500
+                await self.page.evaluate(f"window.scrollBy(0, {delta})")
+            elif tool_name == "wait":
+                await self.page.wait_for_timeout(args.get("ms", 1000))
+        except Exception as e:
+            print(f"[Runtime] explore action error: {e}")
+
+    async def execute(
+        self, executable_cases: list[RuntimeExecutableCase]
+    ) -> list[CaseResult]:
+        """目标驱动执行阶段。"""
+        return [await self._execute_single_case(case) for case in executable_cases]
+
+    async def _execute_single_case(self, case: RuntimeExecutableCase) -> CaseResult:
+        """执行单个用例，产出 CaseResult。"""
+        start_time = time.time()
+        max_steps = int(os.getenv("MAX_STEPS_PER_CASE", "15"))
+
+        precondition_result = await self._check_preconditions(case)
+        if precondition_result is not None:
+            return precondition_result
+
+        steps_executed = 0
+        evidence_collected: list[str] = []
+
+        while steps_executed < max_steps:
+            page_info = await self._observe_page()
+            terminal = await self._evaluate_terminal_assertion(
+                case, page_info, evidence_collected
+            )
+
+            if terminal is not None:
+                return CaseResult(
+                    run_id="",
+                    candidate_case_id=case.id,
+                    terminal_status="passed" if self._all_terminal_satisfied(terminal) else "failed",
+                    attempt_count=1,
+                    started_at=_now_iso(),
+                    completed_at=_now_iso(),
+                    summary=f"{'通过' if self._all_terminal_satisfied(terminal) else '失败'}: {case.objective}",
+                    evidence_refs=evidence_collected,
+                    failure_reason=None if self._all_terminal_satisfied(terminal) else
+                        f"objective={terminal.objective_satisfied}, "
+                        f"expected={terminal.expected_result_supported}, "
+                        f"evidence={terminal.terminal_evidence_sufficient}",
+                )
+
+            action = await self._decide_execute_action(case, page_info, steps_executed)
+            if action is None:
+                break
+
+            result = await self._execute_test_action(action)
+            if result:
+                evidence_collected.append(result)
+            steps_executed += 1
+
+        return CaseResult(
+            run_id="",
+            candidate_case_id=case.id,
+            terminal_status="incomplete",
+            attempt_count=1,
+            started_at=_now_iso(),
+            completed_at=_now_iso(),
+            summary=f"未完成: {case.objective}",
+            evidence_refs=evidence_collected,
+            failure_reason=f"达到最大步数 {max_steps} 或无法继续",
+        )
+
+    async def _check_preconditions(self, case: RuntimeExecutableCase) -> CaseResult | None:
+        """检查前置条件。"""
+        for precond in case.preconditions:
+            if not precond.satisfiable_by_agent:
+                status_map = {
+                    "skipped": "skipped",
+                    "human_review_required": "human_review_required",
+                    "failed": "failed",
+                }
+                terminal = status_map.get(precond.failure_policy, "incomplete")
+                return CaseResult(
+                    run_id="",
+                    candidate_case_id=case.id,
+                    terminal_status=terminal,
+                    attempt_count=0,
+                    started_at=_now_iso(),
+                    completed_at=_now_iso(),
+                    summary=f"前置条件: {precond.description}",
+                    failure_reason=f"precondition_{precond.failure_policy}: {precond.description}",
+                )
+
+            if precond.type == "account_role" and not precond.required_role:
+                return CaseResult(
+                    run_id="",
+                    candidate_case_id=case.id,
+                    terminal_status="incomplete",
+                    attempt_count=0,
+                    started_at=_now_iso(),
+                    completed_at=_now_iso(),
+                    summary="账号角色未解析",
+                    failure_reason="account_role_unresolved",
+                )
+        return None
+
+    async def _evaluate_terminal_assertion(
+        self,
+        case: RuntimeExecutableCase,
+        page_info: dict[str, Any],
+        evidence_refs: list[str],
+    ) -> TerminalAssertion | None:
+        """评估终态判定三条件。"""
+        from langchain_core.messages import SystemMessage, HumanMessage
+
+        prompt = f"""评估当前页面是否达到终态。
+
+目标: {case.objective}
+预期结果: {case.expected}
+URL: {page_info.get('url', '')}
+标题: {page_info.get('title', '')}
+已收集证据: {evidence_refs[-3:] if evidence_refs else '无'}
+
+返回 JSON:
+{{"objective_satisfied": bool, "expected_result_supported": bool, "terminal_evidence_sufficient": bool, "reasoning": "..."}}
+如果还需观察: {{"need_more_observation": true}}
+"""
+        try:
+            from core.llm_client import get_llm_client
+            llm = get_llm_client("haiku")
+            response = await llm.ainvoke([
+                SystemMessage(content="你是测试执行 agent。"),
+                HumanMessage(content=prompt),
+            ])
+            content = response.content if isinstance(response.content, str) else str(response.content)
+            import json
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start >= 0 and end > start:
+                result = json.loads(content[start:end])
+                if result.get("need_more_observation"):
+                    return None
+                return TerminalAssertion(
+                    objective_satisfied=result.get("objective_satisfied", False),
+                    expected_result_supported=result.get("expected_result_supported", False),
+                    terminal_evidence_sufficient=result.get("terminal_evidence_sufficient", False),
+                    reasoning=result.get("reasoning", ""),
+                )
+        except Exception as e:
+            print(f"[Runtime] terminal assertion error: {e}")
+        return None
+
+    def _all_terminal_satisfied(self, terminal: TerminalAssertion) -> bool:
+        """判断终态三条件是否全部满足。"""
+        return (terminal.objective_satisfied
+                and terminal.expected_result_supported
+                and terminal.terminal_evidence_sufficient)
+
+    async def _decide_execute_action(
+        self, case: RuntimeExecutableCase, page_info: dict[str, Any], step_count: int
+    ) -> dict[str, Any] | None:
+        """LLM 决定执行下一步行动。"""
+        from langchain_core.messages import SystemMessage, HumanMessage
+
+        prompt = f"""执行测试用例:
+目标: {case.objective}
+预期: {case.expected}
+提示: {case.hints}
+页面: {page_info.get('url', '')} - {page_info.get('title', '')}
+已完成 {step_count} 步。
+
+返回 JSON: {{"tool": "click|navigate|scroll|input_text|wait", "args": {{...}}}}
+完成: {{"tool": "mark_task_complete", "args": {{"summary": "结果"}}}}
+失败: {{"tool": "mark_task_failed", "args": {{"reason": "原因"}}}}
+"""
+        try:
+            from core.llm_client import get_llm_client
+            llm = get_llm_client("haiku")
+            response = await llm.ainvoke([
+                SystemMessage(content="你是测试执行 agent。"),
+                HumanMessage(content=prompt),
+            ])
+            content = response.content if isinstance(response.content, str) else str(response.content)
+            import json
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start >= 0 and end > start:
+                return json.loads(content[start:end])
+        except Exception as e:
+            print(f"[Runtime] execute decide error: {e}")
+        return None
+
+    async def _execute_test_action(self, action: dict[str, Any]) -> str | None:
+        """执行测试行动，返回证据引用。"""
+        tool_name = action.get("tool", "")
+        args = action.get("args", {})
+        try:
+            if tool_name == "click":
+                sel = args.get("selector", "")
+                if sel:
+                    await self.page.click(sel)
+                    return f"clicked: {sel}"
+            elif tool_name == "navigate":
+                url = args.get("url", "")
+                if url:
+                    await self.page.goto(url, wait_until="load", timeout=30000)
+                    return f"navigated: {url}"
+            elif tool_name == "scroll":
+                d = args.get("direction", "down")
+                delta = 500 if d == "down" else -500
+                await self.page.evaluate(f"window.scrollBy(0, {delta})")
+                return f"scrolled {d}"
+            elif tool_name == "input_text":
+                sel = args.get("selector", "")
+                txt = args.get("text", "")
+                if sel and txt:
+                    await self.page.fill(sel, txt)
+                    return f"input: {sel}"
+            elif tool_name == "wait":
+                await self.page.wait_for_timeout(args.get("ms", 1000))
+                return f"waited {args.get('ms', 1000)}ms"
+        except Exception as e:
+            return f"error: {e}"
+        return None
