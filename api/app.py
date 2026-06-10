@@ -295,56 +295,71 @@ async def resume_task(task_id: int, req: ResumeRequest) -> MessageResponse:
     _hitl_events[task_id_str].set()
     return MessageResponse(message="Task resumed")
 
-class Layer1TestRequest(BaseModel):
+class Layer2TestRequest(BaseModel):
     prd: str = ""
     api_doc: str = ""
     changelog: str = ""
+    prototype: str = ""
+    architecture: str = ""
+    rules: str = ""
 
-@app.post("/api/test/layer1")
-async def test_layer1_endpoint(req: Layer1TestRequest):
-    """Test the Layer 1 extraction pipeline with SSE streaming"""
-    if not any([req.prd, req.api_doc, req.changelog]):
+@app.post("/api/test/layer2")
+async def test_layer2_endpoint(req: Layer2TestRequest):
+    """Test the new L2 analysis pipeline with SSE streaming.
+
+    使用新的 RequirementFact → RequirementAssertion → TestCondition
+    → CoverageItem → CandidateTestCase → TestAssetPackage 管道。
+    """
+    if not any([req.prd, req.api_doc, req.changelog, req.prototype, req.architecture, req.rules]):
         raise HTTPException(status_code=400, detail="至少提供一个文档")
 
-    # 截断保护
     req.prd = req.prd[:15000]
     req.api_doc = req.api_doc[:15000]
     req.changelog = req.changelog[:5000]
+    req.prototype = req.prototype[:5000]
+    req.architecture = req.architecture[:5000]
+    req.rules = req.rules[:5000]
 
     async def generate():
         try:
-            from core.skills.knowledge_extractor import extract_knowledge
-            from core.skills.use_case_modeler import generate_use_case_model
-            from core.skills.use_case_coverage import check_use_case_coverage
-            from core.skills.system_modeler import generate_system_model
-            from core.skills.goal_extractor import extract_goals
+            from core.skills.l2_pipeline import run_l2_pipeline
 
-            yield json.dumps({"progress": "[Node 1] 正在提取无损事实库 (KnowledgeBase)..."}, ensure_ascii=False) + "\n"
-            knowledge = await extract_knowledge(req.prd, req.api_doc, req.changelog)
+            yield json.dumps({"progress": "[N1] 正在提取原子化需求事实 (RequirementFact)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N1.5] 正在推导需求断言 (RequirementAssertion)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N2] 正在分析测试条件 (TestCondition)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N2.5] 正在选择设计技术 (TestDesignTechnique)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N3] 正在分析覆盖项 (CoverageItem)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N3.5] 正在生成候选用例 (CandidateTestCase)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N4] 正在构建追溯矩阵 (TraceabilityMatrix)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N4.5] 正在组装最终交付物 (TestAssetPackage)..."}, ensure_ascii=False) + "\n"
 
-            yield json.dumps({"progress": "[Node 1.5] 正在构建角色用例脚手架 (UseCaseModel)..."}, ensure_ascii=False) + "\n"
-            use_case_model = await generate_use_case_model(knowledge)
-
-            yield json.dumps({"progress": "[Node 1.7] 正在进行覆盖率自检 (Coverage Check)..."}, ensure_ascii=False) + "\n"
-            use_case_model, coverage_report = await check_use_case_coverage(knowledge, use_case_model)
-
-            yield json.dumps({"progress": "[Node 2] 正在构建状态机流转网络 (SystemModel)..."}, ensure_ascii=False) + "\n"
-            system_model = await generate_system_model(knowledge, use_case_model)
-
-            yield json.dumps({"progress": "[Node 3] 正在派生探索目标 (Goals)..."}, ensure_ascii=False) + "\n"
-            goals = await extract_goals(use_case_model.model_dump())
+            package = await run_l2_pipeline(
+                prd_content=req.prd,
+                api_doc_content=req.api_doc,
+                changelog_content=req.changelog,
+                prototype_notes=req.prototype,
+                architecture_notes=req.architecture,
+                rules=req.rules,
+            )
 
             final_result = {
                 "progress": "done",
-                "knowledge_base": knowledge.model_dump(),
-                "use_case_model": use_case_model.model_dump(),
-                "coverage_report": coverage_report.model_dump(),
-                "system_model": system_model.model_dump(),
-                "goals": [g.model_dump() for g in goals]
+                "package": package.model_dump(),
+                "summary": {
+                    "fact_count": len(package.facts),
+                    "assertion_count": len(package.assertions),
+                    "condition_count": len(package.test_conditions),
+                    "technique_count": len(package.test_design_techniques),
+                    "coverage_count": len(package.coverage_items),
+                    "candidate_count": len(package.candidate_cases),
+                    "conflict_count": len(package.conflicts),
+                    "manual_review_count": len(package.manual_review_items),
+                },
             }
             yield json.dumps(final_result, ensure_ascii=False) + "\n"
         except Exception as e:
-            yield json.dumps({"progress": "error", "error": str(e)}, ensure_ascii=False) + "\n"
+            import traceback
+            yield json.dumps({"progress": "error", "error": str(e), "traceback": traceback.format_exc()}, ensure_ascii=False) + "\n"
 
     return StreamingResponse(
         generate(),
@@ -478,74 +493,60 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
 
             _hitl_callbacks[str(task_db_id)] = hitl_callback
 
-            from core.skills.system_modeler import generate_system_model
-            from core.skills.knowledge_extractor import extract_knowledge
-            from core.skills.use_case_modeler import generate_use_case_model
-            from core.skills.use_case_coverage import check_use_case_coverage
-
-            from core.interfaces import KnowledgeBase
-            from core.skills.use_case_modeler import UseCaseModel
-            from core.skills.use_case_coverage import CoverageReport
-            from core.skills.system_modeler import SystemModel
-
             print("  [DEBUG SESSION] Starting retrieve_memories...", flush=True)
             memory_context = await retrieve_memories(target_url)
             print("  [DEBUG SESSION] Starting parse_and_fetch_links...", flush=True)
             enriched_config = await parse_and_fetch_links(config or {})
             print("  [DEBUG SESSION] parse_and_fetch_links done.", flush=True)
 
-            # Node 1: Knowledge Extraction
-            if "_knowledge_base" in enriched_config and enriched_config["_knowledge_base"]:
-                print("  [DEBUG SESSION] Found _knowledge_base cache in config. Using cached version.", flush=True)
-                knowledge = KnowledgeBase.model_validate(enriched_config["_knowledge_base"])
-            else:
-                print("  [DEBUG SESSION] Starting extract_knowledge...", flush=True)
-                knowledge = await extract_knowledge(
-                    prd_content=enriched_config.get("prd", ""),
-                    api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
-                    changelog_content=enriched_config.get("changelog", "")
-                )
-                enriched_config["_knowledge_base"] = knowledge.model_dump()
-                print("  [DEBUG SESSION] extract_knowledge done.", flush=True)
+            # =========================================================================
+            # L2 Phase 1 (探索前): 提取事实 → 推导断言 → review gate → 生成探索目标
+            # =========================================================================
+            print("  [DEBUG SESSION] Starting L2 Phase 1 (pre-exploration)...", flush=True)
+            from core.skills.l2_pipeline import generate_exploration_goals, run_l2_pipeline
+            from core.execution_logger import log_analysis_package
 
-            # Node 1.5 + 1.7: Use Case Modeling & Coverage
-            if "_use_case_model" in enriched_config and enriched_config["_use_case_model"] and "_coverage_report" in enriched_config and enriched_config["_coverage_report"]:
-                print("  [DEBUG SESSION] Found _use_case_model & _coverage_report cache in config. Using cached version.", flush=True)
-                use_case_model = UseCaseModel.model_validate(enriched_config["_use_case_model"])
-                coverage_report = CoverageReport.model_validate(enriched_config["_coverage_report"])
-            else:
-                print("  [DEBUG SESSION] Starting generate_use_case_model...", flush=True)
-                use_case_model = await generate_use_case_model(knowledge)
-                print("  [DEBUG SESSION] Starting check_use_case_coverage...", flush=True)
-                use_case_model, coverage_report = await check_use_case_coverage(knowledge, use_case_model)
-                enriched_config["_use_case_model"] = use_case_model.model_dump()
-                enriched_config["_coverage_report"] = coverage_report.model_dump()
-                print("  [DEBUG SESSION] Use Case modeling & Coverage done.", flush=True)
+            # rules: 前端传字符串，直接用；如果是 list 则 join
+            raw_rules = enriched_config.get("rules", "")
+            rules_str = "\n".join(raw_rules) if isinstance(raw_rules, list) else str(raw_rules or "")
 
-            # Node 2: System Modeling (State Machine)
-            if "_system_model" in enriched_config and enriched_config["_system_model"]:
-                print("  [DEBUG SESSION] Found _system_model cache in config. Using cached version.", flush=True)
-                system_model = SystemModel.model_validate(enriched_config["_system_model"])
-            else:
-                print("  [DEBUG SESSION] Starting generate_system_model...", flush=True)
-                system_model = await generate_system_model(knowledge, use_case_model)
-                enriched_config["_system_model"] = system_model.model_dump()
-                print("  [DEBUG SESSION] generate_system_model done.", flush=True)
+            goals, review_items, l2_facts, l2_assertions = await generate_exploration_goals(
+                prd_content=enriched_config.get("prd", ""),
+                api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
+                changelog_content=enriched_config.get("changelog", ""),
+                prototype_notes=enriched_config.get("prototype_url", ""),
+                architecture_notes=enriched_config.get("tech_doc", ""),
+                rules=rules_str,
+            )
 
-            # Diag: task_config 演化快照 (L1 5 节点之后, 落 enriched_config 状态)
+            if goals:
+                enriched_config["_goals"] = [g.model_dump() for g in goals]
+            if review_items:
+                enriched_config["_l2_manual_review_items"] = review_items
+
+            # 保存 Phase 1 结果供 Phase 2 复用，避免重复 LLM 调用
+            enriched_config["_l2_precomputed_facts"] = [f.model_dump() for f in l2_facts]
+            enriched_config["_l2_precomputed_assertions"] = [a.model_dump() for a in l2_assertions]
+            enriched_config["_l2_precomputed_goals"] = [g.model_dump() for g in goals]
+
+            print(f"  [DEBUG SESSION] L2 Phase 1 done: "
+                  f"{len(l2_facts)} facts, {len(l2_assertions)} assertions, "
+                  f"{len(goals)} goals, {len(review_items)} review items", flush=True)
+
+            if review_items:
+                print(f"  [L2 REVIEW GATE] {len(review_items)} 条高风险断言需要人工确认:", flush=True)
+                for item in review_items[:5]:
+                    print(f"    - {item[:120]}", flush=True)
+
             from core.diag_logger import get_diag_auto
-            get_diag_auto().dump("99_task_config_evolution", snapshot_at="after_l1_n2",
-                                 config_keys=list(enriched_config.keys()),
-                                 has_kb="_knowledge_base" in enriched_config,
-                                 has_ucm="_use_case_model" in enriched_config,
-                                 has_cov="_coverage_report" in enriched_config,
-                                 has_sm="_system_model" in enriched_config,
-                                 l1_outputs_summary={
-                                     "kb_rules": len(knowledge.business_rules),
-                                     "ucm_cases": len(use_case_model.use_cases),
-                                     "cov_covered": len(coverage_report.covered_rules),
-                                     "sm_flows": len(system_model.flows),
-                                 })
+            get_diag_auto().dump("99_task_config_evolution",
+                snapshot_at="after_l2_phase1",
+                config_keys=list(enriched_config.keys()),
+                l2_facts=len(l2_facts),
+                l2_assertions=len(l2_assertions),
+                l2_goals=len(goals),
+                l2_review_gate=len(review_items),
+            )
 
             async with async_session() as session:
                 task = await session.get(Task, task_db_id)
@@ -553,16 +554,17 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
                     task.config = enriched_config
                     await session.commit()
 
+            # =========================================================================
+            # Runtime: 探索 + 执行 (goals 已注入，planning_graph 会消费)
+            # =========================================================================
             print("  [DEBUG SESSION] Initializing Runtime...", flush=True)
             runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, "memory_context": memory_context, **enriched_config})
             print("  [DEBUG SESSION] Runtime initialized. Running stream...", flush=True)
 
             async for update in runtime.run_stream():
-                # Detect error messages yielded by the runtime
                 if isinstance(update, dict) and isinstance(update.get("data"), dict):
                     if "error" in update["data"]:
                         has_error = True
-                    # Check if final session complete event indicates aborted/pending cases (issue 3)
                     if update.get("type") == "session_complete" and update["data"].get("phase") == "final":
                         report_data = update["data"].get("report_data", {})
                         test_cases = report_data.get("test_plan", [])
@@ -573,6 +575,96 @@ async def _run_test_session(task_db_id: int, target_url: str, config: dict | Non
                         if len(executed_cases) < len(test_cases):
                             has_error = True
                 await websocket_manager.send_message(str(task_db_id), update)
+
+            # =========================================================================
+            # L2 Phase 2 (探索后): 用真实 UI 证据跑完整分析管道
+            # =========================================================================
+            print("  [DEBUG SESSION] Starting L2 Phase 2 (post-exploration)...", flush=True)
+
+            # 从 runtime.task_config 读取探索证据（planning_graph 写入的）
+            system_map_evid = None
+            exploration_history = runtime.task_config.get("_exploration_history")
+            if exploration_history:
+                from core.interfaces import PageMap, ActionMap, FormMap, NavigationMap, SystemMapEvid
+                page_maps = []
+                action_maps = []
+                for page in exploration_history[-20:]:
+                    url = page.get("url", "")
+                    title = page.get("title", "")
+                    elements = page.get("interactive_elements", [])
+                    actions = [
+                        f"{el.get('role', 'elem')}: {el.get('name', '') or el.get('text', '')}"
+                        for el in elements[:15]
+                    ]
+                    page_maps.append(PageMap(
+                        name=title or url or "未知页面",
+                        url_pattern=url,
+                        title=title,
+                        elements=[e.get("name", "") or e.get("text", "") or "" for e in elements[:20]],
+                        discovered_actions=actions,
+                    ))
+                    for el in elements:
+                        action_text = el.get("name", "") or el.get("text", "") or ""
+                        if action_text:
+                            action_maps.append(ActionMap(
+                                action_name=action_text,
+                                target_page=title or url or "",
+                            ))
+
+                system_map_evid = SystemMapEvid(
+                    pages=page_maps,
+                    actions=action_maps,
+                    forms=[],
+                    navigations=[],
+                )
+
+            # 复用 Phase 1 预计算结果（使用 legacy adapter 兼容旧数据）
+            from core.interfaces import RequirementFact, RequirementAssertion
+            from core.skills.l2_pipeline import adapt_legacy_goals
+            precomputed_facts = [RequirementFact.model_validate(f) for f in enriched_config.get("_l2_precomputed_facts", [])]
+            precomputed_assertions = [RequirementAssertion.model_validate(a) for a in enriched_config.get("_l2_precomputed_assertions", [])]
+            precomputed_goals = adapt_legacy_goals(enriched_config.get("_l2_precomputed_goals", []))
+            precomputed_review_items = enriched_config.get("_l2_manual_review_items", [])
+
+            package = await run_l2_pipeline(
+                prd_content=enriched_config.get("prd", ""),
+                api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
+                changelog_content=enriched_config.get("changelog", ""),
+                prototype_notes=enriched_config.get("prototype_url", ""),
+                architecture_notes=enriched_config.get("tech_doc", ""),
+                rules=rules_str,
+                system_map=system_map_evid,
+                precomputed_facts=precomputed_facts or None,
+                precomputed_assertions=precomputed_assertions or None,
+                precomputed_goals=precomputed_goals or None,
+                precomputed_review_items=precomputed_review_items or None,
+            )
+
+            package_dict = package.model_dump()
+            enriched_config["_test_asset_package"] = package_dict
+            await log_analysis_package(str(runtime.task_config.get("task_id", task_db_id)), package_dict)
+
+            print(f"  [DEBUG SESSION] L2 Phase 2 done: "
+                  f"{len(package.facts)} facts, {len(package.assertions)} assertions, "
+                  f"{len(package.candidate_cases)} candidate cases, "
+                  f"{len(package.manual_review_items)} manual review items", flush=True)
+
+            get_diag_auto().dump("99_task_config_evolution",
+                snapshot_at="after_l2_phase2",
+                config_keys=list(enriched_config.keys()),
+                has_package="_test_asset_package" in enriched_config,
+                l2_facts=len(package.facts),
+                l2_assertions=len(package.assertions),
+                l2_candidates=len(package.candidate_cases),
+                l2_review_gate=len(package.manual_review_items),
+                has_system_map=system_map_evid is not None,
+            )
+
+            async with async_session() as session:
+                task = await session.get(Task, task_db_id)
+                if task:
+                    task.config = enriched_config
+                    await session.commit()
         except asyncio.CancelledError:
             has_error = False
             raise
