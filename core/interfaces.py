@@ -38,11 +38,11 @@ class ExplorationGoal(BaseModel):
     adapter 显式降级，不能在核心模型内部静默生成空字符串。
     """
     schema_version: str = Field(default="exploration_goal.v2", description="Schema 版本")
-    id: str = Field(description="稳定 Goal ID，如 GOAL-abc12345")
+    id: str = Field(min_length=1, description="稳定 Goal ID，如 GOAL-abc12345")
     assertion_refs: list[str] = Field(min_length=1, description="来源断言 ID 列表")
-    goal: str = Field(description="要探索的业务证据目标")
+    goal: str = Field(min_length=1, description="要探索的业务证据目标")
     expected_evidence: list[str] = Field(min_length=1, description="期望在真实系统中观察到的证据")
-    stop_condition: str = Field(description="达到何种证据即可停止探索")
+    stop_condition: str = Field(min_length=1, description="达到何种证据即可停止探索")
     priority: Literal["high", "medium", "low"] = Field(description="探索优先级")
     source_refs: list[str] = Field(default_factory=list, description="来源 fact/source 引用")
 

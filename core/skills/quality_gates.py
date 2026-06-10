@@ -78,7 +78,6 @@ def run_quality_gates(package: TestAssetPackage) -> QualityGateReport:
                     message=f"事实 {fact.id} 缺少可校验的 source_registry。",
                     artifact_type="fact",
                     artifact_id=fact.id,
-                    severity="warning",
                 )
             elif fact.source_reference not in source_ids:
                 _add_finding(
@@ -221,6 +220,42 @@ def run_quality_gates(package: TestAssetPackage) -> QualityGateReport:
                         findings,
                         code="dangling_traceability_assertion_ref",
                         message=f"追溯行 {row.fact_id} 引用了不存在的断言 {aid}。",
+                        artifact_type="traceability_matrix",
+                        artifact_id=row.fact_id,
+                    )
+            for cid in row.condition_ids:
+                if cid not in condition_ids:
+                    _add_finding(
+                        findings,
+                        code="dangling_traceability_condition_ref",
+                        message=f"追溯行 {row.fact_id} 引用了不存在的条件 {cid}。",
+                        artifact_type="traceability_matrix",
+                        artifact_id=row.fact_id,
+                    )
+            for tid in row.technique_ids:
+                if tid not in technique_ids:
+                    _add_finding(
+                        findings,
+                        code="dangling_traceability_technique_ref",
+                        message=f"追溯行 {row.fact_id} 引用了不存在的技术 {tid}。",
+                        artifact_type="traceability_matrix",
+                        artifact_id=row.fact_id,
+                    )
+            for cid in row.coverage_item_ids:
+                if cid not in coverage_ids:
+                    _add_finding(
+                        findings,
+                        code="dangling_traceability_coverage_ref",
+                        message=f"追溯行 {row.fact_id} 引用了不存在的覆盖项 {cid}。",
+                        artifact_type="traceability_matrix",
+                        artifact_id=row.fact_id,
+                    )
+            for cid in row.candidate_case_ids:
+                if cid not in case_ids:
+                    _add_finding(
+                        findings,
+                        code="dangling_traceability_case_ref",
+                        message=f"追溯行 {row.fact_id} 引用了不存在的候选用例 {cid}。",
                         artifact_type="traceability_matrix",
                         artifact_id=row.fact_id,
                     )

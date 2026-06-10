@@ -51,7 +51,7 @@ def test_quality_gate_detects_invalid_goal_assertion_ref():
     assert any(f.code == "dangling_goal_assertion_ref" for f in report.findings)
 
 
-def test_quality_gate_warns_missing_source_registry_for_non_inferred_fact():
+def test_quality_gate_rejects_missing_source_registry_for_non_inferred_fact():
     from core.skills.quality_gates import run_quality_gates
 
     package = AssetPackage(
@@ -63,9 +63,9 @@ def test_quality_gate_warns_missing_source_registry_for_non_inferred_fact():
 
     report = run_quality_gates(package)
 
-    assert report.passed
+    assert not report.passed
     finding = next(f for f in report.findings if f.code == "missing_source_registry")
-    assert finding.severity == "warning"
+    assert finding.severity == "error"
 
 
 def test_quality_gate_allows_inferred_fact_without_source_registry():

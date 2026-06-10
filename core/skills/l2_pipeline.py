@@ -16,7 +16,7 @@ Review Gate:
 import hashlib
 
 from core.interfaces import (
-    RequirementFact, RequirementAssertion, ExplorationGoal,
+    RequirementFact, RequirementAssertion, ExplorationGoal, SourceAnchor,
     SystemMapEvid, TestCondition, TestDesignTechnique,
     CoverageItem, CandidateTestCase, TraceabilityMatrix,
     TestAssetPackage,
@@ -79,9 +79,13 @@ def _normalize_goal_assertion_text(text: str) -> str:
 def adapt_legacy_goal(raw: dict) -> ExplorationGoal:
     """将旧格式 goal dict 转换为严格 ExplorationGoal，标记为 legacy。
 
-    旧格式可能缺少 id / assertion_refs / expected_evidence / stop_condition。
-    本函数在缺失时填充默认值，避免旧数据直接导致 model_validate 报错。
+    如果 dict 已经是严格 v2 格式（有 schema_version + 所有必填字段），
+    则直接验证，不降级。仅对缺失字段的旧格式进行适配。
     """
+    # 如果已经是严格 v2，直接验证
+    if raw.get("schema_version") == "exploration_goal.v2":
+        return ExplorationGoal.model_validate(raw)
+
     goal_text = raw.get("goal", "")
     priority = raw.get("priority", "medium")
     if priority not in ("high", "medium", "low"):
@@ -110,8 +114,16 @@ def adapt_legacy_goal(raw: dict) -> ExplorationGoal:
 
 
 def adapt_legacy_goals(raw_goals: list[dict]) -> list[ExplorationGoal]:
-    """批量转换旧格式 goal dicts 为严格 ExplorationGoal。"""
-    return [adapt_legacy_goal(g) for g in raw_goals if isinstance(g, dict)]
+    """批量转换旧格式 goal dicts 为严格 ExplorationGoal。
+
+    严格 v2 格式直接验证；旧格式填充缺失字段后转换。
+    """
+    result = []
+    for g in raw_goals:
+        if not isinstance(g, dict):
+            continue
+        result.append(adapt_legacy_goal(g))
+    return result
 
 
 def _stable_hash(prefix: str, *parts: str) -> str:
@@ -142,9 +154,11 @@ def _normalize_all_ids(package: TestAssetPackage) -> TestAssetPackage:
         old_to_new[fact.id] = new_id
 
     for assertion in package.assertions:
+        # 使用归一化后的 fact ID，确保同语义 assertion 生成相同 hash
+        normalized_fact_ids = ",".join(sorted(old_to_new.get(fid, fid) for fid in assertion.fact_ids))
         new_id = _stable_hash(
             "ASSERT",
-            ",".join(sorted(assertion.fact_ids)),
+            normalized_fact_ids,
             assertion.assertion_text,
             assertion.assertion_type,
         )
@@ -386,6 +400,7 @@ async def run_l2_pipeline(
     architecture_notes: str = "",
     rules: str = "",
     system_map: SystemMapEvid | None = None,
+    source_registry: list[SourceAnchor] | None = None,
     precomputed_facts: list[RequirementFact] | None = None,
     precomputed_assertions: list[RequirementAssertion] | None = None,
     precomputed_goals: list[ExplorationGoal] | None = None,
@@ -427,7 +442,7 @@ async def run_l2_pipeline(
         return TestAssetPackage()
 
     if not assertions:
-        return assemble_package(facts=facts, assertions=[])
+        return assemble_package(facts=facts, assertions=[], source_registry=source_registry)
 
     # --- Review Gate (无论是否 precomputed，统一复用同一门禁逻辑) ---
     confirmed_assertions, blocked_assertions = _split_by_review_gate(assertions)
@@ -442,6 +457,7 @@ async def run_l2_pipeline(
         return assemble_package(
             facts=facts,
             assertions=assertions,
+            source_registry=source_registry,
             exploration_goals=exploration_goals,
             traceability_matrix=traceability,
             manual_review_items=manual_review_items,
@@ -464,6 +480,7 @@ async def run_l2_pipeline(
         return assemble_package(
             facts=facts,
             assertions=assertions,
+            source_registry=source_registry,
             exploration_goals=exploration_goals,
             traceability_matrix=traceability,
             manual_review_items=manual_review_items,
@@ -479,6 +496,7 @@ async def run_l2_pipeline(
     package = assemble_package(
         facts=facts,
         assertions=assertions,
+        source_registry=source_registry,
         exploration_goals=exploration_goals,
         system_map=system_map,
         test_conditions=conditions,
@@ -491,5 +509,14 @@ async def run_l2_pipeline(
 
     # 后处理：将所有 LLM 生成的顺序 ID 归一化为内容寻址 ID
     package = _normalize_all_ids(package)
+
+    # 归一化后重新运行质量门，确保报告与最终产物一致
+    from core.skills.quality_gates import run_quality_gates
+    report = run_quality_gates(package)
+    package.quality_gate_report = report
+    package.runtime_hints["quality_gate_passed"] = report.passed
+    package.runtime_hints["quality_gate_error_count"] = sum(
+        1 for finding in report.findings if finding.severity == "error"
+    )
 
     return package
