@@ -231,10 +231,15 @@ async def run_l2_pipeline(
     manual_review_items = _dedupe_manual_review_items((manual_review_items or []) + blocked_review_items)
 
     if not confirmed_assertions:
+        # 即使没有 confirmed assertions，也要构建 traceability，
+        # 确保 blocked assertions 保留在追溯矩阵中（status=human_review）。
+        from core.skills.traceability_builder import build_traceability
+        traceability = build_traceability(facts, assertions, [], [], [], [])
         return assemble_package(
             facts=facts,
             assertions=assertions,
             exploration_goals=exploration_goals,
+            traceability_matrix=traceability,
             manual_review_items=manual_review_items,
         )
 
@@ -250,10 +255,13 @@ async def run_l2_pipeline(
 
     conditions = await analyze_conditions(confirmed_assertions, system_map)
     if not conditions:
+        from core.skills.traceability_builder import build_traceability
+        traceability = build_traceability(facts, assertions, [], [], [], [])
         return assemble_package(
             facts=facts,
             assertions=assertions,
             exploration_goals=exploration_goals,
+            traceability_matrix=traceability,
             manual_review_items=manual_review_items,
         )
 

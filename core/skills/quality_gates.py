@@ -30,12 +30,24 @@ def _add_finding(
 
 
 def run_quality_gates(package: TestAssetPackage) -> QualityGateReport:
-    """运行确定性质量门，检查最基础的引用完整性和必填证据字段。"""
+    """运行确定性质量门，检查完整追溯链和引用完整性。"""
     findings: list[QualityGateFinding] = []
 
+    # --- Source Registry ---
     source_ids = {anchor.source_id for anchor in package.source_registry}
+    real_anchor_ids = {anchor.source_id for anchor in package.source_registry if not anchor.is_derived}
     fact_ids = {fact.id for fact in package.facts}
     assertion_ids = {assertion.id for assertion in package.assertions}
+
+    # 如果有 source_registry 但全部是 derived（legacy 占位），标记为不可信
+    if package.source_registry and not real_anchor_ids:
+        _add_finding(
+            findings,
+            code="no_real_source_anchor",
+            message="source_registry 中没有真实来源锚点（全部为 legacy 自动派生），groundedness 不可验证。",
+            artifact_type="source_registry",
+            artifact_id="",
+        )
 
     for anchor in package.source_registry:
         if anchor.is_derived:
@@ -137,7 +149,110 @@ def run_quality_gates(package: TestAssetPackage) -> QualityGateReport:
                 artifact_id=goal.id,
             )
 
+    # --- 下游引用检查: Condition / Technique / Coverage / CandidateCase ---
+    condition_ids = {c.id for c in package.test_conditions}
+    technique_ids = {t.id for t in package.test_design_techniques}
+    coverage_ids = {c.id for c in package.coverage_items}
+    case_ids = {c.id for c in package.candidate_cases}
+
+    for cond in package.test_conditions:
+        if cond.assertion_ref not in assertion_ids:
+            _add_finding(
+                findings,
+                code="dangling_condition_assertion_ref",
+                message=f"条件 {cond.id} 引用了不存在的断言 {cond.assertion_ref}。",
+                artifact_type="test_condition",
+                artifact_id=cond.id,
+            )
+
+    for tech in package.test_design_techniques:
+        if tech.condition_id not in condition_ids:
+            _add_finding(
+                findings,
+                code="dangling_technique_condition_ref",
+                message=f"技术 {tech.id} 引用了不存在的条件 {tech.condition_id}。",
+                artifact_type="test_design_technique",
+                artifact_id=tech.id,
+            )
+
+    for cov in package.coverage_items:
+        if cov.condition_id not in condition_ids:
+            _add_finding(
+                findings,
+                code="dangling_coverage_condition_ref",
+                message=f"覆盖项 {cov.id} 引用了不存在的条件 {cov.condition_id}。",
+                artifact_type="coverage_item",
+                artifact_id=cov.id,
+            )
+        if cov.technique_id not in technique_ids:
+            _add_finding(
+                findings,
+                code="dangling_coverage_technique_ref",
+                message=f"覆盖项 {cov.id} 引用了不存在的技术 {cov.technique_id}。",
+                artifact_type="coverage_item",
+                artifact_id=cov.id,
+            )
+
+    for case in package.candidate_cases:
+        for ref in case.trace_references:
+            if ref not in coverage_ids:
+                _add_finding(
+                    findings,
+                    code="dangling_case_coverage_ref",
+                    message=f"候选用例 {case.id} 引用了不存在的覆盖项 {ref}。",
+                    artifact_type="candidate_test_case",
+                    artifact_id=case.id,
+                )
+
+    # --- TraceabilityMatrix 引用检查 ---
+    if package.traceability_matrix:
+        for row in package.traceability_matrix.rows:
+            if row.fact_id not in fact_ids:
+                _add_finding(
+                    findings,
+                    code="dangling_traceability_fact_ref",
+                    message=f"追溯行引用了不存在的事实 {row.fact_id}。",
+                    artifact_type="traceability_matrix",
+                    artifact_id=row.fact_id,
+                )
+            for aid in row.assertion_ids:
+                if aid not in assertion_ids:
+                    _add_finding(
+                        findings,
+                        code="dangling_traceability_assertion_ref",
+                        message=f"追溯行 {row.fact_id} 引用了不存在的断言 {aid}。",
+                        artifact_type="traceability_matrix",
+                        artifact_id=row.fact_id,
+                    )
+
+    # --- 重复 ID 检查 ---
+    _check_duplicate_ids(findings, "fact", [f.id for f in package.facts])
+    _check_duplicate_ids(findings, "assertion", [a.id for a in package.assertions])
+    _check_duplicate_ids(findings, "condition", [c.id for c in package.test_conditions])
+    _check_duplicate_ids(findings, "technique", [t.id for t in package.test_design_techniques])
+    _check_duplicate_ids(findings, "coverage_item", [c.id for c in package.coverage_items])
+    _check_duplicate_ids(findings, "candidate_case", [c.id for c in package.candidate_cases])
+
     return QualityGateReport(
         passed=not any(finding.severity == "error" for finding in findings),
         findings=findings,
     )
+
+
+def _check_duplicate_ids(
+    findings: list[QualityGateFinding],
+    artifact_type: str,
+    ids: list[str],
+) -> None:
+    """检查重复 ID。"""
+    seen: set[str] = set()
+    for id_ in ids:
+        if id_ in seen:
+            _add_finding(
+                findings,
+                code=f"duplicate_{artifact_type}_id",
+                message=f"存在重复的 {artifact_type} ID: {id_}。",
+                artifact_type=artifact_type,
+                artifact_id=id_,
+            )
+        seen.add(id_)

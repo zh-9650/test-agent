@@ -110,6 +110,157 @@ def test_quality_gate_passes_valid_minimal_package():
     assert report.findings == []
 
 
+def test_quality_gate_detects_dangling_condition_assertion_ref():
+    from core.interfaces import SourceAnchor
+    from core.skills.quality_gates import run_quality_gates
+
+    package = AssetPackage(
+        source_registry=[SourceAnchor(
+            source_id="SRC-1", source_type="prd", content_hash="hash",
+            path_or_url="requirements.md", quote="用户可以登录", quote_hash="qh",
+        )],
+        facts=[RequirementFact(
+            id="FACT-1", source_type="prd", source_reference="SRC-1",
+            quote="用户可以登录", subject="用户", action="登录", confidence=1.0,
+        )],
+        assertions=[RequirementAssertion(
+            id="ASSERT-1", fact_ids=["FACT-1"], assertion_text="用户必须可以登录",
+            assertion_type="functional", risk_level="high", source_references=["FACT-1"],
+        )],
+        test_conditions=[],
+        test_design_techniques=[],
+        coverage_items=[],
+        candidate_cases=[],
+    )
+
+    report = run_quality_gates(package)
+
+    assert report.passed
+    assert report.findings == []
+
+
+def test_quality_gate_detects_dangling_condition_to_assertion():
+    from core.interfaces import TestCondition
+    from core.skills.quality_gates import run_quality_gates
+
+    package = AssetPackage(
+        facts=[RequirementFact(
+            id="FACT-1", source_type="prd", source_reference="SRC-1",
+            quote="用户可以登录", subject="用户", action="登录", confidence=1.0,
+        )],
+        assertions=[RequirementAssertion(
+            id="ASSERT-1", fact_ids=["FACT-1"], assertion_text="用户必须可以登录",
+            assertion_type="functional", risk_level="high",
+        )],
+        test_conditions=[TestCondition(
+            id="COND-1", assertion_ref="ASSERT-NONEXISTENT",
+            condition_type="functional", statement="登录用户点击按钮",
+            oracle="表单显示", oracle_type="ui_state",
+        )],
+    )
+
+    report = run_quality_gates(package)
+
+    assert not report.passed
+    assert any(f.code == "dangling_condition_assertion_ref" for f in report.findings)
+
+
+def test_quality_gate_detects_dangling_coverage_to_condition():
+    from core.interfaces import CoverageItem
+    from core.skills.quality_gates import run_quality_gates
+
+    package = AssetPackage(
+        facts=[RequirementFact(
+            id="FACT-1", source_type="prd", source_reference="SRC-1",
+            quote="用户可以登录", subject="用户", action="登录", confidence=1.0,
+        )],
+        assertions=[RequirementAssertion(
+            id="ASSERT-1", fact_ids=["FACT-1"], assertion_text="用户必须可以登录",
+            assertion_type="functional", risk_level="high",
+        )],
+        coverage_items=[CoverageItem(
+            id="COV-1", condition_id="COND-NONEXISTENT",
+            technique_id="TECH-NONEXISTENT",
+            coverage_dimension="normal", goal="验证登录",
+        )],
+    )
+
+    report = run_quality_gates(package)
+
+    assert not report.passed
+    assert any(f.code == "dangling_coverage_condition_ref" for f in report.findings)
+    assert any(f.code == "dangling_coverage_technique_ref" for f in report.findings)
+
+
+def test_quality_gate_detects_dangling_case_to_coverage():
+    from core.interfaces import CandidateTestCase
+    from core.skills.quality_gates import run_quality_gates
+
+    package = AssetPackage(
+        facts=[RequirementFact(
+            id="FACT-1", source_type="prd", source_reference="SRC-1",
+            quote="用户可以登录", subject="用户", action="登录", confidence=1.0,
+        )],
+        assertions=[RequirementAssertion(
+            id="ASSERT-1", fact_ids=["FACT-1"], assertion_text="用户必须可以登录",
+            assertion_type="functional", risk_level="high",
+        )],
+        candidate_cases=[CandidateTestCase(
+            id="TC-1", title="登录测试", goal="验证登录",
+            expected_result="登录成功", trace_references=["COV-NONEXISTENT"],
+        )],
+    )
+
+    report = run_quality_gates(package)
+
+    assert not report.passed
+    assert any(f.code == "dangling_case_coverage_ref" for f in report.findings)
+
+
+def test_quality_gate_detects_duplicate_ids():
+    from core.skills.quality_gates import run_quality_gates
+
+    package = AssetPackage(
+        facts=[
+            RequirementFact(
+                id="FACT-1", source_type="prd", source_reference="SRC-1",
+                quote="用户可以登录", subject="用户", action="登录", confidence=1.0,
+            ),
+            RequirementFact(
+                id="FACT-1", source_type="prd", source_reference="SRC-1",
+                quote="重复事实", subject="用户", action="登录", confidence=1.0,
+            ),
+        ],
+    )
+
+    report = run_quality_gates(package)
+
+    assert not report.passed
+    assert any(f.code == "duplicate_fact_id" for f in report.findings)
+
+
+def test_quality_gate_rejects_package_with_only_derived_source_anchors():
+    from core.interfaces import SourceAnchor
+    from core.skills.quality_gates import run_quality_gates
+
+    package = AssetPackage(
+        source_registry=[SourceAnchor(
+            source_id="LEGACY-REF", source_type="prd", content_hash="legacy-unknown",
+            path_or_url="LEGACY-REF", quote="用户可以登录", quote_hash="legacy-unknown",
+            is_derived=True,
+        )],
+        facts=[RequirementFact(
+            id="FACT-1", source_type="prd", source_reference="LEGACY-REF",
+            quote="用户可以登录", subject="用户", action="登录", confidence=1.0,
+        )],
+    )
+
+    report = run_quality_gates(package)
+
+    assert not report.passed
+    assert any(f.code == "no_real_source_anchor" for f in report.findings)
+
+
 def test_quality_gate_detects_invalid_fact_source_reference_when_registry_exists():
     from core.interfaces import SourceAnchor
     from core.skills.quality_gates import run_quality_gates
@@ -151,12 +302,11 @@ def test_asset_packager_derives_source_registry_for_legacy_call():
     assert package.source_registry[0].source_id == "PRD §1"
     assert package.source_registry[0].is_derived is True
     assert package.quality_gate_report is not None
-    assert package.quality_gate_report.passed
-    assert package.runtime_hints["quality_gate_passed"] is True
-    assert not any(
-        f.code == "missing_source_registry"
-        for f in package.quality_gate_report.findings
-    )
+    # derived-only registry 应该失败，因为无法验证 groundedness
+    assert not package.quality_gate_report.passed
+    assert any(f.code == "no_real_source_anchor" for f in package.quality_gate_report.findings)
+    assert package.runtime_hints["quality_gate_passed"] is False
+    # derived anchor 仍会标记 warning
     warning = next(f for f in package.quality_gate_report.findings if f.code == "derived_legacy_source_anchor")
     assert warning.severity == "warning"
 
