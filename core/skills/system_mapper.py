@@ -1,12 +1,13 @@
-"""core/skills/system_mapper.py — Node V1.2: Actual System Map Extraction.
+"""core/skills/system_mapper.py — L1.5 正式实现: 系统地图提取。
 
-V1.6.3 加固 (2026-06-02, Phase 1.6):
-  - 采样参数 10/15 → 20/30 (V1.2 当时为省 token, 现在 4 fixture 实测安全)
-  - Prompt 改 V1.6 5 段 XML (与 N1/N2/N3/L1 prompt 模板对齐)
-  - 加 env 可配: SYSTEM_MAP_MAX_PAGES / SYSTEM_MAP_MAX_ELEMENTS_PER_PAGE
-  - 加 invariant 输出: SystemMap 模型 (pydantic) 显式定义 pages/actions/forms
-  - 加 `extract_system_map_structured` 返回 SystemMap 实例, 旧 `generate_system_map`
-    保留为 dict 包装 (向后兼容 planning_graph.py:295)
+职责:
+  - 从探索历史中提取结构化的系统地图 (SystemMap)
+  - 为下游场景提取和测试规划提供系统认知
+
+输出:
+  - SystemMap pydantic 实例，包含 pages, actions, forms
+  - extract_system_map_structured: 主入口，返回 SystemMap 实例
+  - generate_system_map: 薄适配层，返回 dict 供 planning_graph.py 使用
 
 Best practice 依据:
   - Anthropic prompt engineering 2026: V1.6 5 段 XML + few-shot
@@ -73,7 +74,10 @@ def _summarize_history(
 
 
 async def generate_system_map(exploration_history: list[dict]) -> dict:
-    """V1.6.3 兼容层: 返回 dict (供 planning_graph.py 直接 .get('pages') 用)。"""
+    """薄适配层: 返回 dict 供 planning_graph.py 使用。
+
+    实际逻辑委托给 extract_system_map_structured。
+    """
     sm = await extract_system_map_structured(exploration_history)
     return sm.model_dump()
 
@@ -109,7 +113,7 @@ async def extract_system_map_structured(
 <context>
 你在 planning_graph 的"探索 → 规划"中间环节:
 - 上游: explore_decide + explore_execute 已经跑过 N 轮, _exploration_history 记录了每次 observe 抓到的页面
-- 下游: scenario_extractor 会把 SystemMap 与 SystemModel 合并, 作为"理论 + 真实"双轨输入生成业务场景
+- 下游: scenario_extractor 会把 SystemMap 作为真实探索证据生成业务场景
 - 本节点的成功定义: SystemMap 准确反映实际发现的页面/动作/表单, 不漏不多
 
 输入规模:

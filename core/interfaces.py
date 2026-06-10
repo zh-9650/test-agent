@@ -28,60 +28,241 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 # =============================================================================
-# Pydantic Models — Layer 1 中间产物 (IR)
+# Pydantic Models — ExplorationGoal (供 planning_graph 消费)
 # =============================================================================
 
-class KnowledgeItem(BaseModel):
-    """带证据指针的原子知识"""
-    text: str = Field(description="提取出的具体的知识点规则或描述")
-    source: Literal["prd", "swagger", "changelog", "inferred"] = Field(description="知识来源")
-    quote: str = Field(description="原文引用片段，必须能精准在原文定位；如果是 inferred，写明推断理由")
-    confidence: float = Field(description="置信度，取值范围 0.0 - 1.0", ge=0.0, le=1.0)
-
-class KnowledgeBase(BaseModel):
-    """节点 1 输出：带可追溯指针的结构化事实库"""
-    business_rules: list[KnowledgeItem] = Field(description="核心业务规则，如：金额>5000需总监审批")
-    roles: list[KnowledgeItem] = Field(description="系统识别出的角色集合")
-    entities: list[KnowledgeItem] = Field(description="核心业务实体，如：采购申请、订单")
-    constraints: list[KnowledgeItem] = Field(description="阈值与硬性约束条件")
-    raw_facts: list[KnowledgeItem] = Field(description="客观事实条目")
-
-class UseCase(BaseModel):
-    """新增脚手架：基于角色的单个用例"""
-    name: str = Field(description="用例名称，如 '提交采购申请'")
-    actor: str = Field(description="执行该用例的角色")
-    trigger: str = Field(description="触发该用例的前置状态或条件")
-    outcome: str = Field(description="执行后的业务结果或状态变化")
-    related_rules: list[str] = Field(description="知识库中对应规则的精确原文引用或索引")
-
-class UseCaseModel(BaseModel):
-    """节点 1.5 输出：系统的全量用例集合"""
-    use_cases: list[UseCase] = Field(description="系统所有识别到的业务用例")
-
-class StateTransition(BaseModel):
-    """状态机流转边"""
-    from_state: str = Field(description="触发前的起始状态")
-    action: str = Field(description="触发流转的动作")
-    to_state: str = Field(description="流转后的目标状态")
-
-class BusinessFlow(BaseModel):
-    """轻量级状态机节点"""
-    name: str = Field(description="流程名称，如：采购审批流")
-    nodes: list[str] = Field(description="该流程涉及的所有状态枚举")
-    transitions: list[StateTransition] = Field(description="状态之间的合法流转路径")
-
-class SystemModel(BaseModel):
-    """节点 2 输出：全系统骨架 (基于状态机)"""
-    system_name: str = Field(default="Test System", description="系统名称")
-    modules: list[str] = Field(default_factory=list, description="模块列表")
-    entities: list[str] = Field(default_factory=list, description="实体列表")
-    roles: list[str] = Field(default_factory=list, description="角色列表")
-    flows: list[BusinessFlow] = Field(default_factory=list, description="轻量状态机业务流")
-
 class ExplorationGoal(BaseModel):
-    """节点 3 输出：探索目标"""
-    goal: str = Field(description="业务级能力探索目标，如：'找到订单创建能力'")
-    priority: str = Field(description="高/中/低优先级")
+    """严格探索目标。
+
+    核心 L1/L1.5 链路要求所有字段完整。旧数据只能在读取边界通过
+    adapter 显式降级，不能在核心模型内部静默生成空字符串。
+    """
+    schema_version: str = Field(default="exploration_goal.v2", description="Schema 版本")
+    id: str = Field(description="稳定 Goal ID，如 GOAL-abc12345")
+    assertion_refs: list[str] = Field(min_length=1, description="来源断言 ID 列表")
+    goal: str = Field(description="要探索的业务证据目标")
+    expected_evidence: list[str] = Field(min_length=1, description="期望在真实系统中观察到的证据")
+    stop_condition: str = Field(description="达到何种证据即可停止探索")
+    priority: Literal["high", "medium", "low"] = Field(description="探索优先级")
+    source_refs: list[str] = Field(default_factory=list, description="来源 fact/source 引用")
+
+
+# =============================================================================
+# Pydantic Models — L2 分析管道 (RequirementFact → TestAssetPackage)
+# =============================================================================
+
+class SourceAnchor(BaseModel):
+    """可审计来源锚点，用于 groundedness 和 Source Registry。"""
+    schema_version: str = Field(default="source_anchor.v1", description="Schema 版本")
+    source_id: str = Field(description="来源 ID，如 SRC-001")
+    source_type: Literal["prd", "swagger", "changelog", "prototype", "architecture", "rule", "inferred"] = Field(description="来源类型")
+    content_hash: str = Field(description="来源内容 hash")
+    path_or_url: str = Field(default="", description="来源路径或 URL")
+    section: str | None = Field(default=None, description="章节、页码或段落")
+    start_offset: int | None = Field(default=None, description="quote 在来源内容中的起始 offset")
+    end_offset: int | None = Field(default=None, description="quote 在来源内容中的结束 offset")
+    quote: str = Field(default="", description="原文引用")
+    quote_hash: str = Field(default="", description="quote hash")
+    is_derived: bool = Field(default=False, description="是否由 legacy source_reference 自动派生")
+
+
+class RequirementFact(BaseModel):
+    """原子化、可追溯的陈述，从 PRD/Swagger/规则集/原型/架构文档/变更日志提取。
+
+    对应 ai-development-guide.md §3.1。
+    """
+    id: str = Field(description="稳定 ID，如 FACT-001")
+    source_type: Literal["prd", "swagger", "changelog", "prototype", "architecture", "rule", "inferred"] = Field(description="来源类型")
+    source_reference: str = Field(description="来源引用（文件名、章节、URL 等）")
+    quote: str = Field(description="原文引用，必须能精准在原文定位；inferred 时写明推断理由")
+    subject: str = Field(description="规范化主体")
+    action: str = Field(description="规范化动作")
+    object: str = Field(default="", description="规范化客体")
+    condition: str | None = Field(default=None, description="条件/前置")
+    outcome: str | None = Field(default=None, description="结果/后置")
+    confidence: float = Field(description="置信度 0.0-1.0", ge=0.0, le=1.0)
+    status: Literal["draft", "confirmed", "conflicted", "superseded"] = Field(default="draft", description="事实状态")
+    conflict_references: list[str] = Field(default_factory=list, description="冲突事实 ID 列表")
+
+
+class RequirementAssertion(BaseModel):
+    """从需求事实推导的可验证陈述。
+
+    对应 ai-development-guide.md §3.2。
+    """
+    id: str = Field(description="稳定 ID，如 ASSERT-001")
+    fact_ids: list[str] = Field(min_length=1, description="关联的事实 ID 列表（至少 1 条）")
+    assertion_text: str = Field(description="断言文本，描述系统必须验证的内容")
+    assertion_type: Literal["functional", "validation", "security", "performance", "compatibility", "data_rule", "state_transition", "error_handling"] = Field(description="断言类型")
+    risk_level: Literal["high", "medium", "low"] = Field(description="风险等级")
+    review_status: Literal["auto_generated", "human_confirmed", "rejected"] = Field(default="auto_generated", description="审查状态")
+    source_references: list[str] = Field(default_factory=list, description="来源引用")
+
+
+class PageMap(BaseModel):
+    """系统地图 — 页面维度"""
+    name: str = Field(description="页面名称")
+    url_pattern: str = Field(default="", description="URL 模式")
+    title: str = Field(default="", description="页面标题")
+    elements: list[str] = Field(default_factory=list, description="页面元素摘要")
+    discovered_actions: list[str] = Field(default_factory=list, description="该页面发现的可执行动作")
+
+
+class ActionMap(BaseModel):
+    """系统地图 — 动作维度"""
+    action_name: str = Field(description="动作名称")
+    trigger: str = Field(default="", description="触发方式")
+    target_page: str = Field(default="", description="目标页面")
+    preconditions: list[str] = Field(default_factory=list, description="前置条件")
+
+
+class FormMap(BaseModel):
+    """系统地图 — 表单维度"""
+    form_name: str = Field(description="表单名称")
+    page: str = Field(default="", description="所在页面")
+    fields: list[str] = Field(default_factory=list, description="字段列表")
+    submit_action: str = Field(default="", description="提交动作名称")
+
+
+class NavigationMap(BaseModel):
+    """系统地图 — 导航维度"""
+    source: str = Field(description="来源页面")
+    target: str = Field(description="目标页面")
+    via: str = Field(default="", description="导航方式（点击/跳转/菜单）")
+    action: str = Field(default="", description="触发动作")
+
+
+class SystemMapEvid(BaseModel):
+    """Live 探索产生的系统证据模型。
+
+    对应 ai-development-guide.md §3.4。
+    注意：与 core/skills/system_mapper.py 的 SystemMap 不同，
+    本模型是完整的 L1 合同版本，包含四个子结构。
+    """
+    pages: list[PageMap] = Field(default_factory=list)
+    actions: list[ActionMap] = Field(default_factory=list)
+    forms: list[FormMap] = Field(default_factory=list)
+    navigations: list[NavigationMap] = Field(default_factory=list)
+
+
+class TestCondition(BaseModel):
+    """回答"需要验证什么"的条件。
+
+    对应 ai-development-guide.md §3.5。
+    """
+    id: str = Field(description="稳定 ID，如 COND-001")
+    assertion_ref: str = Field(description="关联断言 ID")
+    condition_type: Literal["functional", "validation", "boundary", "permission", "state_transition", "error_handling", "data_rule", "risk_case"] = Field(description="条件类型")
+    statement: str = Field(description="条件陈述")
+    precondition: str = Field(default="", description="前置条件")
+    trigger: str = Field(default="", description="触发条件")
+    oracle: str = Field(default="", description="预期结果（oracle）")
+    oracle_type: Literal["ui_state", "api_response", "database", "business_rule", "network", "document", "human_review"] = Field(description="oracle 类型")
+    risk_level: Literal["high", "medium", "low"] = Field(default="medium", description="风险等级")
+    measurability: Literal["measurable", "partially_measurable", "human_review"] = Field(default="measurable", description="可测量性")
+    source_references: list[str] = Field(default_factory=list, description="来源引用")
+
+
+class TestDesignTechnique(BaseModel):
+    """覆盖条件所选的设计方法。
+
+    对应 ai-development-guide.md §3.6。
+    """
+    id: str = Field(description="稳定 ID，如 TECH-COND-001")
+    condition_id: str = Field(description="关联条件 ID")
+    primary_technique: Literal["equivalence_partitioning", "boundary_value_analysis", "decision_table", "state_transition", "pairwise", "error_guessing", "exploratory", "risk_based"] = Field(description="主要设计技术")
+    supplementary_techniques: list[str] = Field(default_factory=list, description="补充技术")
+    rationale: str = Field(default="", description="选择理由")
+
+
+class CoverageItem(BaseModel):
+    """从条件和技术创建的覆盖义务。
+
+    对应 ai-development-guide.md §3.7。
+    """
+    id: str = Field(description="稳定 ID，如 COV-001")
+    condition_id: str = Field(description="关联条件 ID")
+    technique_id: str = Field(description="关联技术 ID")
+    coverage_dimension: Literal["normal", "boundary", "negative", "permission", "state", "exception", "recovery", "compatibility", "security"] = Field(description="覆盖维度")
+    goal: str = Field(description="覆盖目标描述")
+    risk_level: Literal["high", "medium", "low"] = Field(default="medium", description="风险等级")
+
+
+class CandidateTestCase(BaseModel):
+    """从覆盖项实例化的候选测试用例。
+
+    对应 ai-development-guide.md §3.8。
+    """
+    id: str = Field(description="稳定 ID，如 TC-CAND-001")
+    title: str = Field(description="用例标题")
+    goal: str = Field(description="测试目标")
+    description: str = Field(default="", description="用例描述")
+    preconditions: list[str] = Field(default_factory=list, description="前置条件")
+    input_data: dict[str, str] = Field(default_factory=dict, description="输入数据")
+    expected_result: str = Field(default="", description="预期结果")
+    priority: Literal["high", "medium", "low"] = Field(default="medium", description="优先级")
+    category: str = Field(default="functional", description="类别")
+    trace_references: list[str] = Field(min_length=1, description="可追溯引用（覆盖项 ID 列表，至少 1 条）")
+    execution_hint: str = Field(default="", description="执行提示（轻量级、发现友好的建议）")
+
+
+class TraceabilityRow(BaseModel):
+    """追溯矩阵的每一行。"""
+    fact_id: str = Field(description="事实 ID")
+    assertion_ids: list[str] = Field(default_factory=list, description="关联的断言 ID 列表（一个事实可能对应多个断言）")
+    condition_ids: list[str] = Field(default_factory=list, description="条件 ID 列表")
+    technique_ids: list[str] = Field(default_factory=list, description="技术 ID 列表")
+    coverage_item_ids: list[str] = Field(default_factory=list, description="覆盖项 ID 列表")
+    candidate_case_ids: list[str] = Field(default_factory=list, description="候选用例 ID 列表")
+    status: Literal["covered", "partial", "gap", "conflict", "human_review"] = Field(default="gap", description="覆盖状态")
+    notes: str = Field(default="", description="备注")
+
+
+class TraceabilityMatrix(BaseModel):
+    """从源事实到候选用例的可审查映射。
+
+    对应 ai-development-guide.md §3.9。
+    """
+    rows: list[TraceabilityRow] = Field(default_factory=list)
+
+
+class QualityGateFinding(BaseModel):
+    """确定性质量门发现。"""
+    code: str = Field(description="机器可读问题代码")
+    severity: Literal["error", "warning"] = Field(default="error", description="严重程度")
+    message: str = Field(description="可读说明")
+    artifact_type: str = Field(default="", description="产物类型")
+    artifact_id: str = Field(default="", description="产物 ID")
+
+
+class QualityGateReport(BaseModel):
+    """确定性质量门报告。"""
+    schema_version: str = Field(default="quality_gate_report.v1", description="Schema 版本")
+    passed: bool = Field(description="是否通过所有 error 级质量门")
+    findings: list[QualityGateFinding] = Field(default_factory=list)
+
+
+class TestAssetPackage(BaseModel):
+    """L1/L1.5/L2 的最终交付对象。
+
+    对应 ai-development-guide.md §3.10。
+    """
+    facts: list[RequirementFact] = Field(default_factory=list)
+    assertions: list[RequirementAssertion] = Field(default_factory=list)
+    source_registry: list[SourceAnchor] = Field(default_factory=list)
+    exploration_goals: list[ExplorationGoal] = Field(default_factory=list)
+    exploration_evidence: dict[str, Any] = Field(default_factory=dict)
+    system_map: SystemMapEvid | None = Field(default=None)
+    test_conditions: list[TestCondition] = Field(default_factory=list)
+    test_design_techniques: list[TestDesignTechnique] = Field(default_factory=list)
+    coverage_items: list[CoverageItem] = Field(default_factory=list)
+    candidate_cases: list[CandidateTestCase] = Field(default_factory=list)
+    traceability_matrix: TraceabilityMatrix | None = Field(default=None)
+    quality_gate_report: QualityGateReport | None = Field(default=None)
+    ambiguities: list[str] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)
+    manual_review_items: list[str] = Field(default_factory=list)
+    runtime_hints: dict[str, Any] = Field(default_factory=dict)
 
 
 # =============================================================================

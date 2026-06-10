@@ -1,7 +1,7 @@
 """core/skills/scenario_extractor.py — Scenario Extractor (Phase 1.5).
 
-L1 Pipeline Position:
-  上游: PRD + Changelog + focus_areas + SystemModel + SystemMap
+Pipeline Position:
+  上游: PRD + Changelog + focus_areas + SystemMap
   下游: planning_graph.generate_plan_node (scenarios 注入 Planner)
   本节点职责: 从 PRD 提取"用户视角的端到端业务场景",用于 Goal-Driven 探索
 """
@@ -72,19 +72,18 @@ async def extract_scenarios(
     prd: str,
     changelog: str = "",
     focus_areas: str = "",
-    system_model: dict | None = None,
+    system_map: dict | None = None,
 ) -> list[dict]:
     """从 PRD 提取业务场景列表,用于 Goal-Driven 探索。
 
-    流水线位置: SystemModel + SystemMap 完成后 → Planner 生成用例前。
-    与 L1 UseCaseModeler 的区别: UseCaseModeler 拆的是"系统能力单元",
+    流水线位置: SystemMap 完成后 → Planner 生成用例前。
     ScenarioExtractor 拆的是"用户视角的端到端业务流程"。
 
     Args:
         prd: PRD 文档文本
         changelog: 变更日志(可选)
         focus_areas: 用户指定的重点关注领域(可选)
-        system_model: SystemModeler 输出的轻量状态机(可选,作为补充上下文)
+        system_map: 系统地图(可选,作为补充上下文)
 
     Returns:
         场景列表,每项包含 id, name, entry_hint, priority。
@@ -100,10 +99,8 @@ async def extract_scenarios(
         context += f"## 变更日志\n{changelog[:1000]}\n\n"
     if focus_areas:
         context += f"## 重点区域\n{focus_areas}\n\n"
-    if system_model:
-        # Strip _actual_system_map (page UI map, not relevant for scenario abstraction)
-        sm_for_prompt = {k: v for k, v in system_model.items() if not k.startswith("_")}
-        context += f"## 提炼出的系统模型认知 (高优先级参考)\n{json.dumps(sm_for_prompt, ensure_ascii=False, indent=2)[:2500]}\n\n"
+    if system_map:
+        context += f"## 系统地图 (高优先级参考)\n{json.dumps(system_map, ensure_ascii=False, indent=2)[:2500]}\n\n"
 
     prompt = f"""<role>
 你是一个资深测试分析师。你的唯一职责是从 PRD 中提取"用户视角的端到端业务场景",每个场景代表用户能完成的一个完整业务流程。
@@ -111,7 +108,7 @@ async def extract_scenarios(
 
 <context>
 你在测试平台的"规划阶段"流水线中。
-- 上游: PRD + Changelog + focus_areas + SystemModel(可选,作为补充认知)
+- 上游: PRD + Changelog + focus_areas(可选,作为补充认知)
 - 下游: generate_plan_node 会把你的 scenarios 注入 Planner,Planner 优先为 high 场景生成用例
 - 你的成功定义: Planner 能直接用 scenarios 列表驱动 Goal-Driven 探索,零回填
 </context>
@@ -136,7 +133,7 @@ async def extract_scenarios(
 5. **没有就返回空**: PRD 内容不足以提取场景时,返回 `{{"scenarios": []}}`,**不要**硬造。
 6. **去重**: 同一业务流不要在多个场景里重复。
 7. **最多 12 个**: PRD 真正能拆出的端到端场景有限,超过 12 个说明拆得太细。
-8. **跨输入融合**: 当 PRD + Changelog + SystemModel 都给定时,跨文档出现的同一流程合并成 1 个 scenario。
+8. **跨输入融合**: 当 PRD + Changelog 都给定时,跨文档出现的同一流程合并成 1 个 scenario。
 </rules>
 
 <examples>
