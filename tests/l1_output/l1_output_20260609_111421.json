@@ -1,0 +1,4031 @@
+{
+  "metadata": {
+    "timestamp": "2026-06-09T11:14:21.049764",
+    "elapsed": 427.448785
+  },
+  "output": {
+    "facts_count": 172,
+    "assertions_count": 90,
+    "goals_count": 76,
+    "review_items_count": 14,
+    "confidence_distribution": {
+      "1.0": 167,
+      "0.9": 5
+    },
+    "goal_priorities": {
+      "medium": 42,
+      "high": 23,
+      "low": 11
+    },
+    "review_gate_blocked": 14,
+    "facts": [
+      {
+        "id": "FACT-001",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①模块概述",
+        "quote": "为系统管理员提供统一的配置管理中心，管理人才盘点系统运行所需的基础数据配置",
+        "subject": "开发者配置中心",
+        "action": "提供统一配置管理",
+        "object": "系统管理员",
+        "condition": null,
+        "outcome": "管理人才盘点系统基础数据配置",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-002",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①核心功能",
+        "quote": "评估维度体系配置（管理评估模板、评估项目、评分标准，自评/上级评/下级评/同级评关系勾选）",
+        "subject": "开发者配置中心",
+        "action": "配置评估维度体系",
+        "object": "评估模板、评估项目、评分标准、评估关系",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-003",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①核心功能",
+        "quote": "岗位能力标准配置（胜任力模型L1-L5级别定义，支持提交JD内容通过 AI 智能生成评价维度）",
+        "subject": "开发者配置中心",
+        "action": "配置岗位能力标准",
+        "object": "胜任力模型L1-L5级别定义",
+        "condition": null,
+        "outcome": "支持通过AI智能生成评价维度",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-004",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①核心功能",
+        "quote": "周期创建规则配置（笔试/互评时长、报告生成时间、自动关联盘点项目、下发范围及必考环节配置）",
+        "subject": "开发者配置中心",
+        "action": "配置周期创建规则",
+        "object": "笔试/互评时长、报告生成时间、盘点项目关联、下发范围、必考环节",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-005",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①核心功能",
+        "quote": "SJTP情景测试题库管理（支持Excel模板下载与批量导入、场景分类、状态启用/禁用、推荐答案高亮标记）",
+        "subject": "开发者配置中心",
+        "action": "管理SJTP情景测试题库",
+        "object": "情景测试题目",
+        "condition": null,
+        "outcome": "支持Excel导入、场景分类、状态启禁用、推荐答案高亮",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-006",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①核心功能",
+        "quote": "绩效评估体系配置（动态维度添加、权重设置、评分标准及 S/A/B/C/D 绩效等级分数区间划分）",
+        "subject": "开发者配置中心",
+        "action": "配置绩效评估体系",
+        "object": "动态维度、权重、评分标准、绩效等级分数区间",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-007",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①核心功能",
+        "quote": "AI访谈模板管理（新建/导入/编辑/删除模板、大类及二级问题维度与权重配置、预设引导问题）",
+        "subject": "开发者配置中心",
+        "action": "管理AI访谈模板",
+        "object": "访谈模板、大类及二级维度权重、引导问题",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-008",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①核心功能",
+        "quote": "AI提示词配置（集中管理 SJTP 测评分析、AI 访谈评估、报告总结生成等节点的大模型 Prompt）",
+        "subject": "开发者配置中心",
+        "action": "配置AI提示词",
+        "object": "SJTP测评分析、AI访谈评估、报告总结生成的Prompt",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-009",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①核心功能",
+        "quote": "360°胜任力指标配置（自定义专业知识、主动性、团队协作等 360 互评核心指标的文本定义及 1-5 分制标准）",
+        "subject": "开发者配置中心",
+        "action": "配置360°胜任力指标",
+        "object": "互评核心指标的文本定义及1-5分制标准",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-010",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①下游关联模块",
+        "quote": "绩效评估 | 动态考评维度与权重配置、等级标准 | 绩效评估打分时按配置的权重计算总分，并映射至对应等级",
+        "subject": "开发者配置中心",
+        "action": "输出配置数据至",
+        "object": "绩效评估模块",
+        "condition": null,
+        "outcome": "绩效评估按权重计算总分并映射等级",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-011",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①下游关联模块",
+        "quote": "情景测试 | SJTP题库 | 员工答题时从题库抽取题目",
+        "subject": "开发者配置中心",
+        "action": "输出题库至",
+        "object": "情景测试模块",
+        "condition": null,
+        "outcome": "员工答题时从题库抽取题目",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-012",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①下游关联模块",
+        "quote": "AI深度访谈 | 访谈模板、问题维度与引导语 | 发起访谈时按模板与维度轮次生成 AI 问题并指导追问",
+        "subject": "开发者配置中心",
+        "action": "输出访谈模板至",
+        "object": "AI深度访谈模块",
+        "condition": null,
+        "outcome": "按模板与维度轮次生成AI问题并指导追问",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-013",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①下游关联模块",
+        "quote": "盘点报告生成| AI提示词配置（测评、访谈、总结） | 运行 AI 分析时，调用对应的 Prompt 策略由大模型生成总结报告",
+        "subject": "开发者配置中心",
+        "action": "输出AI提示词至",
+        "object": "盘点报告生成模块",
+        "condition": null,
+        "outcome": "调用Prompt策略由大模型生成总结报告",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-014",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §②功能边界",
+        "quote": "本模块仅对超级管理员及具备特殊授权的组织HR专家角色开放，普通员工与部门管理人员无权访问",
+        "subject": "开发者配置中心",
+        "action": "限制访问权限",
+        "object": "普通员工与部门管理人员",
+        "condition": null,
+        "outcome": "仅超级管理员及特殊授权的组织HR专家可访问",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-015",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §②功能边界",
+        "quote": "配置与提示词的变更采取“新任务新办法”原则，仅对变更后新发起的盘点周期、考核任务、AI访谈生效；当前处于“进行中”或“已归档”的盘点数据和报告不受影响",
+        "subject": "开发者配置中心",
+        "action": "配置变更生效范围",
+        "object": "盘点周期、考核任务、AI访谈",
+        "condition": "配置发生变更时",
+        "outcome": "仅对变更后新发起的任务生效，进行中或已归档数据不受影响",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-016",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §③1.评估维度体系Tab",
+        "quote": "卡片中段以独立标签清晰标识该模板启用的评估关系，如【自评】、【上级评】、【下级评】、【同级评】的动态组合",
+        "subject": "360°评估模板",
+        "action": "标识评估关系",
+        "object": "自评/上级评/下级评/同级评的动态组合",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-017",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §③3.周期创建规则Tab",
+        "quote": "下发层级范围（新增）：支持下拉选择任务下发的组织层级（如：仅下发给部门负责人、仅下发给普通员工、全员下发），用于控制后续“04-盘点任务计划”生成个人任务时的分发逻辑",
+        "subject": "周期创建规则",
+        "action": "支持选择下发层级范围",
+        "object": "组织层级（部门负责人/普通员工/全员）",
+        "condition": null,
+        "outcome": "控制04模块个人任务分发逻辑",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-018",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §③3.周期创建规则Tab",
+        "quote": "必考环节：横向列出本周期强制约束的测评模块（如：SJTP情景测试、360°评估、AI访谈、绩效评估）。根据下发的必考环节将强力映射到员工的“个人任务进度”中，必须全部提交方视为项目完成",
+        "subject": "周期创建规则",
+        "action": "定义必考环节",
+        "object": "SJTP情景测试、360°评估、AI访谈、绩效评估",
+        "condition": null,
+        "outcome": "必考环节映射至员工个人任务进度，必须全部提交方视为完成",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-019",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §③3.周期创建规则Tab",
+        "quote": "勾选控制项：【允许超管看全局与个人的全量环节】（默认强开）",
+        "subject": "周期创建规则",
+        "action": "配置超管可见权限",
+        "object": "超管看全局与个人的全量环节",
+        "condition": null,
+        "outcome": "默认强开",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-020",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §③3.周期创建规则Tab",
+        "quote": "勾选控制项：【允许部门领导查看下属全环节个人任务进度】（默认开启，关闭则领导仅能看部门大盘百分比）",
+        "subject": "周期创建规则",
+        "action": "配置部门领导可见权限",
+        "object": "部门领导查看下属全环节个人任务进度",
+        "condition": null,
+        "outcome": "默认开启，关闭则仅能看部门大盘百分比",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-021",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④1.360°评估模板信息结构",
+        "quote": "模板名称 | 是 | 文本输入框 | 最大50字符，同组织同分类下不允许重复",
+        "subject": "360°评估模板",
+        "action": "校验模板名称唯一性",
+        "object": "模板名称",
+        "condition": null,
+        "outcome": "最大50字符，同组织同分类下不允许重复",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-022",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④1.360°评估模板信息结构",
+        "quote": "评估关系勾选 | 是 | 多选复选框 | 可组合勾选：自评、上级评、下级评、同级评，至少勾选一项",
+        "subject": "360°评估模板",
+        "action": "配置评估关系",
+        "object": "自评/上级评/下级评/同级评",
+        "condition": null,
+        "outcome": "至少勾选一项",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-023",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④4.SJTP题库模型",
+        "quote": "推荐高分答案 | 是 | 多选/单选框 | 标记哪一个或哪几个选项为绿色推荐高分项，答题比对基准",
+        "subject": "SJTP题库",
+        "action": "标记推荐高分答案",
+        "object": "选项A/B/C/D中的推荐高分项",
+        "condition": null,
+        "outcome": "作为答题比对基准",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-024",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④4.SJTP题库模型",
+        "quote": "状态控制 | 是 | 开关 (Toggle)| 启用后方能被评测引擎抽题，禁用则在前端冻结",
+        "subject": "SJTP题库",
+        "action": "控制题目状态",
+        "object": "题目的启用/禁用状态",
+        "condition": null,
+        "outcome": "启用后可被评测引擎抽题，禁用则前端冻结",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-025",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④5.绩效评估与等级体系",
+        "quote": "考评权重占比 | 是 | 百分比数字 | 单项限制0-100整数。核心全局校验：当前体系内所有动态维度权重相加必须刚性等于 100%",
+        "subject": "绩效评估体系",
+        "action": "校验维度权重总和",
+        "object": "所有动态维度权重",
+        "condition": null,
+        "outcome": "权重相加必须刚性等于100%",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-026",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④6.AI访谈模板体系",
+        "quote": "访谈模板名称 | 是 | 文本输入框 | 最大50字符，全局唯一",
+        "subject": "AI访谈模板",
+        "action": "校验模板名称唯一性",
+        "object": "访谈模板名称",
+        "condition": null,
+        "outcome": "最大50字符，全局唯一",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-027",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④6.AI访谈模板体系",
+        "quote": "二级维度权重 | 是 | 百分比数字 | 核心子校验：隶属于同一大类下的所有二级维度权重之和，必须等于该大类的总权重",
+        "subject": "AI访谈模板",
+        "action": "校验二级维度权重之和",
+        "object": "隶属于同一大类下的二级维度权重",
+        "condition": null,
+        "outcome": "二级维度权重之和必须等于该大类的总权重",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-028",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④6.AI访谈模板体系",
+        "quote": "大类权重占比 | 是 | 百分比数字 | 定义大类宏观占比（如70%），大类相加须等于100%",
+        "subject": "AI访谈模板",
+        "action": "校验大类权重总和",
+        "object": "大类权重",
+        "condition": null,
+        "outcome": "大类相加须等于100%",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-029",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④7.AI提示词元配置",
+        "quote": "智能体节点名称 | 是 | 字符串只读 | 系统内嵌四大引擎标识：SJTP测评分析、AI访谈评估、报告总结生成",
+        "subject": "AI提示词配置",
+        "action": "绑定智能体节点",
+        "object": "SJTP测评分析、AI访谈评估、报告总结生成",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-030",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④7.AI提示词元配置",
+        "quote": "绑定模型版本 | 是 | 下拉单选框 | 预设选项：GPT-4o, GPT-4-turbo, Claude-3.5-Sonnet等",
+        "subject": "AI提示词配置",
+        "action": "绑定大语言模型版本",
+        "object": "GPT-4o/GPT-4-turbo/Claude-3.5-Sonnet等",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-031",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④7.AI提示词元配置",
+        "quote": "底层核心Prompt | 是 | 高级代码编辑器 | 存放成千上万字的高级提示词文本，必须包含系统内置占位符变量（如 {user_data}, {interview_text}）",
+        "subject": "AI提示词配置",
+        "action": "要求Prompt包含占位符变量",
+        "object": "{user_data}和{interview_text}占位符",
+        "condition": null,
+        "outcome": "必须包含系统内置占位符变量",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-032",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④7.AI提示词元配置",
+        "quote": "AI异常兜底策略 | 是 | 下拉单选框 | 选项：A. 自动降级模型（触发后自动切换至低阶备用模型，如从 GPT-4o 降级至 GPT-4o-mini）；B. 切换静态文本池（AI生成失败时，自动拉取预设的静态标准题库问题）",
+        "subject": "AI提示词配置",
+        "action": "配置异常兜底策略",
+        "object": "自动降级模型或切换静态文本池",
+        "condition": "AI异常时",
+        "outcome": "降级至备用模型或拉取静态标准题库",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-033",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④7.AI提示词元配置",
+        "quote": "接口超时时限 | 是 | 正整数输入框 | 单位：秒（s）。默认设定为 10s，若大模型接口在时限内未响应，系统必须严禁界面卡死，并强制触发上述兜底策略",
+        "subject": "AI提示词配置",
+        "action": "设置接口超时时限",
+        "object": "大模型接口超时时间",
+        "condition": "接口在时限内未响应",
+        "outcome": "界面不允许卡死，强制触发兜底策略",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-034",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤1.360°评估模板管理事件",
+        "quote": "模板名称不可与系统内已有记录重复",
+        "subject": "360°评估模板",
+        "action": "校验名称不重复",
+        "object": "模板名称",
+        "condition": "新增或编辑模板时",
+        "outcome": "重复则拒绝保存",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-035",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤1.360°评估模板管理事件",
+        "quote": "必须至少勾选一种评估关系标签（如仅勾选自评亦可）",
+        "subject": "360°评估模板",
+        "action": "要求至少勾选一种评估关系",
+        "object": "评估关系标签",
+        "condition": "新增或编辑模板时",
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-036",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤1.360°评估模板管理事件",
+        "quote": "删除该模板将导致后续下发的任务无法引用此体系。确认删除？",
+        "subject": "360°评估模板",
+        "action": "删除时二次确认",
+        "object": "评估模板",
+        "condition": "点击删除时",
+        "outcome": "提示确认，通过后执行软删除并刷新列表",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-037",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤2.岗位能力标准与AI提取事件",
+        "quote": "系统触发后台转圈Loading状态，将岗位JD与预设的“控制AI如何从JD提取能力维度提示词”进行拼接，投递给绑定的 GPT-4o 模型",
+        "subject": "岗位能力标准",
+        "action": "AI提取维度时拼接JD与提示词",
+        "object": "GPT-4o模型",
+        "condition": "用户点击AI提取维度按钮时",
+        "outcome": "模型返回解析出的二级维度与分级描述定义",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-038",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤3.周期创建规则启用与变更事件",
+        "quote": "当开关由 [禁用] 切换至 [启用] 时，系统定时巡检 Cron 激活。一旦“04-盘点任务计划”中某个属于该规则的项目被超管激活或到达启动时间，系统将严格解析此处的【下发绑定岗位】+【下发人员层级】的交集，计算出最终的受试人员名单（User_ID 数组），批量插入“个人考核任务表”",
+        "subject": "周期创建规则",
+        "action": "启用时激活Cron并解析下发范围",
+        "object": "受试人员名单",
+        "condition": "开关从禁用切换至启用，且04模块项目激活或到达启动时间",
+        "outcome": "计算下发绑定岗位与层级交集，批量插入个人考核任务",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-039",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤3.周期创建规则启用与变更事件",
+        "quote": "当开关由 [启用] 切换至 [禁用] 时，系统仅仅挂起未来的自动下发计划，对于已经生成的盘点任务保持现状。",
+        "subject": "周期创建规则",
+        "action": "禁用时挂起自动下发",
+        "object": "自动下发计划",
+        "condition": "开关从启用切换至禁用",
+        "outcome": "挂起未来下发，已生成任务保持现状",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-040",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤3.周期创建规则启用与变更事件",
+        "quote": "笔试时长、互评时长、报告生成时间，当输入为负数、小数、非数字或超过30天的数值时，输入框边缘标红高亮，并阻止表单提交。",
+        "subject": "周期创建规则",
+        "action": "校验时间字段输入合法性",
+        "object": "笔试时长、互评时长、报告生成时间",
+        "condition": "输入为负数、小数、非数字或超过30天",
+        "outcome": "输入框标红并阻止表单提交",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-041",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤4.SJTP题库检索事件",
+        "quote": "系统自动在前端触发防抖（Debounce 300ms），无刷新过滤当前卡片流，仅展示匹配项。",
+        "subject": "SJTP题库检索",
+        "action": "前端防抖过滤",
+        "object": "题目卡片列表",
+        "condition": "用户输入关键词或切换场景分类",
+        "outcome": "300ms防抖后无刷新过滤仅展示匹配项",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-042",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤4.SJTP题库导入事件",
+        "quote": "若存在格式错误或必填项缺失，中断导入并弹出错误行号与具体原因提示（如：“第5行：推荐高分答案未填写”）；校验全对则写入数据库并更新顶部统计看板。",
+        "subject": "SJTP题库Excel导入",
+        "action": "校验上传文件格式",
+        "object": "Excel文件内容",
+        "condition": "存在格式错误或必填项缺失",
+        "outcome": "中断导入并弹出错误行号与原因；校验通过则写入数据库",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-043",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤5.绩效体系权重全局校验事件",
+        "quote": "若计算结果等于 98% 或 105% 等不等于100的数值，系统绝对中止保存行为。页面顶部弹出全局红色警示弹窗，并对所有权重输入框进行高亮提示。",
+        "subject": "绩效评估体系",
+        "action": "权重总和校验",
+        "object": "所有动态维度权重之和",
+        "condition": "权重之和不等于100%",
+        "outcome": "绝对中止保存，弹出红色警示弹窗并高亮权重输入框",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-044",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤5.绩效体系权重全局校验事件",
+        "quote": "修改S-D等级分数区间时，前一级的下限必须等于后一级的上限加1（如 A级85-94分，则S级下限必须为95分），否则报错提示“等级分数区间存在重叠或断层”。",
+        "subject": "绩效评估体系",
+        "action": "校验等级分数区间连续性",
+        "object": "S/A/B/C/D等级分数区间",
+        "condition": "修改等级分数区间时",
+        "outcome": "前一级下限必须等于后一级上限加1，否则报错",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-045",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤6.AI访谈配置校验事件",
+        "quote": "若未勾选任何岗位，系统拦截提交，表单组件边缘标红并抛出 Toast 错误提示。",
+        "subject": "AI访谈模板",
+        "action": "校验岗位选择",
+        "object": "部门-岗位树形多选框",
+        "condition": "提交模板时未勾选任何岗位",
+        "outcome": "拦截提交，标红并Toast提示",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-046",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤6.AI访谈配置校验事件",
+        "quote": "检查（能力/潜力权重 + 动机风格权重 + 核心价值观权重）之和是否严格等于 100%。",
+        "subject": "AI访谈模板",
+        "action": "大类级权重校验",
+        "object": "大类权重之和",
+        "condition": "保存AI访谈模板时",
+        "outcome": "大类权重之和必须严格等于100%",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-047",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤6.AI访谈配置校验事件",
+        "quote": "对于“能力/潜力”大类（假设权重为70%），系统对其下挂载的所有二级维度的绝对百分比进行求和。若用户配置的“目标管理(20%) + 变革创新(15%) + 决策力(15%)”等相对占比自动折算，并明确提示",
+        "subject": "AI访谈模板",
+        "action": "二级维度权重嵌套校验",
+        "object": "大类下所有二级维度权重",
+        "condition": "二级维度权重之和与大类权重不一致",
+        "outcome": "提示权重脱节并要求修正",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-048",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤7.AI提示词调优事件",
+        "quote": "系统会通过正则表达式对文本执行全量扫描，强制检查是否完整保留了系统运行依赖的两个黄金控制变量占位符：{user_data}（核心多维评估数据插槽）与 {interview_text}（访谈文本插槽）。如果变量被意外删除，系统拒绝保存",
+        "subject": "AI提示词配置",
+        "action": "校验Prompt占位符完整性",
+        "object": "{user_data}和{interview_text}占位符",
+        "condition": "保存提示词时",
+        "outcome": "占位符缺失则拒绝保存并提示",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-049",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤异常处理矩阵",
+        "quote": "非管理员或组织HR专家账号通过拼接外部URL尝试非法切入配置后台。| 系统路由层强行拦截，直接将页面重定向至 403 越界无权限报错页。",
+        "subject": "开发者配置中心",
+        "action": "拦截非法越权访问",
+        "object": "非管理员或组织HR专家账号",
+        "condition": "非授权角色通过URL尝试访问",
+        "outcome": "重定向至403越界报错页",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-050",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §①模块概述",
+        "quote": "管理并展示从“仓颉知道3.0”自动同步的部门、岗位及人员信息，为人才盘点系统提供结构化、实时的员工基础数据。",
+        "subject": "人员架构管理",
+        "action": "自动同步并管理",
+        "object": "仓颉知道3.0的部门、岗位及人员信息",
+        "condition": null,
+        "outcome": "提供结构化实时员工基础数据",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-051",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §①核心功能",
+        "quote": "在每次后端同步时，自动为人员架构生成带时间戳的数据快照，用于跨周期或固定节点的变动追踪。",
+        "subject": "人员架构管理",
+        "action": "生成数据快照",
+        "object": "人员架构数据",
+        "condition": "每次后端同步时",
+        "outcome": "自动带时间戳的数据快照，用于变动追踪",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-052",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §①下游关联模块",
+        "quote": "绩效评估 | 员工基础信息+在职状态+转正状态 | 仅“在职”且“已转正”的员工可参与评分。",
+        "subject": "人员架构管理",
+        "action": "提供员工状态至",
+        "object": "绩效评估模块",
+        "condition": null,
+        "outcome": "仅在职且已转正的员工可参与评分",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-053",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §①下游关联模块",
+        "quote": "360°评估 | 员工基础信息 + 部门上下级关系 | 自动生成评估人与被评估人的矩阵关系（上级、同级、下级）",
+        "subject": "人员架构管理",
+        "action": "提供部门上下级关系至",
+        "object": "360°评估模块",
+        "condition": null,
+        "outcome": "自动生成评估人与被评估人的矩阵关系",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-054",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §①下游关联模块",
+        "quote": "AI深度访谈 | 员工基础信息+岗位 | 自动匹配该岗位对应的访谈模板与能力常模。",
+        "subject": "人员架构管理",
+        "action": "提供岗位信息至",
+        "object": "AI深度访谈模块",
+        "condition": null,
+        "outcome": "自动匹配岗位对应的访谈模板与能力常模",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-055",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §①下游关联模块",
+        "quote": "人员变动对比 | 多版本员工基础数据快照 + 变更日志 | 提供两个不同时间节点/盘点周期的人员架构快照，对比部门、岗位、职级、在职状态等字段的增减与迁移情况。",
+        "subject": "人员架构管理",
+        "action": "提供快照与变更日志至",
+        "object": "人员变动对比模块",
+        "condition": null,
+        "outcome": "提供跨周期快照对比",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-056",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §①下游关联模块",
+        "quote": "绩效评估｜员工档案中的“转正状态”与“在职状态”｜绩效评估模块在初始化待考核列表时，将以此状态作为准入拦截拦截依据",
+        "subject": "人员架构管理",
+        "action": "提供转正与在职状态作为",
+        "object": "绩效评估准入拦截依据",
+        "condition": null,
+        "outcome": "绩效评估初始化时以此状态拦截",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-057",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §②功能边界",
+        "quote": "本地“编辑”权限仅限于对同步后的辅助业务标签进行打标或归类，不修改员工核心基础字段。",
+        "subject": "人员架构管理",
+        "action": "限制编辑权限范围",
+        "object": "员工数据",
+        "condition": null,
+        "outcome": "仅可编辑辅助业务标签，不可修改核心基础字段",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-058",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §②功能边界",
+        "quote": "转正状态仅影响绩效评估权限，不影响其他模块",
+        "subject": "人员架构管理",
+        "action": "定义转正状态影响范围",
+        "object": "绩效评估权限",
+        "condition": null,
+        "outcome": "仅影响绩效评估，不影响其他模块",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-059",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §③控件显示逻辑",
+        "quote": "部门领导：自动开启数据隔离，仅可查看本部门及下属部门的员工与岗位画像。",
+        "subject": "人员架构管理",
+        "action": "数据隔离",
+        "object": "部门领导",
+        "condition": null,
+        "outcome": "仅可查看本部门及下属部门的员工与岗位画像",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-060",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §③控件显示逻辑",
+        "quote": "普通员工：不可访问此模块。",
+        "subject": "人员架构管理",
+        "action": "禁止访问",
+        "object": "普通员工",
+        "condition": null,
+        "outcome": "不可访问此模块",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-061",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §④信息结构",
+        "quote": "转正状态 | 是 | 下拉选择 | 已转正/未转正，默认\"已转正\"",
+        "subject": "员工信息",
+        "action": "默认转正状态",
+        "object": "转正状态字段",
+        "condition": null,
+        "outcome": "默认值为已转正",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-062",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §④信息结构",
+        "quote": "在职状态 | 是 | 下拉选择 | 在职/离职，默认\"在职\"",
+        "subject": "员工信息",
+        "action": "默认在职状态",
+        "object": "在职状态字段",
+        "condition": null,
+        "outcome": "默认值为在职",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-063",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §⑤数据自动同步与快照生成事件",
+        "quote": "后端每天凌晨 02:00 定时调用“仓颉知道3.0”的人员与架构接口。",
+        "subject": "人员架构管理",
+        "action": "定时同步数据",
+        "object": "仓颉知道3.0接口",
+        "condition": null,
+        "outcome": "每天凌晨02:00自动调用",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-064",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §⑤数据自动同步与快照生成事件",
+        "quote": "在每次拉取成功并更新本地当前应用数据前，后端自动将上一版本的“部门-岗位-人员”数据整体打包，打上当前时间戳与版本号，并写入【人员历史快照库】。",
+        "subject": "人员架构管理",
+        "action": "同步前生成快照",
+        "object": "上一版本部门-岗位-人员数据",
+        "condition": "每次拉取成功并更新数据前",
+        "outcome": "打包上一版本数据写入历史快照库",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-065",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §⑤数据自动同步与快照生成事件",
+        "quote": "后端通过比对新旧两个版本的数据，如果发现某员工的“部门、岗位、现任职级、在职状态”发生变化，自动向【变动日志表】中插入一条变更记录（包含：员工ID、变更字段、变更前值、变更后值、变更时间）。",
+        "subject": "人员架构管理",
+        "action": "差异捕获并记录变更",
+        "object": "员工部门、岗位、现任职级、在职状态字段",
+        "condition": "新旧版本比对发现字段变化",
+        "outcome": "自动插入变动日志记录",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-066",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §⑤状态变更事件",
+        "quote": "离职员工自动从绩效评估对象中排除",
+        "subject": "人员架构管理",
+        "action": "排除离职员工",
+        "object": "绩效评估对象",
+        "condition": "员工在职状态变更为离职",
+        "outcome": "自动从绩效评估对象中排除",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-067",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §①模块概述",
+        "quote": "提供跨盘点周期的人员变动对比分析，帮助管理者了解团队人员的流入流出、职级变化、部门调动等情况",
+        "subject": "人员变动对比",
+        "action": "提供跨周期人员变动对比分析",
+        "object": "人员流入流出、职级变化、部门调动",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-068",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §①下游关联模块",
+        "quote": "数据看板 | 人员变动统计数据 | 将本模块计算得出的各周期变动列表计数，提供给全局看板作数据沉淀",
+        "subject": "人员变动对比",
+        "action": "输出变动统计数据至",
+        "object": "数据看板",
+        "condition": null,
+        "outcome": "变动列表计数提供给全局看板",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-069",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §③界面原型",
+        "quote": "起始周期 下拉选择器：用于确定作为对比基准线的较早历史快照版本\n结束周期 下拉选择器：用于确定作为比对终点的较晚历史快照版本",
+        "subject": "人员变动对比",
+        "action": "提供周期选择器",
+        "object": "起始周期与结束周期",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-070",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §③界面原型",
+        "quote": "统计卡片区：平铺横向展示四个核心计算原子卡片：新增人数、离职人数、调岗人数、净变化",
+        "subject": "人员变动对比",
+        "action": "展示统计卡片",
+        "object": "新增人数、离职人数、调岗人数、净变化",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-071",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §③界面原型",
+        "quote": "净变化：计算公式为（新增人数 - 离职人数）的差值",
+        "subject": "人员变动对比",
+        "action": "计算净变化",
+        "object": "新增人数与离职人数",
+        "condition": null,
+        "outcome": "净变化=新增人数-离职人数",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-072",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §④信息结构",
+        "quote": "逻辑校验：所选快照时间戳必须绝对晚于起始周期的时间戳",
+        "subject": "人员变动对比",
+        "action": "校验周期时间顺序",
+        "object": "起始周期与结束周期",
+        "condition": "用户选择结束周期时",
+        "outcome": "结束周期时间戳必须晚于起始周期",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-073",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §⑤查询事件",
+        "quote": "后端执行比对算法：提取“结束周期快照表”与“起始周期快照表”，通过员工唯一ID进行全外连接（Full Outer Join）",
+        "subject": "人员变动对比",
+        "action": "执行全外连接比对算法",
+        "object": "起始与结束周期快照表",
+        "condition": "用户切换周期或部门筛选时",
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-074",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §⑤查询事件",
+        "quote": "若该ID仅在结束周期存在，则划入新增人员明细。",
+        "subject": "人员变动对比",
+        "action": "识别新增人员",
+        "object": "员工ID",
+        "condition": "员工ID仅在结束周期快照中存在",
+        "outcome": "划入新增人员明细",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-075",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §⑤查询事件",
+        "quote": "若该ID在起始周期是在职状态，但在结束周期缺失或变为离职，则划入离职人员明细。",
+        "subject": "人员变动对比",
+        "action": "识别离职人员",
+        "object": "员工ID",
+        "condition": "起始周期在职但结束周期缺失或离职",
+        "outcome": "划入离职人员明细",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-076",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §⑤查询事件",
+        "quote": "若该ID在两期均存在，但对比其部门、岗位、现任职级、薪酬水平等基础字段发现存在差异值，则通过抓取【变动日志表】中对应的追踪轨迹映射入调岗人员明细。",
+        "subject": "人员变动对比",
+        "action": "识别调岗人员",
+        "object": "员工基础字段差异",
+        "condition": "两期均存在但字段有差异",
+        "outcome": "映射入调岗人员明细",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-077",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §①模块概述",
+        "quote": "创建和管理人才盘点项目，定义盘点范围、联动配置中心的周期创建规则自动或手动下发考核任务",
+        "subject": "盘点任务计划",
+        "action": "创建管理盘点项目并下发考核任务",
+        "object": "盘点项目",
+        "condition": null,
+        "outcome": "联动周期创建规则自动或手动下发",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-078",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §①核心功能",
+        "quote": "超级管理员/人事视角：可查看“全局部门进度”看板，并下钻至“所有部门的所有个人任务进度”列表，拥有全局催办权限。",
+        "subject": "盘点任务计划",
+        "action": "超管查看全局进度",
+        "object": "全局部门进度看板与所有个人任务进度",
+        "condition": null,
+        "outcome": "超管拥有全局催办权限",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-079",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §①核心功能",
+        "quote": "部门领导视角：系统根据组织架构自动鉴权，仅展示该领导“管理部门内的人员任务进度”",
+        "subject": "盘点任务计划",
+        "action": "部门领导查看部门进度",
+        "object": "管理部门内的人员任务进度",
+        "condition": null,
+        "outcome": "根据组织架构自动鉴权仅展示本部门",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-080",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §①核心功能",
+        "quote": "普通员工视角：仅展示“我需要参与的个人任务计划”列表（如我的自评、我的情景测试、我的AI访谈），隐藏所有统计看板与他人进度。",
+        "subject": "盘点任务计划",
+        "action": "员工查看个人任务",
+        "object": "个人任务计划列表",
+        "condition": null,
+        "outcome": "仅展示个人任务，隐藏统计看板与他人进度",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-081",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §④信息结构",
+        "quote": "项目名称 | 是 | 文本输入框 | 最大50字符，同一周期内不可重复",
+        "subject": "盘点项目",
+        "action": "校验项目名称唯一性",
+        "object": "项目名称",
+        "condition": null,
+        "outcome": "最大50字符，同一周期内不可重复",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-082",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §④信息结构",
+        "quote": "考核结束时间 | 是 | 日期输入框 | 必须晚于考核开始时间",
+        "subject": "盘点项目",
+        "action": "校验时间先后顺序",
+        "object": "考核开始时间与结束时间",
+        "condition": null,
+        "outcome": "结束时间必须晚于开始时间",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-083",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §④信息结构",
+        "quote": "覆盖部门 | 是 | 多选下拉 | 至少选择1个部门",
+        "subject": "盘点项目",
+        "action": "要求选择覆盖部门",
+        "object": "覆盖部门",
+        "condition": null,
+        "outcome": "至少选择1个部门",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-084",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §⑤新增事件",
+        "quote": "若周期规则开启了自动下发，当系统当前时间到达“考核开始时间”时，后端自动扫描并批量下发任务。",
+        "subject": "盘点任务计划",
+        "action": "自动定时下发任务",
+        "object": "考核任务",
+        "condition": "周期规则开启自动下发且当前时间到达考核开始时间",
+        "outcome": "后端自动扫描并批量下发",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-085",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §⑤新增事件",
+        "quote": "当项目计划到达“考核开始时间”触发批量下发时，系统不仅生成待办，还必须强制读取 02 模块当前的最新组织架构，为参评人员生成该项目专属的【参评人员快照名单】。后续打分、催办均以此快照名单为准",
+        "subject": "盘点任务计划",
+        "action": "生成参评人员快照名单",
+        "object": "参评人员快照名单",
+        "condition": "批量下发任务时",
+        "outcome": "以快照名单为准，防止考核中途人员错乱",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-086",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §⑤任务超时截止硬锁定事件",
+        "quote": "当服务器系统时间到达项目设定的【考核结束时间】（精确到秒）时。系统行为：入口彻底关闭：系统自动启动硬锁档切片，关闭该项目下所有员工端的填报、测评与访谈入口。",
+        "subject": "盘点任务计划",
+        "action": "考核超时硬锁定",
+        "object": "所有员工端填报入口",
+        "condition": "系统时间到达考核结束时间",
+        "outcome": "关闭所有填报、测评与访谈入口",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-087",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §⑤任务超时截止硬锁定事件",
+        "quote": "360°评估模块兜底：针对状态为“未提交”的他评问卷，系统直接判定为“作废”。该员工的360° 最终得分直接按照当前已提交的有效问卷数量进行加权平均计算，不允许阻塞后续流程。",
+        "subject": "盘点任务计划",
+        "action": "360°评估超时兜底",
+        "object": "未提交的他评问卷",
+        "condition": "考核超时",
+        "outcome": "未提交问卷作废，按已提交有效问卷加权平均计算",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-088",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §⑤任务超时截止硬锁定事件",
+        "quote": "若员工处于“答题中/进行中”状态，系统执行强制收卷，将当前已记录的残缺作答上下文或录音文本自动推给 AI 引擎进行阶段性评分。",
+        "subject": "盘点任务计划",
+        "action": "情景测试/AI访谈超时强制收卷",
+        "object": "进行中的答题或访谈",
+        "condition": "考核超时且员工处于进行中状态",
+        "outcome": "强制收卷并推给AI引擎进行阶段性评分",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-089",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §⑤任务超时截止硬锁定事件",
+        "quote": "若员工处于“未开始”状态，其状态直接转为“已超时”，该单项得分直接归 0 分。",
+        "subject": "盘点任务计划",
+        "action": "未开始任务超时处理",
+        "object": "未开始状态的测评任务",
+        "condition": "考核超时且员工未开始",
+        "outcome": "状态转为已超时，单项得分归0",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-090",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §①模块概述",
+        "quote": "由超级管理员（或人事）在后台统一配置绩效评估体系，通过创建并开启考核周期，将评估任务自动下发至各部门领导",
+        "subject": "绩效评估",
+        "action": "自动下发评分任务至",
+        "object": "各部门领导",
+        "condition": "超管创建并开启考核周期",
+        "outcome": "评估任务自动下发至各部门领导",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-091",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §①核心功能",
+        "quote": "名单前置拦截（04模块控制）：如果在 04-盘点任务计划 生成【参评人员快照名单】阶段，HR已选择剔除未转正人员，则本模块列表中完全不会加载该人员数据。",
+        "subject": "绩效评估",
+        "action": "前置拦截未转正人员",
+        "object": "未转正员工",
+        "condition": "04模块生成快照时HR选择剔除未转正人员",
+        "outcome": "列表不加载该人员数据",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-092",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §①核心功能",
+        "quote": "保留字段的视图过滤（05模块控制）：若 04 模块下发时允许未转正人员作为“观察期数据”参评，则本模块列表提供视图隔离过滤。",
+        "subject": "绩效评估",
+        "action": "视图过滤未转正人员",
+        "object": "未转正员工",
+        "condition": "04模块允许未转正人员参评",
+        "outcome": "提供视图隔离过滤",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-093",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §①核心功能",
+        "quote": "对于未过滤隐藏的未转正人员，操作列置灰显示“未转正锁定，不可评分”。",
+        "subject": "绩效评估",
+        "action": "置灰未转正人员评分按钮",
+        "object": "未转正员工的操作列",
+        "condition": "未转正人员未被视图过滤隐藏",
+        "outcome": "操作列置灰显示不可评分",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-094",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §①核心功能",
+        "quote": "三层级规范化考评体系：结果评估：绩效结果（权重40%）。过程评估：工作交付效率（权重25%）、工作交付质量（权重25%）。态度评估：责任心/协调能力（权重10%）。",
+        "subject": "绩效评估",
+        "action": "定义三层级考评体系",
+        "object": "结果评估40%+过程评估50%+态度评估10%",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-095",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §①核心功能",
+        "quote": "描述驱动式滑块/数字打分：评分弹窗内不仅展示单项分值，还必须联动展示各分值区间对应的标准行为描述",
+        "subject": "绩效评估",
+        "action": "评分弹窗联动展示行为描述",
+        "object": "各分值区间标准行为描述",
+        "condition": "部门领导进行评分时",
+        "outcome": "展示当前分值对应的行为描述",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-096",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §②功能边界",
+        "quote": "未转正员工不可评分。在前端列表中，未转正员工的操作列不显示“评分”按钮，仅显示“未评分”状态或“未转正，不可评分”提示",
+        "subject": "绩效评估",
+        "action": "禁止未转正员工评分",
+        "object": "未转正员工",
+        "condition": null,
+        "outcome": "操作列不显示评分按钮",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-097",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §②功能边界",
+        "quote": "只有超管在任务计划中切换周期状态为“开启”后，部门领导端才会收到并激活当前周期的评分列表。",
+        "subject": "绩效评估",
+        "action": "周期开启后激活评分",
+        "object": "部门领导的评分列表",
+        "condition": "超管切换周期状态为开启",
+        "outcome": "部门领导收到并激活当前周期评分列表",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-098",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §②功能边界",
+        "quote": "评分在截止日期前或未锁档前，部门领导可重复编辑；超管具有一键催评权限。",
+        "subject": "绩效评估",
+        "action": "允许重复编辑评分",
+        "object": "部门领导的评分",
+        "condition": "截止日期前或未锁档前",
+        "outcome": "可重复编辑；超管可一键催评",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-099",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §③界面原型",
+        "quote": "【仅查看正式员工视图】复选框（右侧气泡提示已过滤隐藏的人数，如“3人已隐藏”）",
+        "subject": "绩效评估",
+        "action": "提供正式员工视图筛选",
+        "object": "仅查看正式员工视图复选框",
+        "condition": null,
+        "outcome": "勾选后隐藏未转正人员并提示已排除人数",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-100",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §④信息结构",
+        "quote": "合计总分 | 系统只读 | 计算公式：绩效结果 × 40% + 交付效率 × 2.5 + 交付质量 × 2.5 + 责任/协调 × 1.0 (注：使各项单位统一后求和)",
+        "subject": "绩效评估",
+        "action": "计算合计总分",
+        "object": "各维度加权得分",
+        "condition": null,
+        "outcome": "按公式加权求和得出总分",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-101",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §⑤新增事件",
+        "quote": "数据校验：未转正员工无法打开评分弹窗。已转正员工单项分数必须落入各配置项规定的上限与下限范围内（如交付效率不能超过10分）。",
+        "subject": "绩效评估",
+        "action": "校验评分分值范围",
+        "object": "各维度单项分数",
+        "condition": "已转正员工评分时",
+        "outcome": "分数必须在配置的上限与下限范围内",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-102",
+        "source_type": "prd",
+        "source_reference": "06-情景测试.md §①模块概述",
+        "quote": "通过SJTP情景判断测试评估员工的潜能维度（EQ/AQ/IQ/LP），为九宫格定位提供潜力维度数据。",
+        "subject": "情景测试",
+        "action": "评估员工潜能维度",
+        "object": "EQ/AQ/IQ/LP四维度",
+        "condition": null,
+        "outcome": "为九宫格定位提供潜力维度数据",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-103",
+        "source_type": "prd",
+        "source_reference": "06-情景测试.md §②功能边界",
+        "quote": "管理端仅做测试结果数据的展示与统计，不提供对已提交报告的分数篡改功能。",
+        "subject": "情景测试",
+        "action": "限制管理端操作范围",
+        "object": "已提交报告的分数",
+        "condition": null,
+        "outcome": "管理端不可篡改已提交报告分数",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-104",
+        "source_type": "prd",
+        "source_reference": "06-情景测试.md §⑤触发与下发控制",
+        "quote": "当 04 模块的项目计划状态变更为“进行中”时，本模块的答题引擎/访谈引擎被动激活，员工登录后方可在个人任务待办中看到并进入答题/访谈。",
+        "subject": "情景测试",
+        "action": "被动激活答题引擎",
+        "object": "员工答题端",
+        "condition": "04模块项目计划状态变更为进行中",
+        "outcome": "员工登录后可在个人任务待办中看到并进入答题",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-105",
+        "source_type": "prd",
+        "source_reference": "06-情景测试.md §③管理端区域划分",
+        "quote": "部门领导登录时，统计卡片与列表自动脱敏，仅计算并展示本部门数据；筛选栏中的“部门筛选”仅能选择其管辖的部门。",
+        "subject": "情景测试",
+        "action": "数据权限隔离",
+        "object": "部门领导",
+        "condition": "部门领导登录管理端",
+        "outcome": "仅计算和展示本部门数据，部门筛选仅限管辖部门",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-106",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §①核心功能",
+        "quote": "全方位量化评分：自动生成100分制的综合评分及5大核心维度的细分分值。",
+        "subject": "AI深度访谈",
+        "action": "自动生成评分",
+        "object": "100分制综合评分及5大核心维度分值",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-107",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §①核心功能",
+        "quote": "智能综合出题机制：AI动态抽取配置中心内的“AI访谈配置规则”与“岗位能力标准”，面向员工进行综合性动态出题。",
+        "subject": "AI深度访谈",
+        "action": "AI综合出题",
+        "object": "AI访谈配置规则与岗位能力标准",
+        "condition": null,
+        "outcome": "面向员工进行综合性动态出题",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-108",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §③普通员工视图",
+        "quote": "将进行8轮对话，请认真作答",
+        "subject": "AI深度访谈",
+        "action": "定义访谈轮次",
+        "object": "对话轮次",
+        "condition": null,
+        "outcome": "进行8轮对话",
+        "confidence": 0.9,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-109",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §⑤开启访谈与AI综合出题",
+        "quote": "系统底层大模型动态抽取“开发者配置中心”中超管配置的【AI访谈配置规则】与该员工对应的【岗位能力标准】，进行交叉组合与智能综合性出题",
+        "subject": "AI深度访谈",
+        "action": "动态出题逻辑",
+        "object": "AI访谈配置规则与岗位能力标准",
+        "condition": "员工点击开始访谈",
+        "outcome": "交叉组合后智能综合出题",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-110",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §⑤访谈交卷与数据回传",
+        "quote": "后台大模型根据完整的对答全案，自动输出5个维度的分值、计算出综合分，并生成最终的AI总评语。",
+        "subject": "AI深度访谈",
+        "action": "自动评分与生成评语",
+        "object": "5维度分值、综合分、AI总评语",
+        "condition": "访谈对话轮次完成",
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-111",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §③访谈对话页",
+        "quote": "右侧对话流：AI气泡输入框，展示由AI动态综合生成的考核问题。",
+        "subject": "AI深度访谈",
+        "action": "展示AI生成问题",
+        "object": "考核问题",
+        "condition": null,
+        "outcome": "以AI气泡形式展示",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-112",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §①模块概述",
+        "quote": "通过多维度（自评、上级评、同级评、下级评）360°全方位评估，全面反映员工的综合能力表现，减少单一评估来源的偏差。",
+        "subject": "360°评估",
+        "action": "多维度全方位评估",
+        "object": "员工综合能力",
+        "condition": null,
+        "outcome": "减少单一评估来源偏差",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-113",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §①核心功能",
+        "quote": "综合分计算：根据多维度评分及各评价视角加权平均计算最终综合分（采用1-5分制）。",
+        "subject": "360°评估",
+        "action": "计算综合分",
+        "object": "各评价视角加权平均",
+        "condition": null,
+        "outcome": "采用1-5分制的综合分",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-114",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §②功能描述-角色权限",
+        "quote": "部门领导：属地管理权限：默认切换至其负责的部门视图，只能查看本部门人员的综合评分及评估结果。数据脱敏/隐私保护：不可查看“上级评”分数（列表页及详情页均显示为“🔒锁定”状态）",
+        "subject": "360°评估",
+        "action": "部门领导权限隔离与脱敏",
+        "object": "上级评分数",
+        "condition": "部门领导查看时",
+        "outcome": "仅看本部门，上级评分数锁定不可见",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-115",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §②功能描述-角色权限",
+        "quote": "普通员工：独立的操作面板。接收系统自动下发的任务。隐私保护说明：明确提示“您的评分数据仅作为组织人才发展参考，他人无法查看您对具体个人的评分”。",
+        "subject": "360°评估",
+        "action": "保护普通员工评分隐私",
+        "object": "评分数据",
+        "condition": null,
+        "outcome": "他人无法查看具体个人的评分",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-116",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §②功能边界",
+        "quote": "评估关系由系统根据组织架构自动确定。",
+        "subject": "360°评估",
+        "action": "自动确定评估关系",
+        "object": "评估人与被评估人关系",
+        "condition": null,
+        "outcome": "基于组织架构自动生成",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-117",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §②功能边界",
+        "quote": "评分提交后不可自行修改。",
+        "subject": "360°评估",
+        "action": "禁止修改已提交评分",
+        "object": "评分数据",
+        "condition": "评分已提交",
+        "outcome": "不可自行修改",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-118",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §⑤周期开启与下发事件",
+        "quote": "数据写入互评结果表时，必须带上操作人的 Role_ID。当 09 模块或本模块详情弹窗调用此数据时，若检测到浏览者为“部门领导”，后端接口必须脱敏“上级评”的每一项得分细节，仅输出加权后的部门平均值，从代码层确保隐私安全。",
+        "subject": "360°评估",
+        "action": "后端脱敏上级评得分",
+        "object": "上级评各项得分细节",
+        "condition": "浏览者为部门领导",
+        "outcome": "仅输出加权后的部门平均值",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-119",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §①核心业务流向",
+        "quote": "本模块的核心数据遵循“超管配置 -> 周期开启 -> 自动下发 -> 员工答题 -> 实时汇总 -> 权限隔离查看”的闭环流转逻辑",
+        "subject": "绩效综合报告",
+        "action": "遵循闭环流转逻辑",
+        "object": "综合评估数据",
+        "condition": null,
+        "outcome": "配置-下发-答题-汇总-权限查看",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-120",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §①核心功能",
+        "quote": "跨周期历史数据追溯：提供往期考核周期切换器，超管可追溯全公司任一历史周期的综合报告，部门领导仅可追溯本部门历史大盘。",
+        "subject": "绩效综合报告",
+        "action": "支持跨周期历史追溯",
+        "object": "往期考核周期综合报告",
+        "condition": null,
+        "outcome": "超管可追溯全公司，部门领导仅追溯本部门",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-121",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §①核心功能",
+        "quote": "普通员工：视图强制锁定为 User_ID，仅能查看本人的全景能力画像报告，隐藏所有统计看板。",
+        "subject": "绩效综合报告",
+        "action": "员工视图锁定为个人",
+        "object": "普通员工",
+        "condition": null,
+        "outcome": "仅可查看本人全景能力画像，隐藏所有看板",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-122",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §④信息结构",
+        "quote": "综合评分 | 系统 | 浮点数/只读 | 规则：四大模块数据汇总后，根据配置中心的权重加权计算得出。",
+        "subject": "绩效综合报告",
+        "action": "加权计算综合评分",
+        "object": "四大模块数据汇总",
+        "condition": null,
+        "outcome": "根据配置中心权重加权计算",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-123",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §④信息结构",
+        "quote": "人才标签 | 系统 | 文本/枚举 | 根据综合分与系统规则自动映射：[明星人才]、[关键人才]、[稳定贡献]、[待关注]、[待优化]。",
+        "subject": "绩效综合报告",
+        "action": "自动映射人才标签",
+        "object": "综合分与系统规则",
+        "condition": null,
+        "outcome": "映射为明星人才/关键人才/稳定贡献/待关注/待优化",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-124",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §④信息结构",
+        "quote": "完成状态进度| 系统 | 文本/图标 | 格式为“X/4”。系统实时轮询 05、06、07、08 四个模块的交卷/提交状态。只有当该字段显示为“4/4”时，该员工的“综合评分”和“人才标签”才触发最终加权计算并予以展示",
+        "subject": "绩效综合报告",
+        "action": "基于完成度触发综合计算",
+        "object": "四模块完成状态",
+        "condition": "完成进度达到4/4",
+        "outcome": "触发最终加权计算并展示综合评分和人才标签",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-125",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §⑤绩效综合报告批量异步导出事件",
+        "quote": "系统禁止前端执行同步阻塞下载或直接唤起浏览器自带的打印下载。触发点击后，页面即刻弹出全局统一的 Toast 提示",
+        "subject": "绩效综合报告",
+        "action": "异步导出报告",
+        "object": "个人综合测评PDF报告",
+        "condition": "超管点击导出报告",
+        "outcome": "加入后台生成队列，完成后在下载中心获取",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-126",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §⑤绩效综合报告批量异步导出事件",
+        "quote": "Worker 线程在后台调取 Headless 渲染引擎（如 Puppeteer / Headless Chrome），模拟浏览器环境加载对应员工的“个人综合测评视图”。",
+        "subject": "绩效综合报告",
+        "action": "异步渲染PDF",
+        "object": "个人综合测评视图",
+        "condition": "异步队列处理时",
+        "outcome": "调用Headless渲染引擎生成PDF",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-127",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §⑤异常与极端情况处理",
+        "quote": "若周期已下发，但员工尚未开始回答（完成进度0/4），其各项分值默认置为 0，人才标签自动归类为“待关注”。",
+        "subject": "绩效综合报告",
+        "action": "未开始答题默认处理",
+        "object": "未开始答题的员工",
+        "condition": "周期已下发但员工未开始回答",
+        "outcome": "分值默认为0，人才标签归为待关注",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-128",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §⑤异常与极端情况处理",
+        "quote": "若仅完成部分任务（如 3/4），未完成的单项分显示为“--”，综合分仅针对已完成项进行阶段性加权计算，并在弹窗中提示缺失环节。",
+        "subject": "绩效综合报告",
+        "action": "部分完成时阶段计算",
+        "object": "部分完成任务的员工",
+        "condition": "仅完成部分任务",
+        "outcome": "未完成项显示--，综合分仅针对已完成项加权计算",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-129",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §④个人任务进度模型",
+        "quote": "个人整体任务状态 | 状态标签 | 全部完成 / 部分完成 / 存在超时告警",
+        "subject": "个人任务进度",
+        "action": "展示整体任务状态",
+        "object": "个人整体任务状态",
+        "condition": null,
+        "outcome": "状态为全部完成/部分完成/存在超时告警",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-130",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §③5.绩效评估体系Tab",
+        "quote": "卓越 (S) ：绿色，95分\n优秀 (A) ：蓝色，85-94分\n良好 (B) ：橙色，75-84分\n合格 (C) ：灰色，60-74分\n待提升 (D) ：粉红，< 60分",
+        "subject": "绩效评估体系",
+        "action": "定义绩效等级分数区间",
+        "object": "S/A/B/C/D五个等级",
+        "condition": null,
+        "outcome": "S≥95, A:85-94, B:75-84, C:60-74, D<60",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-131",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §②功能边界",
+        "quote": "评估隔离：不对比员工在各周期的绩效评估结果、情景测试得分等业务产出数据",
+        "subject": "人员变动对比",
+        "action": "隔离评估数据",
+        "object": "绩效评估结果、情景测试得分",
+        "condition": null,
+        "outcome": "不对比业务产出数据，仅对比基础属性变化",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-132",
+        "source_type": "prd",
+        "source_reference": "03-人员变动对比.md §②功能边界",
+        "quote": "时切片边界：对比计算严格基于已成功生成的历史快照版本进行，不提供跨周期的实时未归档动态跟踪",
+        "subject": "人员变动对比",
+        "action": "限制数据来源为已归档快照",
+        "object": "历史快照版本",
+        "condition": null,
+        "outcome": "不提供实时未归档动态跟踪",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-133",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §⑤页面初始化",
+        "quote": "获取当前登录人角色，渲染对应的视图权限与数据可见范围（超管开放全部门；领导限制本部门）。",
+        "subject": "360°评估",
+        "action": "根据角色渲染视图权限",
+        "object": "当前登录人角色",
+        "condition": "页面初始化时",
+        "outcome": "超管开放全部门，领导限制本部门",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-134",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §③评估结果汇总列表区",
+        "quote": "统计概览看板：评估人数、已完成、部分完成、平均综合分",
+        "subject": "360°评估",
+        "action": "展示统计概览",
+        "object": "评估人数、已完成、部分完成、平均综合分",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-135",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §③管理员视图",
+        "quote": "四大核心盘点指标卡片（全公司视角）：访谈人数、已完成、完成率、平均分",
+        "subject": "AI深度访谈",
+        "action": "展示全公司统计指标",
+        "object": "访谈人数、已完成、完成率、平均分",
+        "condition": "管理员登录时",
+        "outcome": "展示全公司视角指标",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-136",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §③部门领导视图",
+        "quote": "数据隔离：布局与管理员类似，但数据范围引入严格的部门权限隔离。数据看板区：仅计算、展示本部门及下属子部门的指标数据",
+        "subject": "AI深度访谈",
+        "action": "部门领导数据隔离",
+        "object": "部门领导数据范围",
+        "condition": "部门领导登录时",
+        "outcome": "仅计算展示本部门及下属子部门指标",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-137",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §②核心权限与查看逻辑",
+        "quote": "部门领导：具备部门级汇总权限。仅能查看“本部门”的汇总结果、部门分析看板以及本部门下属员工的个人周期报告，无权查看其他同级或敏感部门数据。",
+        "subject": "绩效综合报告",
+        "action": "部门领导部门级权限",
+        "object": "本部门汇总结果与下属报告",
+        "condition": null,
+        "outcome": "仅可查看本部门，无权查看其他部门",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-138",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④3.考核周期规则",
+        "quote": "笔试时长要求 | 是 | 整数输入框 | 单位：工作日，限制范围 1-30 的正整数",
+        "subject": "周期创建规则",
+        "action": "限制笔试时长范围",
+        "object": "笔试时长",
+        "condition": null,
+        "outcome": "单位工作日，限制1-30正整数",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-139",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④3.考核周期规则",
+        "quote": "互评时长要求 | 是 | 整数输入框 | 单位：工作日，限制范围 1-30 的正整数",
+        "subject": "周期创建规则",
+        "action": "限制互评时长范围",
+        "object": "互评时长",
+        "condition": null,
+        "outcome": "单位工作日，限制1-30正整数",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-140",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④3.考核周期规则",
+        "quote": "下发绑定岗位 | 否 | 标签/树形多选 | 不限制（支持勾选特定多个岗位；若不选择则默认不限制，即面向全员下发）",
+        "subject": "周期创建规则",
+        "action": "默认全员下发",
+        "object": "下发绑定岗位",
+        "condition": "未选择特定岗位",
+        "outcome": "面向全员下发",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-141",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④3.考核周期规则",
+        "quote": "领导数据可见域 | 是 | 单选/开关 | 选项：可见本部门个人进度明细 / 仅可见部门宏观完成率，用于控制领导的查看边界",
+        "subject": "周期创建规则",
+        "action": "配置领导数据可见域",
+        "object": "领导查看边界",
+        "condition": null,
+        "outcome": "可选个人进度明细或部门宏观完成率",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-142",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §①下游关联模块",
+        "quote": "九宫格定位 | 访谈综合分、胜任力画像 | 辅助进行人才九宫格的定位与落位参考",
+        "subject": "AI深度访谈",
+        "action": "输出访谈综合分至",
+        "object": "九宫格定位",
+        "condition": null,
+        "outcome": "辅助九宫格定位与落位",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-143",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §①下游关联模块",
+        "quote": "AI深度访谈 | 评估结果 | 作为AI追问的上下文依据",
+        "subject": "360°评估",
+        "action": "输出评估结果至",
+        "object": "AI深度访谈模块",
+        "condition": null,
+        "outcome": "作为AI追问的上下文依据",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-144",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §①下游关联模块",
+        "quote": "数据校准 | 综合评估数据 -> 校准调整的完整数据集。",
+        "subject": "绩效综合报告",
+        "action": "输出综合评估数据至",
+        "object": "数据校准",
+        "condition": null,
+        "outcome": "提供校准调整的完整数据集",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-145",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §①下游关联模块",
+        "quote": "九宫格定位 | 综合评分与标签参考（如明星人才、关键人才、稳定贡献等） -> 辅助九宫格定位。",
+        "subject": "绩效综合报告",
+        "action": "输出综合评分与标签至",
+        "object": "九宫格定位",
+        "condition": null,
+        "outcome": "辅助九宫格定位",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-146",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④6.AI访谈模板体系",
+        "quote": "预设引导问题 | 是 | 动态文本域 | 每个二级维度下至少配置1个Q1基准引导提问语，用于唤醒AI提问",
+        "subject": "AI访谈模板",
+        "action": "要求配置引导问题",
+        "object": "每个二级维度下的引导提问语",
+        "condition": null,
+        "outcome": "每个二级维度至少配置1个Q1基准引导提问语",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-147",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④1.360°评估模板",
+        "quote": "满分分值 | 是 | 正整数数字 | 默认 100 分",
+        "subject": "360°评估模板",
+        "action": "设定满分分值",
+        "object": "评估模板满分",
+        "condition": null,
+        "outcome": "默认100分",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-148",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §④信息结构",
+        "quote": "年龄 | 否 | 数字输入 | 18-65整数",
+        "subject": "员工信息",
+        "action": "限制年龄输入范围",
+        "object": "年龄字段",
+        "condition": null,
+        "outcome": "18-65整数",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-149",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §⑤个人任务执行交互事件",
+        "quote": "员工提交后，该个人的“任务完成状态”瞬间变更为【已完成】，同时该部门的完成百分比（分子加1）以及超管大盘的已完成数实时联动刷新。",
+        "subject": "盘点任务计划",
+        "action": "实时联动刷新进度",
+        "object": "个人任务完成状态与部门完成百分比",
+        "condition": "员工提交任务后",
+        "outcome": "任务状态变更且统计实时联动刷新",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-150",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §③界面原型",
+        "quote": "评分弹窗内不仅展示单项分值，还必须联动展示各分值区间对应的标准行为描述（如：0-2分、3-8分、9-10分等具体定义），辅助领导客观打分。",
+        "subject": "绩效评估",
+        "action": "评分弹窗展示分值区间行为描述",
+        "object": "各分值区间对应的标准行为描述",
+        "condition": "部门领导打开评分弹窗时",
+        "outcome": "展示分值区间对应的行为描述辅助客观打分",
+        "confidence": 0.9,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-151",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §③界面原型",
+        "quote": "部门领导在评分弹窗内调整分值，下方“合计总分”输入框/文本实时通过后台公式完成联动计算。",
+        "subject": "绩效评估",
+        "action": "实时联动计算总分",
+        "object": "合计总分",
+        "condition": "部门领导调整分值时",
+        "outcome": "合计总分实时通过后台公式联动计算",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-152",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §③2.岗位能力标准Tab",
+        "quote": "胜任力级别矩阵（L1-L5）：核心内容区以渐变色块（绿、蓝、黄、紫、红）横向或纵向排列展现L1至L5五个层级的能力特征",
+        "subject": "岗位能力标准",
+        "action": "展示L1-L5胜任力级别矩阵",
+        "object": "五个层级能力特征",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-153",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §④信息结构",
+        "quote": "岗位适配自评 | 否 | 状态灯 | 高（绿）/ 中（黄）/ 低（红），下游同步回填",
+        "subject": "员工信息",
+        "action": "岗位适配自评状态灯",
+        "object": "岗位适配自评",
+        "condition": null,
+        "outcome": "高(绿)/中(黄)/低(红)，下游同步回填",
+        "confidence": 0.9,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-154",
+        "source_type": "prd",
+        "source_reference": "02-人员架构管理.md §④信息结构",
+        "quote": "人才标签 | 否 | 状态标签 | 核心人才 / 潜力人才 / 普通，盘点校准后回填",
+        "subject": "员工信息",
+        "action": "人才标签回填",
+        "object": "人才标签字段",
+        "condition": "盘点校准后",
+        "outcome": "标签为核心人才/潜力人才/普通",
+        "confidence": 0.9,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-155",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §③详情弹窗区",
+        "quote": "弹窗主体：核心展示100分制大字综合评分（如 93 /100）。下方平行排列5大核心维度的进度条及具体分值。底部框线内展示AI针对该员工生成的总结性总评语",
+        "subject": "AI深度访谈",
+        "action": "详情弹窗展示评分与评语",
+        "object": "100分制综合评分、5维度分值、AI总评语",
+        "condition": "查看访谈详情时",
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-156",
+        "source_type": "prd",
+        "source_reference": "07-AI深度访谈.md §④信息结构",
+        "quote": "professional (专业能力) | AI模型生成 | 核心胜任力维度1\nleadership (领导力) | AI模型生成 | 核心胜任力维度2\ninnovation (创新思维) | AI模型生成 | 核心胜任力维度3\ncollaboration (协作能力) | AI模型生成 | 核心胜任力维度4\nexecution (执行力) | AI模型生成 | 核心胜任力维度5",
+        "subject": "AI深度访谈",
+        "action": "定义5大核心维度",
+        "object": "专业能力、领导力、创新思维、协作能力、执行力",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-157",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §③个人综合测评视图",
+        "quote": "SJTP情景测试：展示潜能总分、分维度条形图及系统自动输出的心理/人格类型（如：INTJ-A）。",
+        "subject": "绩效综合报告",
+        "action": "展示SJTP人格类型",
+        "object": "心理/人格类型",
+        "condition": "个人综合测评视图",
+        "outcome": "如INTJ-A等MBTI人格类型",
+        "confidence": 0.9,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-158",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §③详情弹窗区",
+        "quote": "盘点项目得分（胜任力要素）：一级维度：职位素质 (100%) -> 对应满分得分。二级明细指标：专业知识、主动性、学习能力、责任心、诚信正直、团队协作、成就他人（各指标满分为 5.0）。",
+        "subject": "360°评估",
+        "action": "定义胜任力评估指标",
+        "object": "专业知识/主动性/学习能力/责任心/诚信正直/团队协作/成就他人",
+        "condition": null,
+        "outcome": "各指标满分5.0分制",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-159",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §⑤绩效综合报告批量异步导出事件",
+        "quote": "最终，系统将多份生成的 PDF 个人报告自动压缩为以当前考核周期命名的 .zip 压缩包，并推送到该用户的系统【下载中心】通知矩阵中",
+        "subject": "绩效综合报告",
+        "action": "打包PDF报告推送下载中心",
+        "object": "个人PDF报告压缩包",
+        "condition": "异步导出完成后",
+        "outcome": "以考核周期命名的zip压缩包推送至下载中心",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-160",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §③超管-综合看板大盘视图",
+        "quote": "各部门评估概览（卡片流）：平铺展示所有下发部门（技术、市场、行政、财务、商务）的卡片。卡片上包含部门级别评级标签（优秀/良好/待提升）及该部门内的各项任务完成率。",
+        "subject": "绩效综合报告",
+        "action": "展示各部门评估概览",
+        "object": "各部门评级标签与任务完成率",
+        "condition": "超管查看综合看板时",
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-161",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §①核心功能",
+        "quote": "加权总分自动计算：系统根据配置权重动态实时计算合计总分",
+        "subject": "绩效评估",
+        "action": "自动计算加权总分",
+        "object": "各维度加权得分",
+        "condition": null,
+        "outcome": "根据配置权重动态实时计算",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-162",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④2.岗位能力胜任力标准",
+        "quote": "L1-L5级别描述 | 是 | 5组文本域 | 精确定义Level 1至Level 5的行为分级特征，每级最大1000字符",
+        "subject": "岗位能力标准",
+        "action": "定义L1-L5级别描述",
+        "object": "五级行为分级特征",
+        "condition": null,
+        "outcome": "每级最大1000字符",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-163",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④2.岗位能力胜任力标准",
+        "quote": "岗位JD输入 | 否 | 文本域大框 | 支持贴入动辄数千字的外部招聘岗位JD文本",
+        "subject": "岗位能力标准",
+        "action": "支持输入岗位JD",
+        "object": "外部招聘岗位JD文本",
+        "condition": null,
+        "outcome": null,
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-164",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §⑤3.周期创建规则事件",
+        "quote": "在编辑状态下调整“必考环节组合”（例如追加勾选了【AI访谈】），系统会动态校验并修改任务底层表结构映射。当任务下发至“04-盘点任务计划”后，超管和领导的监控详情弹窗中会自动追加一列“AI访谈进度”，同时员工个人待办计划中会强制塞入“AI访谈”任务。",
+        "subject": "周期创建规则",
+        "action": "必考环节变更联动",
+        "object": "任务表结构与视图",
+        "condition": "编辑状态下调整必考环节组合",
+        "outcome": "自动追加对应进度列和员工待办任务",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-165",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④5.绩效评估与等级体系",
+        "quote": "动态维度名称 | 是 | 文本输入框 | 考核项名称（如：绩效结果、交付质量等），限30字符",
+        "subject": "绩效评估体系",
+        "action": "限制维度名称长度",
+        "object": "动态维度名称",
+        "condition": null,
+        "outcome": "最大30字符",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-166",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §④5.绩效评估与等级体系",
+        "quote": "维度满分设定 | 是 | 正整数数字 | 默认100，支持配置各个子维度的满分分值",
+        "subject": "绩效评估体系",
+        "action": "设定维度满分",
+        "object": "各子维度满分",
+        "condition": null,
+        "outcome": "默认100",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-167",
+        "source_type": "prd",
+        "source_reference": "01-开发者配置中心.md §①在整体业务流程中的定位",
+        "quote": "开发者配置中心是系统业务流程的前置准备环节，为后续所有测评模块提供基础配置数据。所有评估标准、题库、模板均需在此配置后方可使用。",
+        "subject": "开发者配置中心",
+        "action": "作为前置准备环节",
+        "object": "所有测评模块",
+        "condition": null,
+        "outcome": "所有配置需在此完成后方可使用",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-168",
+        "source_type": "prd",
+        "source_reference": "04-盘点任务计划.md §①在整体业务流程中的定位",
+        "quote": "盘点任务计划是业务流程的第1步（建项目），是整个盘点流程的起点。所有后续评估模块均在某个盘点项目上下文中执行。",
+        "subject": "盘点任务计划",
+        "action": "作为盘点流程起点",
+        "object": "整个盘点流程",
+        "condition": null,
+        "outcome": "所有后续评估在盘点项目上下文中执行",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-169",
+        "source_type": "prd",
+        "source_reference": "05-绩效评估.md §①在整体业务流程中的定位",
+        "quote": "绩效评估是业务流程的第3步（评绩效）",
+        "subject": "绩效评估",
+        "action": "作为流程第3步",
+        "object": "盘点流程",
+        "condition": null,
+        "outcome": "评分结果流向绩效综合报告、数据校准和九宫格定位",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-170",
+        "source_type": "prd",
+        "source_reference": "06-情景测试.md §①在整体业务流程中的定位",
+        "quote": "情景测试是业务流程的第4步（测潜能），在绩效评估后执行。",
+        "subject": "情景测试",
+        "action": "作为流程第4步",
+        "object": "盘点流程",
+        "condition": null,
+        "outcome": "测试结果流向绩效综合报告、数据校准和九宫格定位",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-171",
+        "source_type": "prd",
+        "source_reference": "08-360评估.md §①在整体业务流程中的定位",
+        "quote": "360°评估是业务流程的第5步，在情景测试后执行。",
+        "subject": "360°评估",
+        "action": "作为流程第5步",
+        "object": "盘点流程",
+        "condition": null,
+        "outcome": "结果流向绩效综合报告、AI深度访谈和九宫格定位",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      },
+      {
+        "id": "FACT-172",
+        "source_type": "prd",
+        "source_reference": "09-绩效综合报告.md §①在整体业务流程中的定位",
+        "quote": "绩效综合报告是整个数字化盘点业务的“数据终点站”，是全周期任务下发执行后的最终汇总呈现画布，为后续的数据校准和九宫格定位提供全方位、多视角的决策依据。",
+        "subject": "绩效综合报告",
+        "action": "作为数据终点站",
+        "object": "整个盘点业务",
+        "condition": null,
+        "outcome": "为数据校准和九宫格定位提供决策依据",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": []
+      }
+    ],
+    "assertions": [
+      {
+        "id": "ASSERT-001",
+        "fact_ids": [
+          "FACT-014"
+        ],
+        "assertion_text": "系统必须验证访问开发者配置中心的用户身份，仅允许超级管理员及具备特殊授权的组织HR专家角色访问，普通员工与部门管理人员无权访问。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §②功能边界"
+        ]
+      },
+      {
+        "id": "ASSERT-002",
+        "fact_ids": [
+          "FACT-021",
+          "FACT-034"
+        ],
+        "assertion_text": "系统必须验证360°评估模板名称的最大长度不超过50字符，并且在同组织同分类下不允许重复。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④1.360°评估模板信息结构",
+          "01-开发者配置中心.md §⑤1.360°评估模板管理事件"
+        ]
+      },
+      {
+        "id": "ASSERT-003",
+        "fact_ids": [
+          "FACT-022",
+          "FACT-035"
+        ],
+        "assertion_text": "系统必须验证创建或编辑360°评估模板时，至少勾选一种评估关系标签（自评、上级评、下级评、同级评）。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④1.360°评估模板信息结构",
+          "01-开发者配置中心.md §⑤1.360°评估模板管理事件"
+        ]
+      },
+      {
+        "id": "ASSERT-004",
+        "fact_ids": [
+          "FACT-025",
+          "FACT-043"
+        ],
+        "assertion_text": "系统必须验证绩效评估体系的所有动态维度权重之和必须严格等于100%，若不等于则阻止保存并提示。",
+        "assertion_type": "validation",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④5.绩效评估与等级体系",
+          "01-开发者配置中心.md §⑤5.绩效体系权重全局校验事件"
+        ]
+      },
+      {
+        "id": "ASSERT-005",
+        "fact_ids": [
+          "FACT-044"
+        ],
+        "assertion_text": "系统必须验证绩效评估体系中S/A/B/C/D等级分数区间是连续无重叠且无断层的，即前一级的下限必须等于后一级的上限加1。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤5.绩效体系权重全局校验事件"
+        ]
+      },
+      {
+        "id": "ASSERT-006",
+        "fact_ids": [
+          "FACT-026"
+        ],
+        "assertion_text": "系统必须验证AI访谈模板名称的最大长度不超过50字符，并且全局唯一。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④6.AI访谈模板体系"
+        ]
+      },
+      {
+        "id": "ASSERT-007",
+        "fact_ids": [
+          "FACT-046",
+          "FACT-028"
+        ],
+        "assertion_text": "系统必须验证AI访谈模板中所有大类（能力/潜力权重 + 动机风格权重 + 核心价值观权重）的权重之和必须严格等于100%。",
+        "assertion_type": "validation",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤6.AI访谈配置校验事件",
+          "01-开发者配置中心.md §④6.AI访谈模板体系"
+        ]
+      },
+      {
+        "id": "ASSERT-008",
+        "fact_ids": [
+          "FACT-027",
+          "FACT-047"
+        ],
+        "assertion_text": "系统必须验证AI访谈模板中，隶属于同一大类下的所有二级维度权重之和必须等于该大类的总权重，否则提示权重脱节。",
+        "assertion_type": "validation",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④6.AI访谈模板体系",
+          "01-开发者配置中心.md §⑤6.AI访谈配置校验事件"
+        ]
+      },
+      {
+        "id": "ASSERT-009",
+        "fact_ids": [
+          "FACT-045"
+        ],
+        "assertion_text": "系统必须验证保存AI访谈模板时，至少勾选了一个部门-岗位。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤6.AI访谈配置校验事件"
+        ]
+      },
+      {
+        "id": "ASSERT-010",
+        "fact_ids": [
+          "FACT-0146"
+        ],
+        "assertion_text": "系统必须验证AI访谈模板中每个二级维度下至少配置了1个Q1基准引导提问语。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④6.AI访谈模板体系"
+        ]
+      },
+      {
+        "id": "ASSERT-011",
+        "fact_ids": [
+          "FACT-048",
+          "FACT-031"
+        ],
+        "assertion_text": "系统必须验证保存AI提示词时，Prompt文本中完整包含了系统运行依赖的占位符变量 {user_data} 和 {interview_text}。",
+        "assertion_type": "validation",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤7.AI提示词调优事件",
+          "01-开发者配置中心.md §④7.AI提示词元配置"
+        ]
+      },
+      {
+        "id": "ASSERT-012",
+        "fact_ids": [
+          "FACT-040",
+          "FACT-138",
+          "FACT-139"
+        ],
+        "assertion_text": "系统必须验证周期创建规则中笔试时长、互评时长为1-30的正整数（单位：工作日），输入不合法时阻止提交。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤3.周期创建规则启用与变更事件",
+          "01-开发者配置中心.md §④3.考核周期规则"
+        ]
+      },
+      {
+        "id": "ASSERT-013",
+        "fact_ids": [
+          "FACT-015"
+        ],
+        "assertion_text": "系统必须验证配置变更的生效范围：仅对变更后新发起的盘点周期、考核任务、AI访谈生效，当前处于“进行中”或“已归档”的盘点数据和报告不受影响。",
+        "assertion_type": "data_rule",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §②功能边界"
+        ]
+      },
+      {
+        "id": "ASSERT-014",
+        "fact_ids": [
+          "FACT-049"
+        ],
+        "assertion_text": "系统必须验证非管理员或组织HR专家角色用户尝试通过URL访问配置后台时，将其重定向至403越界报错页。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤异常处理矩阵"
+        ]
+      },
+      {
+        "id": "ASSERT-015",
+        "fact_ids": [
+          "FACT-024",
+          "FACT-042"
+        ],
+        "assertion_text": "系统必须验证SJTP题库题目在“启用”状态下可被评测引擎抽题，在“禁用”状态下前端不可见且不参与抽题。",
+        "assertion_type": "state_transition",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④4.SJTP题库模型",
+          "01-开发者配置中心.md §⑤4.SJTP题库导入事件"
+        ]
+      },
+      {
+        "id": "ASSERT-016",
+        "fact_ids": [
+          "FACT-042"
+        ],
+        "assertion_text": "系统必须验证SJTP题库Excel导入文件的格式与必填项，若存在错误则中断导入并提示具体错误行号与原因。",
+        "assertion_type": "error_handling",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤4.SJTP题库导入事件"
+        ]
+      },
+      {
+        "id": "ASSERT-017",
+        "fact_ids": [
+          "FACT-033",
+          "FACT-032"
+        ],
+        "assertion_text": "系统必须验证AI提示词配置的接口超时时限（默认10s），若大模型接口在时限内未响应，界面不允许卡死，并强制触发配置的兜底策略（降级模型或切换静态文本池）。",
+        "assertion_type": "error_handling",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④7.AI提示词元配置"
+        ]
+      },
+      {
+        "id": "ASSERT-018",
+        "fact_ids": [
+          "FACT-050",
+          "FACT-063"
+        ],
+        "assertion_text": "系统必须验证人员架构数据能够从“仓颉知道3.0”自动同步，并于每天凌晨02:00定时调用接口。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §①模块概述",
+          "02-人员架构管理.md §⑤数据自动同步与快照生成事件"
+        ]
+      },
+      {
+        "id": "ASSERT-019",
+        "fact_ids": [
+          "FACT-051",
+          "FACT-064"
+        ],
+        "assertion_text": "系统必须验证在每次人员架构数据同步更新前，自动将上一版本的“部门-岗位-人员”数据打包成带时间戳与版本号的历史快照。",
+        "assertion_type": "data_rule",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §①核心功能",
+          "02-人员架构管理.md §⑤数据自动同步与快照生成事件"
+        ]
+      },
+      {
+        "id": "ASSERT-020",
+        "fact_ids": [
+          "FACT-052",
+          "FACT-056",
+          "FACT-066"
+        ],
+        "assertion_text": "系统必须验证仅“在职”且“已转正”的员工可参与绩效评估；离职员工自动从绩效评估对象中排除。",
+        "assertion_type": "state_transition",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §①下游关联模块",
+          "02-人员架构管理.md §①下游关联模块",
+          "02-人员架构管理.md §⑤状态变更事件"
+        ]
+      },
+      {
+        "id": "ASSERT-021",
+        "fact_ids": [
+          "FACT-057"
+        ],
+        "assertion_text": "系统必须验证对人员架构模块中员工数据的本地“编辑”操作仅限于辅助业务标签，禁止修改员工核心基础字段。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §②功能边界"
+        ]
+      },
+      {
+        "id": "ASSERT-022",
+        "fact_ids": [
+          "FACT-060",
+          "FACT-059"
+        ],
+        "assertion_text": "系统必须验证人员架构模块的访问权限：普通员工不可访问；部门领导仅可查看本部门及下属部门的员工与岗位画像。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §③控件显示逻辑"
+        ]
+      },
+      {
+        "id": "ASSERT-023",
+        "fact_ids": [
+          "FACT-072"
+        ],
+        "assertion_text": "系统必须验证人员变动对比功能中，所选结束周期的时间戳必须晚于起始周期的时间戳。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "03-人员变动对比.md §④信息结构"
+        ]
+      },
+      {
+        "id": "ASSERT-024",
+        "fact_ids": [
+          "FACT-081"
+        ],
+        "assertion_text": "系统必须验证盘点项目名称的最大长度不超过50字符，且在同一周期内不可重复。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §④信息结构"
+        ]
+      },
+      {
+        "id": "ASSERT-025",
+        "fact_ids": [
+          "FACT-082"
+        ],
+        "assertion_text": "系统必须验证盘点项目的考核结束时间必须晚于考核开始时间。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §④信息结构"
+        ]
+      },
+      {
+        "id": "ASSERT-026",
+        "fact_ids": [
+          "FACT-083"
+        ],
+        "assertion_text": "系统必须验证创建盘点项目时至少选择1个覆盖部门。",
+        "assertion_type": "validation",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §④信息结构"
+        ]
+      },
+      {
+        "id": "ASSERT-027",
+        "fact_ids": [
+          "FACT-084",
+          "FACT-038"
+        ],
+        "assertion_text": "系统必须验证当盘点任务计划的状态变更为“进行中”时，若周期规则开启了自动下发且到达考核开始时间，系统自动批量下发任务给符合条件的人员。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §⑤新增事件",
+          "01-开发者配置中心.md §⑤3.周期创建规则启用与变更事件"
+        ]
+      },
+      {
+        "id": "ASSERT-028",
+        "fact_ids": [
+          "FACT-086"
+        ],
+        "assertion_text": "系统必须验证当服务器系统时间到达盘点项目的考核结束时间时，自动关闭该项目下所有员工端的填报、测评与访谈入口。",
+        "assertion_type": "state_transition",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §⑤任务超时截止硬锁定事件"
+        ]
+      },
+      {
+        "id": "ASSERT-029",
+        "fact_ids": [
+          "FACT-087",
+          "FACT-088",
+          "FACT-089"
+        ],
+        "assertion_text": "系统必须验证考核超时时的处理规则：未提交的他评问卷作废并按已提交问卷计算；进行中的答题/访谈强制收卷并推给AI阶段性评分；未开始的单项得分归0分。",
+        "assertion_type": "error_handling",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §⑤任务超时截止硬锁定事件"
+        ]
+      },
+      {
+        "id": "ASSERT-030",
+        "fact_ids": [
+          "FACT-078",
+          "FACT-079",
+          "FACT-080"
+        ],
+        "assertion_text": "系统必须根据用户角色（超管/部门领导/普通员工）实施数据隔离，超管可看全局和所有个人进度，部门领导仅看本部门，普通员工仅看个人任务。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §①核心功能"
+        ]
+      },
+      {
+        "id": "ASSERT-031",
+        "fact_ids": [
+          "FACT-090",
+          "FACT-097"
+        ],
+        "assertion_text": "系统必须验证绩效评估模块的评分任务仅在超管将周期状态切换为“开启”后，才会下发并激活部门领导端的评分列表。",
+        "assertion_type": "state_transition",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "05-绩效评估.md §①模块概述",
+          "05-绩效评估.md §②功能边界"
+        ]
+      },
+      {
+        "id": "ASSERT-032",
+        "fact_ids": [
+          "FACT-096",
+          "FACT-093",
+          "FACT-0101"
+        ],
+        "assertion_text": "系统必须验证绩效评估中，未转正员工无法打开评分弹窗；已转正员工的单项分数必须在各配置项规定的范围内。",
+        "assertion_type": "validation",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "05-绩效评估.md §②功能边界",
+          "05-绩效评估.md §①核心功能",
+          "05-绩效评估.md §⑤新增事件"
+        ]
+      },
+      {
+        "id": "ASSERT-033",
+        "fact_ids": [
+          "FACT-100",
+          "FACT-151",
+          "FACT-161"
+        ],
+        "assertion_text": "系统必须验证绩效评估的合计总分能够根据配置的维度权重动态、实时地计算。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "05-绩效评估.md §④信息结构",
+          "05-绩效评估.md §③界面原型",
+          "05-绩效评估.md §①核心功能"
+        ]
+      },
+      {
+        "id": "ASSERT-034",
+        "fact_ids": [
+          "FACT-095",
+          "FACT-150"
+        ],
+        "assertion_text": "系统必须验证绩效评估评分弹窗在展示分值时，能够联动展示该分值区间对应的标准行为描述。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "05-绩效评估.md §①核心功能",
+          "05-绩效评估.md §③界面原型"
+        ]
+      },
+      {
+        "id": "ASSERT-035",
+        "fact_ids": [
+          "FACT-105",
+          "FACT-136",
+          "FACT-137",
+          "FACT-133"
+        ],
+        "assertion_text": "系统必须验证在情景测试、AI深度访谈、360评估等模块的管理端，根据登录用户角色（超管/部门领导）实施严格的数据权限隔离与脱敏。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "06-情景测试.md §③管理端区域划分",
+          "07-AI深度访谈.md §③部门领导视图",
+          "09-绩效综合报告.md §②核心权限与查看逻辑",
+          "08-360评估.md §⑤页面初始化"
+        ]
+      },
+      {
+        "id": "ASSERT-036",
+        "fact_ids": [
+          "FACT-113",
+          "FACT-118"
+        ],
+        "assertion_text": "系统必须验证360°评估的综合分是根据多维度评分及各评价视角加权平均计算得出（1-5分制），且部门领导无法查看“上级评”的具体得分细节。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "08-360评估.md §①核心功能",
+          "08-360评估.md §⑤周期开启与下发事件"
+        ]
+      },
+      {
+        "id": "ASSERT-037",
+        "fact_ids": [
+          "FACT-117",
+          "FACT-103"
+        ],
+        "assertion_text": "系统必须验证360°评估评分提交后不可自行修改，且管理端不可篡改已提交报告的分数。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "08-360评估.md §②功能边界",
+          "06-情景测试.md §②功能边界"
+        ]
+      },
+      {
+        "id": "ASSERT-038",
+        "fact_ids": [
+          "FACT-122",
+          "FACT-123",
+          "FACT-124"
+        ],
+        "assertion_text": "系统必须验证绩效综合报告的综合评分与人才标签仅在四个模块（05、06、07、08）均完成（4/4）后触发最终加权计算并展示。",
+        "assertion_type": "data_rule",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "09-绩效综合报告.md §④信息结构"
+        ]
+      },
+      {
+        "id": "ASSERT-039",
+        "fact_ids": [
+          "FACT-127",
+          "FACT-128"
+        ],
+        "assertion_text": "系统必须验证绩效综合报告在员工未开始（0/4）或部分完成（如3/4）时，执行正确的默认处理规则（分值默认0，标签归“待关注”或仅对已完成项加权）。",
+        "assertion_type": "error_handling",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "09-绩效综合报告.md §⑤异常与极端情况处理"
+        ]
+      },
+      {
+        "id": "ASSERT-040",
+        "fact_ids": [
+          "FACT-125",
+          "FACT-126",
+          "FACT-159"
+        ],
+        "assertion_text": "系统必须验证绩效综合报告的批量导出功能采用异步队列方式生成PDF，并将生成的压缩包推送至下载中心，禁止前端同步阻塞下载。",
+        "assertion_type": "performance",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "09-绩效综合报告.md §⑤绩效综合报告批量异步导出事件"
+        ]
+      },
+      {
+        "id": "ASSERT-041",
+        "fact_ids": [
+          "FACT-120",
+          "FACT-121"
+        ],
+        "assertion_text": "系统必须验证绩效综合报告视图的权限控制：超管可追溯全公司历史周期，部门领导仅可追溯本部门，普通员工仅能查看本人报告。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "09-绩效综合报告.md §①核心功能"
+        ]
+      },
+      {
+        "id": "ASSERT-042",
+        "fact_ids": [
+          "FACT-085"
+        ],
+        "assertion_text": "系统必须验证在盘点任务计划批量下发任务时，强制读取02模块当前的最新组织架构，并生成该项目专属的参评人员快照名单，后续操作以此名单为准。",
+        "assertion_type": "data_rule",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §⑤新增事件"
+        ]
+      },
+      {
+        "id": "ASSERT-043",
+        "fact_ids": [
+          "FACT-039",
+          "FACT-037"
+        ],
+        "assertion_text": "系统必须验证当周期创建规则开关由[启用]切换至[禁用]时，系统仅挂起未来的自动下发计划，不影响已生成的任务。",
+        "assertion_type": "state_transition",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤3.周期创建规则启用与变更事件"
+        ]
+      },
+      {
+        "id": "ASSERT-044",
+        "fact_ids": [
+          "FACT-017",
+          "FACT-018"
+        ],
+        "assertion_text": "系统必须验证周期创建规则中的“下发层级范围”和“必考环节”配置能够正确控制任务分发逻辑和员工个人任务进度的映射。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §③3.周期创建规则Tab"
+        ]
+      },
+      {
+        "id": "ASSERT-045",
+        "fact_ids": [
+          "FACT-037"
+        ],
+        "assertion_text": "系统必须验证岗位能力标准的AI提取维度功能，在用户点击按钮时，能正确拼接岗位JD与提示词并调用绑定的AI模型。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤2.岗位能力标准与AI提取事件"
+        ]
+      },
+      {
+        "id": "ASSERT-046",
+        "fact_ids": [
+          "FACT-071"
+        ],
+        "assertion_text": "系统必须验证人员变动对比统计卡片中的“净变化”数值等于“新增人数”减去“离职人数”。",
+        "assertion_type": "data_rule",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "03-人员变动对比.md §③界面原型"
+        ]
+      },
+      {
+        "id": "ASSERT-047",
+        "fact_ids": [
+          "FACT-109",
+          "FACT-110"
+        ],
+        "assertion_text": "系统必须验证AI深度访谈的综合出题机制，能动态抽取配置中心的访谈规则与岗位能力标准进行交叉组合出题，并在访谈完成后自动输出5个维度的分值、综合分及AI总评语。",
+        "assertion_type": "functional",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "07-AI深度访谈.md §⑤开启访谈与AI综合出题",
+          "07-AI深度访谈.md §⑤访谈交卷与数据回传"
+        ]
+      },
+      {
+        "id": "ASSERT-048",
+        "fact_ids": [
+          "FACT-164"
+        ],
+        "assertion_text": "系统必须验证周期创建规则中必考环节的变更能够动态影响任务表结构映射，自动在视图和员工待办中追加或移除相应模块。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤3.周期创建规则事件"
+        ]
+      },
+      {
+        "id": "ASSERT-049",
+        "fact_ids": [
+          "FACT-131",
+          "FACT-132"
+        ],
+        "assertion_text": "系统必须验证人员变动对比功能仅对比人员基础属性的变化，不对比各周期的绩效评估、情景测试等业务产出数据，且严格基于已归档的历史快照。",
+        "assertion_type": "compatibility",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "03-人员变动对比.md §②功能边界"
+        ]
+      },
+      {
+        "id": "ASSERT-050",
+        "fact_ids": [
+          "FACT-116",
+          "FACT-053"
+        ],
+        "assertion_text": "系统必须验证360°评估的评估关系（上级、同级、下级）是根据组织架构自动确定并生成的。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "08-360评估.md §②功能边界",
+          "02-人员架构管理.md §①下游关联模块"
+        ]
+      },
+      {
+        "id": "ASSERT-051",
+        "fact_ids": [
+          "FACT-098"
+        ],
+        "assertion_text": "系统必须验证在考核截止日期前或未锁档前，部门领导可重复编辑绩效评估评分，且超管具有一键催评权限。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "05-绩效评估.md §②功能边界"
+        ]
+      },
+      {
+        "id": "ASSERT-052",
+        "fact_ids": [
+          "FACT-041"
+        ],
+        "assertion_text": "系统必须验证SJTP题库检索功能在用户输入或切换分类时，前端触发300ms防抖后无刷新过滤当前卡片流。",
+        "assertion_type": "performance",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤4.SJTP题库检索事件"
+        ]
+      },
+      {
+        "id": "ASSERT-053",
+        "fact_ids": [
+          "FACT-149"
+        ],
+        "assertion_text": "系统必须验证员工提交个人任务后，任务状态、部门完成百分比以及超管大盘统计能实时联动刷新。",
+        "assertion_type": "performance",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §⑤个人任务执行交互事件"
+        ]
+      },
+      {
+        "id": "ASSERT-054",
+        "fact_ids": [
+          "FACT-065"
+        ],
+        "assertion_text": "系统必须验证在人员架构数据同步比对时，若发现员工的部门、岗位、现任职级、在职状态发生变化，自动向变动日志表插入一条完整的变更记录。",
+        "assertion_type": "data_rule",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §⑤数据自动同步与快照生成事件"
+        ]
+      },
+      {
+        "id": "ASSERT-055",
+        "fact_ids": [
+          "FACT-114"
+        ],
+        "assertion_text": "系统必须验证360°评估模块中，部门领导仅能查看本部门人员的综合评分及评估结果，且“上级评”分数需锁定不可见。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "08-360评估.md §②功能描述-角色权限"
+        ]
+      },
+      {
+        "id": "ASSERT-056",
+        "fact_ids": [
+          "FACT-115"
+        ],
+        "assertion_text": "系统必须验证普通员工在360°评估模块中，他人无法查看其对具体个人的评分数据。",
+        "assertion_type": "security",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "08-360评估.md §②功能描述-角色权限"
+        ]
+      },
+      {
+        "id": "ASSERT-057",
+        "fact_ids": [
+          "FACT-099"
+        ],
+        "assertion_text": "系统必须验证绩效评估界面提供“仅查看正式员工视图”筛选器，勾选后能正确隐藏未转正人员并提示已排除人数。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "05-绩效评估.md §③界面原型"
+        ]
+      },
+      {
+        "id": "ASSERT-058",
+        "fact_ids": [
+          "FACT-036"
+        ],
+        "assertion_text": "系统必须验证删除360°评估模板时，进行二次确认，并在确认后执行软删除并刷新列表。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §⑤1.360°评估模板管理事件"
+        ]
+      },
+      {
+        "id": "ASSERT-059",
+        "fact_ids": [
+          "FACT-013",
+          "FACT-008"
+        ],
+        "assertion_text": "系统必须验证在运行AI分析生成盘点报告时，能够调用开发者配置中心配置的对应节点的Prompt策略。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §①下游关联模块",
+          "01-开发者配置中心.md §①核心功能"
+        ]
+      },
+      {
+        "id": "ASSERT-060",
+        "fact_ids": [
+          "FACT-011",
+          "FACT-024"
+        ],
+        "assertion_text": "系统必须验证情景测试模块在员工答题时，仅从状态为“启用”的SJTP题库中抽取题目。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §①下游关联模块",
+          "01-开发者配置中心.md §④4.SJTP题库模型"
+        ]
+      },
+      {
+        "id": "ASSERT-061",
+        "fact_ids": [
+          "FACT-091",
+          "FACT-092"
+        ],
+        "assertion_text": "系统必须验证绩效评估模块能正确处理04模块生成的参评人员快照名单中是否包含未转正人员，并执行相应的前置拦截或视图过滤。",
+        "assertion_type": "functional",
+        "risk_level": "high",
+        "review_status": "auto_generated",
+        "source_references": [
+          "05-绩效评估.md §①核心功能"
+        ]
+      },
+      {
+        "id": "ASSERT-062",
+        "fact_ids": [
+          "FACT-102",
+          "FACT-104"
+        ],
+        "assertion_text": "系统必须验证情景测试模块的答题引擎仅在04模块的项目计划状态变更为“进行中”时，才被动激活并对员工可见。",
+        "assertion_type": "state_transition",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "06-情景测试.md §①模块概述",
+          "06-情景测试.md §⑤触发与下发控制"
+        ]
+      },
+      {
+        "id": "ASSERT-063",
+        "fact_ids": [
+          "FACT-157"
+        ],
+        "assertion_text": "系统必须验证绩效综合报告中SJTP情景测试部分能够展示心理/人格类型（如：INTJ-A）。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "09-绩效综合报告.md §③个人综合测评视图"
+        ]
+      },
+      {
+        "id": "ASSERT-064",
+        "fact_ids": [
+          "FACT-165",
+          "FACT-166"
+        ],
+        "assertion_text": "系统必须验证绩效评估体系中动态维度名称最大长度为30字符，维度满分默认值为100。",
+        "assertion_type": "validation",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④5.绩效评估与等级体系"
+        ]
+      },
+      {
+        "id": "ASSERT-065",
+        "fact_ids": [
+          "FACT-148"
+        ],
+        "assertion_text": "系统必须验证人员架构管理中员工年龄字段的输入范围为18-65的整数。",
+        "assertion_type": "validation",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §④信息结构"
+        ]
+      },
+      {
+        "id": "ASSERT-066",
+        "fact_ids": [
+          "FACT-147"
+        ],
+        "assertion_text": "系统必须验证360°评估模板的满分分值默认值为100分。",
+        "assertion_type": "validation",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④1.360°评估模板"
+        ]
+      },
+      {
+        "id": "ASSERT-067",
+        "fact_ids": [
+          "FACT-010",
+          "FACT-094"
+        ],
+        "assertion_text": "系统必须验证绩效评估模块的三层级考评体系及其默认权重（结果40%，过程50%，态度10%）能够被正确配置和应用。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §①下游关联模块",
+          "05-绩效评估.md §①核心功能"
+        ]
+      },
+      {
+        "id": "ASSERT-068",
+        "fact_ids": [
+          "FACT-140"
+        ],
+        "assertion_text": "系统必须验证周期创建规则中，若未选择特定“下发绑定岗位”，则默认面向全员下发。",
+        "assertion_type": "data_rule",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④3.考核周期规则"
+        ]
+      },
+      {
+        "id": "ASSERT-069",
+        "fact_ids": [
+          "FACT-029"
+        ],
+        "assertion_text": "系统必须验证AI提示词配置中绑定的智能体节点名称为系统内嵌的固定值（SJTP测评分析、AI访谈评估、报告总结生成），不可更改。",
+        "assertion_type": "validation",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④7.AI提示词元配置"
+        ]
+      },
+      {
+        "id": "ASSERT-070",
+        "fact_ids": [
+          "FACT-030"
+        ],
+        "assertion_text": "系统必须验证AI提示词配置中绑定的模型版本为预设选项（如GPT-4o, GPT-4-turbo等），不支持任意输入。",
+        "assertion_type": "validation",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④7.AI提示词元配置"
+        ]
+      },
+      {
+        "id": "ASSERT-071",
+        "fact_ids": [
+          "FACT-162",
+          "FACT-163"
+        ],
+        "assertion_text": "系统必须验证岗位能力标准中L1-L5级别描述的每级最大字符数为1000，并支持输入大段岗位JD文本。",
+        "assertion_type": "validation",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④2.岗位能力胜任力标准"
+        ]
+      },
+      {
+        "id": "ASSERT-072",
+        "fact_ids": [
+          "FACT-023"
+        ],
+        "assertion_text": "系统必须验证SJTP题库中可以标记一个或多个选项为“推荐高分答案”并作为答题比对基准。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §④4.SJTP题库模型"
+        ]
+      },
+      {
+        "id": "ASSERT-073",
+        "fact_ids": [
+          "FACT-167",
+          "FACT-168",
+          "FACT-172"
+        ],
+        "assertion_text": "系统必须验证业务流程的顺序与依赖关系：开发者配置中心为前置准备，盘点任务计划为起点，所有后续评估模块在项目上下文中执行，最终汇总至绩效综合报告。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §①在整体业务流程中的定位",
+          "04-盘点任务计划.md §①在整体业务流程中的定位",
+          "09-绩效综合报告.md §①在整体业务流程中的定位"
+        ]
+      },
+      {
+        "id": "ASSERT-074",
+        "fact_ids": [
+          "FACT-019",
+          "FACT-020",
+          "FACT-141"
+        ],
+        "assertion_text": "系统必须验证周期创建规则中的“超管可见全量环节”和“部门领导查看范围”控制项能够正确影响对应角色的视图数据权限。",
+        "assertion_type": "security",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §③3.周期创建规则Tab",
+          "01-开发者配置中心.md §④3.考核周期规则"
+        ]
+      },
+      {
+        "id": "ASSERT-075",
+        "fact_ids": [
+          "FACT-129"
+        ],
+        "assertion_text": "系统必须验证个人任务进度的“整体任务状态”标签能够正确反映“全部完成”、“部分完成”或“存在超时告警”三种状态。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §④个人任务进度模型"
+        ]
+      },
+      {
+        "id": "ASSERT-076",
+        "fact_ids": [
+          "FACT-130"
+        ],
+        "assertion_text": "系统必须验证绩效评估体系的默认等级分数区间配置为：S≥95, A:85-94, B:75-84, C:60-74, D<60。",
+        "assertion_type": "data_rule",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §③5.绩效评估体系Tab"
+        ]
+      },
+      {
+        "id": "ASSERT-077",
+        "fact_ids": [
+          "FACT-153",
+          "FACT-154"
+        ],
+        "assertion_text": "系统必须验证人员架构管理中“岗位适配自评”和“人才标签”字段的数据来自下游模块的同步回填。",
+        "assertion_type": "data_rule",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §④信息结构"
+        ]
+      },
+      {
+        "id": "ASSERT-078",
+        "fact_ids": [
+          "FACT-016",
+          "FACT-022"
+        ],
+        "assertion_text": "系统必须验证360°评估模板卡片能够清晰标识其启用的评估关系组合（如【自评】、【上级评】等）。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §③1.评估维度体系Tab",
+          "01-开发者配置中心.md §④1.360°评估模板信息结构"
+        ]
+      },
+      {
+        "id": "ASSERT-079",
+        "fact_ids": [
+          "FACT-152"
+        ],
+        "assertion_text": "系统必须验证岗位能力标准界面以渐变色块矩阵形式展示L1至L5五个层级的能力特征。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §③2.岗位能力标准Tab"
+        ]
+      },
+      {
+        "id": "ASSERT-080",
+        "fact_ids": [
+          "FACT-061",
+          "FACT-062"
+        ],
+        "assertion_text": "系统必须验证人员架构管理中员工的“转正状态”和“在职状态”字段默认值分别为“已转正”和“在职”。",
+        "assertion_type": "validation",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §④信息结构"
+        ]
+      },
+      {
+        "id": "ASSERT-081",
+        "fact_ids": [
+          "FACT-067",
+          "FACT-073",
+          "FACT-074",
+          "FACT-075",
+          "FACT-076"
+        ],
+        "assertion_text": "系统必须验证人员变动对比的后台比对算法逻辑：通过员工ID全外连接快照，正确识别新增、离职、调岗人员。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "03-人员变动对比.md §①模块概述",
+          "03-人员变动对比.md §⑤查询事件"
+        ]
+      },
+      {
+        "id": "ASSERT-082",
+        "fact_ids": [
+          "FACT-107",
+          "FACT-109"
+        ],
+        "assertion_text": "系统必须验证AI深度访谈能够智能综合抽取配置中心的访谈规则与岗位能力标准进行动态出题。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "07-AI深度访谈.md §①核心功能",
+          "07-AI深度访谈.md §⑤开启访谈与AI综合出题"
+        ]
+      },
+      {
+        "id": "ASSERT-083",
+        "fact_ids": [
+          "FACT-155",
+          "FACT-156",
+          "FACT-106"
+        ],
+        "assertion_text": "系统必须验证AI深度访谈详情弹窗能够展示100分制综合评分、5大核心维度分值及AI总评语。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "07-AI深度访谈.md §③详情弹窗区",
+          "07-AI深度访谈.md §④信息结构",
+          "07-AI深度访谈.md §①核心功能"
+        ]
+      },
+      {
+        "id": "ASSERT-084",
+        "fact_ids": [
+          "FACT-158"
+        ],
+        "assertion_text": "系统必须验证360°评估详情弹窗中展示的胜任力评估指标包含专业知识、主动性、学习能力等，且各指标满分为5.0分制。",
+        "assertion_type": "validation",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "08-360评估.md §③详情弹窗区"
+        ]
+      },
+      {
+        "id": "ASSERT-085",
+        "fact_ids": [
+          "FACT-160"
+        ],
+        "assertion_text": "系统必须验证超管查看绩效综合报告的综合看板大盘时，能够平铺展示所有下发部门的卡片，包含部门级别评级标签和任务完成率。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "09-绩效综合报告.md §③超管-综合看板大盘视图"
+        ]
+      },
+      {
+        "id": "ASSERT-086",
+        "fact_ids": [
+          "FACT-058"
+        ],
+        "assertion_text": "系统必须验证人员架构中员工的“转正状态”仅影响绩效评估模块的权限，不影响其他模块。",
+        "assertion_type": "data_rule",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "02-人员架构管理.md §②功能边界"
+        ]
+      },
+      {
+        "id": "ASSERT-087",
+        "fact_ids": [
+          "FACT-108"
+        ],
+        "assertion_text": "系统必须验证AI深度访谈的对话轮次为8轮。",
+        "assertion_type": "validation",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "07-AI深度访谈.md §③普通员工视图"
+        ]
+      },
+      {
+        "id": "ASSERT-088",
+        "fact_ids": [
+          "FACT-134",
+          "FACT-135"
+        ],
+        "assertion_text": "系统必须验证360评估和AI深度访谈模块的统计概览看板能正确展示评估/访谈人数、已完成、完成率、平均分等指标。",
+        "assertion_type": "functional",
+        "risk_level": "low",
+        "review_status": "auto_generated",
+        "source_references": [
+          "08-360评估.md §③评估结果汇总列表区",
+          "07-AI深度访谈.md §③管理员视图"
+        ]
+      },
+      {
+        "id": "ASSERT-089",
+        "fact_ids": [
+          "FACT-001",
+          "FACT-167"
+        ],
+        "assertion_text": "系统必须验证开发者配置中心能够作为统一的配置管理中心，为人才盘点系统所有后续测评模块提供基础配置数据。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "01-开发者配置中心.md §①模块概述",
+          "01-开发者配置中心.md §①在整体业务流程中的定位"
+        ]
+      },
+      {
+        "id": "ASSERT-090",
+        "fact_ids": [
+          "FACT-077"
+        ],
+        "assertion_text": "系统必须验证盘点任务计划模块能够创建和管理人才盘点项目，并支持联动配置中心的规则自动或手动下发考核任务。",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": [
+          "04-盘点任务计划.md §①模块概述"
+        ]
+      }
+    ],
+    "goals": [
+      {
+        "goal": "验证: 系统必须验证360°评估模板名称的最大长度不超过50字符，并且在同组织同分类下不允许重复。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证创建或编辑360°评估模板时，至少勾选一种评估关系标签（自评、上级评、下级评、同级评）。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估体系的所有动态维度权重之和必须严格等于100%，若不等于则阻止保存并提示。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估体系中S/A/B/C/D等级分数区间是连续无重叠且无断层的，即前一级的下限必须等于后一级的上限加1。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证AI访谈模板名称的最大长度不超过50字符，并且全局唯一。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证AI访谈模板中所有大类（能力/潜力权重 + 动机风格权重 + 核心价值观权重）的权重之和必须严格等于100%。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证AI访谈模板中，隶属于同一大类下的所有二级维度权重之和必须等于该大类的总权重，否则提示权重脱节。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证保存AI访谈模板时，至少勾选了一个部门-岗位。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证AI访谈模板中每个二级维度下至少配置了1个Q1基准引导提问语。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证保存AI提示词时，Prompt文本中完整包含了系统运行依赖的占位符变量 {user_data} 和 {interview_text}。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证周期创建规则中笔试时长、互评时长为1-30的正整数（单位：工作日），输入不合法时阻止提交。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证SJTP题库题目在“启用”状态下可被评测引擎抽题，在“禁用”状态下前端不可见且不参与抽题。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证SJTP题库Excel导入文件的格式与必填项，若存在错误则中断导入并提示具体错误行号与原因。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证AI提示词配置的接口超时时限（默认10s），若大模型接口在时限内未响应，界面不允许卡死，并强制触发配置的兜底策略（降级模型或切换静态文本池）。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证人员架构数据能够从“仓颉知道3.0”自动同步，并于每天凌晨02:00定时调用接口。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证在每次人员架构数据同步更新前，自动将上一版本的“部门-岗位-人员”数据打包成带时间戳与版本号的历史快照。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证仅“在职”且“已转正”的员工可参与绩效评估；离职员工自动从绩效评估对象中排除。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证人员变动对比功能中，所选结束周期的时间戳必须晚于起始周期的时间戳。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证盘点项目名称的最大长度不超过50字符，且在同一周期内不可重复。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证盘点项目的考核结束时间必须晚于考核开始时间。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证创建盘点项目时至少选择1个覆盖部门。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证当盘点任务计划的状态变更为“进行中”时，若周期规则开启了自动下发且到达考核开始时间，系统自动批量下发任务给符合条件的人员。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证当服务器系统时间到达盘点项目的考核结束时间时，自动关闭该项目下所有员工端的填报、测评与访谈入口。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证考核超时时的处理规则：未提交的他评问卷作废并按已提交问卷计算；进行中的答题/访谈强制收卷并推给AI阶段性评分；未开始的单项得分归0分。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估模块的评分任务仅在超管将周期状态切换为“开启”后，才会下发并激活部门领导端的评分列表。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估中，未转正员工无法打开评分弹窗；已转正员工的单项分数必须在各配置项规定的范围内。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估的合计总分能够根据配置的维度权重动态、实时地计算。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估评分弹窗在展示分值时，能够联动展示该分值区间对应的标准行为描述。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效综合报告在员工未开始（0/4）或部分完成（如3/4）时，执行正确的默认处理规则（分值默认0，标签归“待关注”或仅对已完成项加权）。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效综合报告的批量导出功能采用异步队列方式生成PDF，并将生成的压缩包推送至下载中心，禁止前端同步阻塞下载。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证当周期创建规则开关由[启用]切换至[禁用]时，系统仅挂起未来的自动下发计划，不影响已生成的任务。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证周期创建规则中的“下发层级范围”和“必考环节”配置能够正确控制任务分发逻辑和员工个人任务进度的映射。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证岗位能力标准的AI提取维度功能，在用户点击按钮时，能正确拼接岗位JD与提示词并调用绑定的AI模型。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证人员变动对比统计卡片中的“净变化”数值等于“新增人数”减去“离职人数”。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证AI深度访谈的综合出题机制，能动态抽取配置中心的访谈规则与岗位能力标准进行交叉组合出题，并在访谈完成后自动输出5个维度的分值、综合分及AI总评语。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证周期创建规则中必考环节的变更能够动态影响任务表结构映射，自动在视图和员工待办中追加或移除相应模块。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证人员变动对比功能仅对比人员基础属性的变化，不对比各周期的绩效评估、情景测试等业务产出数据，且严格基于已归档的历史快照。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证360°评估的评估关系（上级、同级、下级）是根据组织架构自动确定并生成的。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证在考核截止日期前或未锁档前，部门领导可重复编辑绩效评估评分，且超管具有一键催评权限。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证SJTP题库检索功能在用户输入或切换分类时，前端触发300ms防抖后无刷新过滤当前卡片流。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证员工提交个人任务后，任务状态、部门完成百分比以及超管大盘统计能实时联动刷新。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证在人员架构数据同步比对时，若发现员工的部门、岗位、现任职级、在职状态发生变化，自动向变动日志表插入一条完整的变更记录。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估界面提供“仅查看正式员工视图”筛选器，勾选后能正确隐藏未转正人员并提示已排除人数。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证删除360°评估模板时，进行二次确认，并在确认后执行软删除并刷新列表。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证在运行AI分析生成盘点报告时，能够调用开发者配置中心配置的对应节点的Prompt策略。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证情景测试模块在员工答题时，仅从状态为“启用”的SJTP题库中抽取题目。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估模块能正确处理04模块生成的参评人员快照名单中是否包含未转正人员，并执行相应的前置拦截或视图过滤。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证情景测试模块的答题引擎仅在04模块的项目计划状态变更为“进行中”时，才被动激活并对员工可见。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效综合报告中SJTP情景测试部分能够展示心理/人格类型（如：INTJ-A）。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估体系中动态维度名称最大长度为30字符，维度满分默认值为100。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证人员架构管理中员工年龄字段的输入范围为18-65的整数。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证360°评估模板的满分分值默认值为100分。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估模块的三层级考评体系及其默认权重（结果40%，过程50%，态度10%）能够被正确配置和应用。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证周期创建规则中，若未选择特定“下发绑定岗位”，则默认面向全员下发。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证AI提示词配置中绑定的智能体节点名称为系统内嵌的固定值（SJTP测评分析、AI访谈评估、报告总结生成），不可更改。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证AI提示词配置中绑定的模型版本为预设选项（如GPT-4o, GPT-4-turbo等），不支持任意输入。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证岗位能力标准中L1-L5级别描述的每级最大字符数为1000，并支持输入大段岗位JD文本。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证SJTP题库中可以标记一个或多个选项为“推荐高分答案”并作为答题比对基准。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证业务流程的顺序与依赖关系：开发者配置中心为前置准备，盘点任务计划为起点，所有后续评估模块在项目上下文中执行，最终汇总至绩效综合报告。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证周期创建规则中的“超管可见全量环节”和“部门领导查看范围”控制项能够正确影响对应角色的视图数据权限。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证个人任务进度的“整体任务状态”标签能够正确反映“全部完成”、“部分完成”或“存在超时告警”三种状态。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证绩效评估体系的默认等级分数区间配置为：S≥95, A:85-94, B:75-84, C:60-74, D<60。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证人员架构管理中“岗位适配自评”和“人才标签”字段的数据来自下游模块的同步回填。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证360°评估模板卡片能够清晰标识其启用的评估关系组合（如【自评】、【上级评】等）。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证岗位能力标准界面以渐变色块矩阵形式展示L1至L5五个层级的能力特征。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证人员架构管理中员工的“转正状态”和“在职状态”字段默认值分别为“已转正”和“在职”。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证人员变动对比的后台比对算法逻辑：通过员工ID全外连接快照，正确识别新增、离职、调岗人员。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证AI深度访谈能够智能综合抽取配置中心的访谈规则与岗位能力标准进行动态出题。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证AI深度访谈详情弹窗能够展示100分制综合评分、5大核心维度分值及AI总评语。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证360°评估详情弹窗中展示的胜任力评估指标包含专业知识、主动性、学习能力等，且各指标满分为5.0分制。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证超管查看绩效综合报告的综合看板大盘时，能够平铺展示所有下发部门的卡片，包含部门级别评级标签和任务完成率。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证人员架构中员工的“转正状态”仅影响绩效评估模块的权限，不影响其他模块。",
+        "priority": "high"
+      },
+      {
+        "goal": "验证: 系统必须验证AI深度访谈的对话轮次为8轮。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证360评估和AI深度访谈模块的统计概览看板能正确展示评估/访谈人数、已完成、完成率、平均分等指标。",
+        "priority": "low"
+      },
+      {
+        "goal": "验证: 系统必须验证开发者配置中心能够作为统一的配置管理中心，为人才盘点系统所有后续测评模块提供基础配置数据。",
+        "priority": "medium"
+      },
+      {
+        "goal": "验证: 系统必须验证盘点任务计划模块能够创建和管理人才盘点项目，并支持联动配置中心的规则自动或手动下发考核任务。",
+        "priority": "medium"
+      }
+    ],
+    "review_items": [
+      "[高风险需人工确认] ASSERT-001: 系统必须验证访问开发者配置中心的用户身份，仅允许超级管理员及具备特殊授权的组织HR专家角色访问，普通员工与部门管理人员无权访问。 (源自事实: FACT-014)",
+      "[高风险需人工确认] ASSERT-013: 系统必须验证配置变更的生效范围：仅对变更后新发起的盘点周期、考核任务、AI访谈生效，当前处于“进行中”或“已归档”的盘点数据和报告不受影响。 (源自事实: FACT-015)",
+      "[高风险需人工确认] ASSERT-014: 系统必须验证非管理员或组织HR专家角色用户尝试通过URL访问配置后台时，将其重定向至403越界报错页。 (源自事实: FACT-049)",
+      "[高风险需人工确认] ASSERT-021: 系统必须验证对人员架构模块中员工数据的本地“编辑”操作仅限于辅助业务标签，禁止修改员工核心基础字段。 (源自事实: FACT-057)",
+      "[高风险需人工确认] ASSERT-022: 系统必须验证人员架构模块的访问权限：普通员工不可访问；部门领导仅可查看本部门及下属部门的员工与岗位画像。 (源自事实: FACT-060, FACT-059)",
+      "[高风险需人工确认] ASSERT-030: 系统必须根据用户角色（超管/部门领导/普通员工）实施数据隔离，超管可看全局和所有个人进度，部门领导仅看本部门，普通员工仅看个人任务。 (源自事实: FACT-078, FACT-079, FACT-080)",
+      "[高风险需人工确认] ASSERT-035: 系统必须验证在情景测试、AI深度访谈、360评估等模块的管理端，根据登录用户角色（超管/部门领导）实施严格的数据权限隔离与脱敏。 (源自事实: FACT-105, FACT-136, FACT-137, FACT-133)",
+      "[高风险需人工确认] ASSERT-036: 系统必须验证360°评估的综合分是根据多维度评分及各评价视角加权平均计算得出（1-5分制），且部门领导无法查看“上级评”的具体得分细节。 (源自事实: FACT-113, FACT-118)",
+      "[高风险需人工确认] ASSERT-037: 系统必须验证360°评估评分提交后不可自行修改，且管理端不可篡改已提交报告的分数。 (源自事实: FACT-117, FACT-103)",
+      "[高风险需人工确认] ASSERT-038: 系统必须验证绩效综合报告的综合评分与人才标签仅在四个模块（05、06、07、08）均完成（4/4）后触发最终加权计算并展示。 (源自事实: FACT-122, FACT-123, FACT-124)",
+      "[高风险需人工确认] ASSERT-041: 系统必须验证绩效综合报告视图的权限控制：超管可追溯全公司历史周期，部门领导仅可追溯本部门，普通员工仅能查看本人报告。 (源自事实: FACT-120, FACT-121)",
+      "[高风险需人工确认] ASSERT-042: 系统必须验证在盘点任务计划批量下发任务时，强制读取02模块当前的最新组织架构，并生成该项目专属的参评人员快照名单，后续操作以此名单为准。 (源自事实: FACT-085)",
+      "[高风险需人工确认] ASSERT-055: 系统必须验证360°评估模块中，部门领导仅能查看本部门人员的综合评分及评估结果，且“上级评”分数需锁定不可见。 (源自事实: FACT-114)",
+      "[高风险需人工确认] ASSERT-056: 系统必须验证普通员工在360°评估模块中，他人无法查看其对具体个人的评分数据。 (源自事实: FACT-115)"
+    ]
+  }
+}

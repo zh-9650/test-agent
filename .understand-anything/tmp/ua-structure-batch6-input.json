@@ -1,0 +1,28 @@
+{
+  "projectRoot": "C:\\Users\\17381\\Desktop\\test_agent",
+  "batchFiles": [
+    {
+      "path": "core/dependency.py",
+      "language": "python",
+      "sizeLines": 129,
+      "fileCategory": "code"
+    },
+    {
+      "path": "core/parallel_executor.py",
+      "language": "python",
+      "sizeLines": 107,
+      "fileCategory": "code"
+    },
+    {
+      "path": "tests/core/test_dependency.py",
+      "language": "python",
+      "sizeLines": 142,
+      "fileCategory": "code"
+    }
+  ],
+  "batchImportData": {
+    "core/dependency.py": [],
+    "core/parallel_executor.py": ["core.dependency"],
+    "tests/core/test_dependency.py": ["core.dependency"]
+  }
+}

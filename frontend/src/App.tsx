@@ -4,6 +4,7 @@ import Monitor from './pages/Monitor';
 import Report from './pages/Report';
 import TaskHistory from './pages/TaskHistory';
 import MemoryManager from './pages/MemoryManager';
+import AnalysisPackagePage from './pages/AnalysisPackage';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
         <Route path="/" element={<TaskCreate />} />
         <Route path="/monitor/:taskId" element={<Monitor />} />
         <Route path="/report/:taskId" element={<Report />} />
+        <Route path="/analysis/:taskId" element={<AnalysisPackagePage />} />
         <Route path="/history" element={<TaskHistory />} />
         <Route path="/memory" element={<MemoryManager />} />
       </Routes>

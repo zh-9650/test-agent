@@ -330,6 +330,7 @@ async def extract_elements_via_cdp(page: Any, cdp_session: Any) -> list[dict[str
 
         required_node = _get_ax_property(node, "required") or False
         required = required_node if isinstance(required_node, bool) else str(required_node).lower() == "true"
+        required = required or "required" in attrs
 
         checked_val = _get_ax_property(node, "checked")
         if checked_val in (True, "true", "True"):
@@ -367,6 +368,22 @@ async def extract_elements_via_cdp(page: Any, cdp_session: Any) -> list[dict[str
 
         if el_type == "input" and input_type:
             el["input_type"] = input_type
+        if el_type == "select":
+            options = await _evaluate_backend_node(
+                cdp_session,
+                backend_id,
+                "function() { return Array.from(this.options || []).map(o => o.text.trim()).filter(Boolean).slice(0, 20); }",
+            )
+            if isinstance(options, list):
+                el["options"] = options
+        if el_type == "textarea":
+            value_text = await _evaluate_backend_node(
+                cdp_session,
+                backend_id,
+                "function() { return this.value || ''; }",
+            )
+            if isinstance(value_text, str):
+                el["value"] = value_text
         if placeholder:
             el["placeholder"] = placeholder
         if label and label != placeholder:
@@ -378,9 +395,43 @@ async def extract_elements_via_cdp(page: Any, cdp_session: Any) -> list[dict[str
     return elements
 
 
+async def _evaluate_backend_node(
+    cdp_session: Any,
+    backend_node_id: int,
+    function_declaration: str,
+) -> Any:
+    if not cdp_session or not backend_node_id:
+        return None
+
+    resolved = await resolve_node(cdp_session, backend_node_id)
+    object_id = (resolved or {}).get("objectId")
+    if not object_id:
+        return None
+
+    try:
+        result = await cdp_session.send("Runtime.callFunctionOn", {
+            "objectId": object_id,
+            "functionDeclaration": function_declaration,
+            "returnByValue": True,
+        })
+        remote = result.get("result", {})
+        return remote.get("value")
+    except Exception:
+        return None
+    finally:
+        await release_object(cdp_session, object_id)
+
+
 def _ax_role_to_type(role: str, attrs: dict[str, str]) -> str:
     """Map AX role to element type string."""
     tag = attrs.get("tagName", "").lower()
+    input_type = attrs.get("type", "text").lower()
+    if tag == "textarea":
+        return "textarea"
+    if tag == "input" and input_type == "file":
+        return "input"
+    if tag == "select":
+        return "select"
     mapping = {
         "textbox": "input",
         "combobox": "select",
@@ -394,7 +445,6 @@ def _ax_role_to_type(role: str, attrs: dict[str, str]) -> str:
     }
     result = mapping.get(role, tag or role)
     if result == "input":
-        input_type = attrs.get("type", "text")
         if input_type in ("submit", "button", "reset"):
             return "button"
     return result

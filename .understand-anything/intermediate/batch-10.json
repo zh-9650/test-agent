@@ -1,0 +1,142 @@
+{
+    "nodes":  [
+                  {
+                      "id":  "document:data/fixtures/README.md",
+                      "name":  "README.md",
+                      "tags":  [
+                                   "docs",
+                                   "fixtures"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/README.md",
+                      "type":  "document",
+                      "summary":  "测试夹具数据说明"
+                  },
+                  {
+                      "id":  "document:data/fixtures/changelog_aitalk.md",
+                      "name":  "changelog_aitalk.md",
+                      "tags":  [
+                                   "fixture",
+                                   "changelog"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/changelog_aitalk.md",
+                      "type":  "document",
+                      "summary":  "AI 对话产品的变更日志夹具"
+                  },
+                  {
+                      "id":  "document:data/fixtures/changelog_automation_exercise.md",
+                      "name":  "changelog_automation_exercise.md",
+                      "tags":  [
+                                   "fixture",
+                                   "changelog"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/changelog_automation_exercise.md",
+                      "type":  "document",
+                      "summary":  "自动化测试练习的变更日志夹具"
+                  },
+                  {
+                      "id":  "document:data/fixtures/prd_adversarial.md",
+                      "name":  "prd_adversarial.md",
+                      "tags":  [
+                                   "fixture",
+                                   "prd"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/prd_adversarial.md",
+                      "type":  "document",
+                      "summary":  "对抗性测试 PRD 夹具"
+                  },
+                  {
+                      "id":  "document:data/fixtures/prd_aitalk.md",
+                      "name":  "prd_aitalk.md",
+                      "tags":  [
+                                   "fixture",
+                                   "prd"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/prd_aitalk.md",
+                      "type":  "document",
+                      "summary":  "AI 对话产品 PRD 夹具"
+                  },
+                  {
+                      "id":  "document:data/fixtures/prd_automation_exercise.md",
+                      "name":  "prd_automation_exercise.md",
+                      "tags":  [
+                                   "fixture",
+                                   "prd"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/prd_automation_exercise.md",
+                      "type":  "document",
+                      "summary":  "自动化测试练习 PRD 夹具"
+                  },
+                  {
+                      "id":  "document:data/fixtures/prd_minimal.md",
+                      "name":  "prd_minimal.md",
+                      "tags":  [
+                                   "fixture",
+                                   "prd"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/prd_minimal.md",
+                      "type":  "document",
+                      "summary":  "最小 PRD 夹具"
+                  },
+                  {
+                      "id":  "document:data/fixtures/prd_purchase.md",
+                      "name":  "prd_purchase.md",
+                      "tags":  [
+                                   "fixture",
+                                   "prd"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/prd_purchase.md",
+                      "type":  "document",
+                      "summary":  "采购系统 PRD 夹具"
+                  },
+                  {
+                      "id":  "config:data/fixtures/swagger_aitalk.yaml",
+                      "name":  "swagger_aitalk.yaml",
+                      "tags":  [
+                                   "fixture",
+                                   "api",
+                                   "swagger"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/swagger_aitalk.yaml",
+                      "type":  "config",
+                      "summary":  "AI 对话 API Swagger 文档"
+                  },
+                  {
+                      "id":  "config:data/fixtures/swagger_automation_exercise.yaml",
+                      "name":  "swagger_automation_exercise.yaml",
+                      "tags":  [
+                                   "fixture",
+                                   "api",
+                                   "swagger"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/swagger_automation_exercise.yaml",
+                      "type":  "config",
+                      "summary":  "自动化测试 API Swagger 文档"
+                  },
+                  {
+                      "id":  "document:data/fixtures/swagger_purchase.txt",
+                      "name":  "swagger_purchase.txt",
+                      "tags":  [
+                                   "fixture",
+                                   "api"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "data/fixtures/swagger_purchase.txt",
+                      "type":  "document",
+                      "summary":  "采购系统 API 文本夹具"
+                  }
+              ],
+    "edges":  [
+
+              ],
+    "batchIndex":  10
+}

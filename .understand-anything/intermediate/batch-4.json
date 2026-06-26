@@ -1,0 +1,439 @@
+{
+  "batchId": 4,
+  "batchName": "frontend TypeScript/React",
+  "description": "前端 TypeScript/React 代码层 — 包含路由、API 客户端、页面组件、Hooks、类型定义",
+  "nodes": [
+    {
+      "id": "file:frontend/src/App.tsx",
+      "type": "file",
+      "label": "App.tsx",
+      "language": "typescriptreact",
+      "summary": "React 应用根组件，使用 react-router-dom 定义路由导航。包含 5 条路由：创建任务(/)、监控(/monitor/:taskId)、报告(/report/:taskId)、历史(/history)、AI记忆管理(/memory)。顶部导航栏通过 Link 组件实现页面切换。"
+    },
+    {
+      "id": "func:App",
+      "type": "function",
+      "parentFile": "frontend/src/App.tsx",
+      "label": "App",
+      "kind": "component",
+      "startLine": 8,
+      "endLine": 25,
+      "summary": "根组件，封装 BrowserRouter 和导航栏，注册 5 个路由页面组件。"
+    },
+    {
+      "id": "file:frontend/src/api/client.ts",
+      "type": "file",
+      "label": "client.ts",
+      "language": "typescript",
+      "summary": "API HTTP 客户端模块，封装 fetch 调用后端 REST 接口。提供 10 个导出函数：createTask/listTasks/getTask/getTaskSteps/getReportUrl/getDiagList/getDiagFile/stopTask/deleteTask/testLayer1。testLayer1 支持 SSE 流式读取（LLM pipeline 进度回调）。"
+    },
+    {
+      "id": "func:createTask",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "createTask",
+      "kind": "api",
+      "startLine": 5,
+      "endLine": 13,
+      "summary": "POST /api/tasks 创建测试任务，返回 Task 对象。"
+    },
+    {
+      "id": "func:listTasks",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "listTasks",
+      "kind": "api",
+      "startLine": 15,
+      "endLine": 19,
+      "summary": "GET /api/tasks 分页查询任务列表，返回 {tasks, total}。"
+    },
+    {
+      "id": "func:getTask",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "getTask",
+      "kind": "api",
+      "startLine": 21,
+      "endLine": 25,
+      "summary": "GET /api/tasks/:taskId 获取单个任务详情。"
+    },
+    {
+      "id": "func:getTaskSteps",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "getTaskSteps",
+      "kind": "api",
+      "startLine": 27,
+      "endLine": 32,
+      "summary": "GET /api/tasks/:taskId/steps 获取任务步骤（可按 testCaseId 过滤）。"
+    },
+    {
+      "id": "func:getReportUrl",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "getReportUrl",
+      "kind": "api",
+      "startLine": 34,
+      "endLine": 36,
+      "summary": "返回报告下载 URL 字符串。"
+    },
+    {
+      "id": "func:getDiagList",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "getDiagList",
+      "kind": "api",
+      "startLine": 54,
+      "endLine": 58,
+      "summary": "GET /api/tasks/:taskId/diag 获取诊断日志阶段列表。"
+    },
+    {
+      "id": "func:getDiagFile",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "getDiagFile",
+      "kind": "api",
+      "startLine": 60,
+      "endLine": 64,
+      "summary": "GET /api/tasks/:taskId/diag/:stage 获取某阶段诊断 JSON。"
+    },
+    {
+      "id": "func:stopTask",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "stopTask",
+      "kind": "api",
+      "startLine": 66,
+      "endLine": 69,
+      "summary": "POST /api/tasks/:taskId/stop 停止运行中的任务。"
+    },
+    {
+      "id": "func:deleteTask",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "deleteTask",
+      "kind": "api",
+      "startLine": 71,
+      "endLine": 74,
+      "summary": "DELETE /api/tasks/:taskId 删除任务。"
+    },
+    {
+      "id": "func:testLayer1",
+      "type": "function",
+      "parentFile": "frontend/src/api/client.ts",
+      "label": "testLayer1",
+      "kind": "api",
+      "startLine": 76,
+      "endLine": 122,
+      "summary": "POST /api/test/layer1 试运行知识库提取 pipeline。使用 ReadableStream SSE 读取进度并回调 onProgress，支持 error/done/done 状态处理。"
+    },
+    {
+      "id": "file:frontend/src/components/DocumentUploader.tsx",
+      "type": "file",
+      "label": "DocumentUploader.tsx",
+      "language": "typescriptreact",
+      "summary": "文档上传组件，支持文件上传(/api/utils/parse-doc)和 URL 抓取(/api/utils/fetch-url)两种方式获取文档内容。提供 textarea 手工编辑回退。Props 包含 label/value/onChange/placeholder/allowUrlFetch/acceptedFormats。"
+    },
+    {
+      "id": "func:DocumentUploader",
+      "type": "function",
+      "parentFile": "frontend/src/components/DocumentUploader.tsx",
+      "label": "DocumentUploader",
+      "kind": "component",
+      "startLine": 12,
+      "endLine": 160,
+      "summary": "上传+抓取+编辑三合一文档输入组件。默认接受 .txt/.md/.json/.yaml/.docx 格式。"
+    },
+    {
+      "id": "file:frontend/src/hooks/useWebSocket.ts",
+      "type": "file",
+      "label": "useWebSocket.ts",
+      "language": "typescript",
+      "summary": "WebSocket React Hook。根据 taskId 自动连接 ws://host/ws/tasks/:taskId，收集 WSMessage 消息数组，返回 {messages, connected, sendStop}。支持自动重连（React effect 依赖 taskId）。"
+    },
+    {
+      "id": "func:useWebSocket",
+      "type": "function",
+      "parentFile": "frontend/src/hooks/useWebSocket.ts",
+      "label": "useWebSocket",
+      "kind": "hook",
+      "startLine": 4,
+      "endLine": 43,
+      "summary": "WebSocket Hook：建立连接、JSON 解析消息、自动清理、暴露 sendStop 停止控制。"
+    },
+    {
+      "id": "file:frontend/src/main.tsx",
+      "type": "file",
+      "label": "main.tsx",
+      "language": "typescriptreact",
+      "summary": "应用入口。使用 createRoot 将 App 挂载到 #root 元素，启用 StrictMode。"
+    },
+    {
+      "id": "file:frontend/src/pages/MemoryManager.tsx",
+      "type": "file",
+      "label": "MemoryManager.tsx",
+      "language": "typescriptreact",
+      "summary": "AI 记忆/知识库管理页面。提供 CRUD 操作：GET /api/memory 列出、DELETE /api/memory/:id 删除、PUT /api/memory/:id 编辑、POST /api/memory 新增。表格展示 scope_type/scope_value/memory_key/memory_value，支持内联编辑。"
+    },
+    {
+      "id": "func:MemoryManager",
+      "type": "function",
+      "parentFile": "frontend/src/pages/MemoryManager.tsx",
+      "label": "MemoryManager",
+      "kind": "page",
+      "startLine": 13,
+      "endLine": 203,
+      "summary": "记忆管理页面。5 个 state：memories/loading/editingId/editForm/isCreating。支持行内编辑、创建表单、确认删除。scope 可选择 global 或 domain。"
+    },
+    {
+      "id": "file:frontend/src/pages/Monitor.tsx",
+      "type": "file",
+      "label": "Monitor.tsx",
+      "language": "typescriptreact",
+      "summary": "实时监控仪表盘。左侧面板展示彩色编码的执行日志（AI思考/操作结果/断言/页面更新等），右侧面板展示最新浏览器截图。进度条显示完成率，支持停止任务操作。任务完成时弹出遮罩引导跳转报告页。"
+    },
+    {
+      "id": "func:Monitor",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Monitor.tsx",
+      "label": "Monitor",
+      "kind": "page",
+      "startLine": 68,
+      "endLine": 334,
+      "summary": "监控主组件：WebSocket 实时日志 + PNG 截图 + 进度条 + 停止按钮 + 完成遮罩。"
+    },
+    {
+      "id": "func:formatMessageData",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Monitor.tsx",
+      "label": "formatMessageData",
+      "kind": "util",
+      "startLine": 27,
+      "endLine": 66,
+      "summary": "格式化 WSMessage 为可读文本，按 msg.type 分类处理（action_result/assertion_result/ai_thinking 等）。"
+    },
+    {
+      "id": "file:frontend/src/pages/Report.tsx",
+      "type": "file",
+      "label": "Report.tsx",
+      "language": "typescriptreact",
+      "summary": "测试报告查看页面，包含测试报告和诊断日志双标签。测试报告标签展示通过/失败统计卡片、按测试用例卡片分组展开步骤详情、断言结果、截图。诊断日志标签展示 9 stage 列表 + JSON 树状查看器。内嵌 TabButton/StatCard/StatusBadge/DiagPanel/JsonTree/JsonNode 组件。"
+    },
+    {
+      "id": "func:Report",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Report.tsx",
+      "label": "Report",
+      "kind": "page",
+      "startLine": 54,
+      "endLine": 308,
+      "summary": "报告主页面：统计数据→测试用例分组→步骤详情。通过 activeTab 切换报告/诊断模式。"
+    },
+    {
+      "id": "func:normalizeStatus",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Report.tsx",
+      "label": "normalizeStatus",
+      "kind": "util",
+      "startLine": 28,
+      "endLine": 34,
+      "summary": "标准化断言状态：pass/passed → passed, fail/failed → failed。"
+    },
+    {
+      "id": "func:getScreenshotUrl",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Report.tsx",
+      "label": "getScreenshotUrl",
+      "kind": "util",
+      "startLine": 42,
+      "endLine": 52,
+      "summary": "截图路径转可显示 URL：base64 直接显示，文件路径提取文件名拼接 /static/screenshots/。"
+    },
+    {
+      "id": "func:DiagPanel",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Report.tsx",
+      "label": "DiagPanel",
+      "kind": "component",
+      "startLine": 313,
+      "endLine": 394,
+      "summary": "诊断日志面板。左侧显示 9 阶段列表（含 node/status/size），右侧展示选中阶段的 JSON 树。"
+    },
+    {
+      "id": "func:JsonTree",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Report.tsx",
+      "label": "JsonTree",
+      "kind": "component",
+      "startLine": 397,
+      "endLine": 403,
+      "summary": "JSON 树根节点渲染器，递归调用 JsonNode。"
+    },
+    {
+      "id": "func:JsonNode",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Report.tsx",
+      "label": "JsonNode",
+      "kind": "component",
+      "startLine": 405,
+      "endLine": 445,
+      "summary": "可展开/折叠的 JSON 节点，支持 null/string/number/boolean/array/object 类型渲染。字符串超 200 字截断。"
+    },
+    {
+      "id": "func:TabButton",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Report.tsx",
+      "label": "TabButton",
+      "kind": "component",
+      "startLine": 450,
+      "endLine": 469,
+      "summary": "标签页切换按钮，active 时显示蓝色下划线和加粗文字。"
+    },
+    {
+      "id": "func:StatCard",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Report.tsx",
+      "label": "StatCard",
+      "kind": "component",
+      "startLine": 471,
+      "endLine": 486,
+      "summary": "统计卡片，显示标签+数值（支持字符串和数字），可自定义颜色。"
+    },
+    {
+      "id": "func:StatusBadge",
+      "type": "function",
+      "parentFile": "frontend/src/pages/Report.tsx",
+      "label": "StatusBadge",
+      "kind": "component",
+      "startLine": 488,
+      "endLine": 509,
+      "summary": "状态徽章，passed/failed/unknown 三色显示。"
+    },
+    {
+      "id": "file:frontend/src/pages/TaskCreate.tsx",
+      "type": "file",
+      "label": "TaskCreate.tsx",
+      "language": "typescriptreact",
+      "summary": "任务创建表单页面。输入目标 URL、任务名称、测试账号（动态增删）、测试规则、关注领域、知识库注入（PRD/Swagger/Prototype/技术文档/Changelog 均通过 DocumentUploader 上传）。支持试运行 Layer 1 pipeline 提取知识库，流式显示进度。"
+    },
+    {
+      "id": "func:TaskCreate",
+      "type": "function",
+      "parentFile": "frontend/src/pages/TaskCreate.tsx",
+      "label": "TaskCreate",
+      "kind": "page",
+      "startLine": 13,
+      "endLine": 301,
+      "summary": "任务创建表单。收集表单数据组装 CreateTaskRequest，调用 createTask 提交，成功后跳转监控页。包含 Layer 1 试运行功能。"
+    },
+    {
+      "id": "func:addAccount",
+      "type": "function",
+      "parentFile": "frontend/src/pages/TaskCreate.tsx",
+      "label": "addAccount",
+      "kind": "handler",
+      "summary": "添加空账号行到 accounts 数组。"
+    },
+    {
+      "id": "func:removeAccount",
+      "type": "function",
+      "parentFile": "frontend/src/pages/TaskCreate.tsx",
+      "label": "removeAccount",
+      "kind": "handler",
+      "summary": "按 index 删除账号行。"
+    },
+    {
+      "id": "func:updateAccount",
+      "type": "function",
+      "parentFile": "frontend/src/pages/TaskCreate.tsx",
+      "label": "updateAccount",
+      "kind": "handler",
+      "summary": "更新指定 index 账号的指定字段。"
+    },
+    {
+      "id": "func:handleSubmit",
+      "type": "function",
+      "parentFile": "frontend/src/pages/TaskCreate.tsx",
+      "label": "handleSubmit",
+      "kind": "handler",
+      "summary": "表单提交处理器：组装 CreateTaskRequest → createTask → navigate 到监控页。"
+    },
+    {
+      "id": "file:frontend/src/pages/TaskHistory.tsx",
+      "type": "file",
+      "label": "TaskHistory.tsx",
+      "language": "typescriptreact",
+      "summary": "历史任务列表页面。表格展示任务名称、目标 URL、状态（彩色标签）、通过/失败/总数、创建时间、操作（删除）。支持分页加载更多。点击行跳转报告页。"
+    },
+    {
+      "id": "func:TaskHistory",
+      "type": "function",
+      "parentFile": "frontend/src/pages/TaskHistory.tsx",
+      "label": "TaskHistory",
+      "kind": "page",
+      "startLine": 6,
+      "endLine": 175,
+      "summary": "历史任务列表。分页加载（limit=20），delete 带确认弹窗，行点击导航到报告。"
+    },
+    {
+      "id": "file:frontend/src/types/index.ts",
+      "type": "file",
+      "label": "types/index.ts",
+      "language": "typescript",
+      "summary": "TypeScript 类型定义。定义 Task（任务）、TaskStep（步骤）、WSMessage（WebSocket 消息）、CreateTaskRequest（创建请求）四个接口，以及 WSMessageType 联合类型。"
+    }
+  ],
+  "edges": [
+    { "source": "func:App", "target": "func:TaskCreate", "type": "renders", "summary": "路由 / 渲染创建任务页" },
+    { "source": "func:App", "target": "func:Monitor", "type": "renders", "summary": "路由 /monitor/:taskId 渲染监控页" },
+    { "source": "func:App", "target": "func:Report", "type": "renders", "summary": "路由 /report/:taskId 渲染报告页" },
+    { "source": "func:App", "target": "func:TaskHistory", "type": "renders", "summary": "路由 /history 渲染历史页" },
+    { "source": "func:App", "target": "func:MemoryManager", "type": "renders", "summary": "路由 /memory 渲染记忆管理页" },
+    { "source": "file:frontend/src/App.tsx", "target": "file:frontend/src/pages/TaskCreate.tsx", "type": "imports" },
+    { "source": "file:frontend/src/App.tsx", "target": "file:frontend/src/pages/Monitor.tsx", "type": "imports" },
+    { "source": "file:frontend/src/App.tsx", "target": "file:frontend/src/pages/Report.tsx", "type": "imports" },
+    { "source": "file:frontend/src/App.tsx", "target": "file:frontend/src/pages/TaskHistory.tsx", "type": "imports" },
+    { "source": "file:frontend/src/App.tsx", "target": "file:frontend/src/pages/MemoryManager.tsx", "type": "imports" },
+    { "source": "file:frontend/src/api/client.ts", "target": "file:frontend/src/types/index.ts", "type": "imports" },
+    { "source": "file:frontend/src/main.tsx", "target": "file:frontend/src/App.tsx", "type": "imports" },
+    { "source": "file:frontend/src/hooks/useWebSocket.ts", "target": "file:frontend/src/types/index.ts", "type": "imports" },
+    { "source": "file:frontend/src/pages/Monitor.tsx", "target": "file:frontend/src/hooks/useWebSocket.ts", "type": "imports" },
+    { "source": "file:frontend/src/pages/Monitor.tsx", "target": "file:frontend/src/api/client.ts", "type": "imports" },
+    { "source": "file:frontend/src/pages/Monitor.tsx", "target": "file:frontend/src/types/index.ts", "type": "imports" },
+    { "source": "file:frontend/src/pages/Report.tsx", "target": "file:frontend/src/api/client.ts", "type": "imports" },
+    { "source": "file:frontend/src/pages/Report.tsx", "target": "file:frontend/src/types/index.ts", "type": "imports" },
+    { "source": "file:frontend/src/pages/TaskCreate.tsx", "target": "file:frontend/src/api/client.ts", "type": "imports" },
+    { "source": "file:frontend/src/pages/TaskCreate.tsx", "target": "file:frontend/src/types/index.ts", "type": "imports" },
+    { "source": "file:frontend/src/pages/TaskCreate.tsx", "target": "file:frontend/src/components/DocumentUploader.tsx", "type": "imports" },
+    { "source": "file:frontend/src/pages/TaskHistory.tsx", "target": "file:frontend/src/api/client.ts", "type": "imports" },
+    { "source": "file:frontend/src/pages/TaskHistory.tsx", "target": "file:frontend/src/types/index.ts", "type": "imports" },
+    { "source": "func:Monitor", "target": "func:useWebSocket", "type": "calls" },
+    { "source": "func:Monitor", "target": "func:getTask", "type": "calls" },
+    { "source": "func:Monitor", "target": "func:formatMessageData", "type": "calls" },
+    { "source": "func:Report", "target": "func:getTask", "type": "calls" },
+    { "source": "func:Report", "target": "func:getTaskSteps", "type": "calls" },
+    { "source": "func:Report", "target": "func:getReportUrl", "type": "calls" },
+    { "source": "func:Report", "target": "func:getDiagList", "type": "calls" },
+    { "source": "func:Report", "target": "func:getDiagFile", "type": "calls" },
+    { "source": "func:Report", "target": "func:normalizeStatus", "type": "calls" },
+    { "source": "func:Report", "target": "func:getScreenshotUrl", "type": "calls" },
+    { "source": "func:Report", "target": "func:toggleExpand", "type": "calls" },
+    { "source": "func:DiagPanel", "target": "func:getDiagList", "type": "calls" },
+    { "source": "func:DiagPanel", "target": "func:getDiagFile", "type": "calls" },
+    { "source": "func:TaskCreate", "target": "func:createTask", "type": "calls" },
+    { "source": "func:TaskCreate", "target": "func:testLayer1", "type": "calls" },
+    { "source": "func:TaskCreate", "target": "func:handleSubmit", "type": "handles" },
+    { "source": "func:TaskCreate", "target": "func:addAccount", "type": "handles" },
+    { "source": "func:TaskCreate", "target": "func:removeAccount", "type": "handles" },
+    { "source": "func:TaskCreate", "target": "func:updateAccount", "type": "handles" },
+    { "source": "func:TaskHistory", "target": "func:listTasks", "type": "calls" },
+    { "source": "func:TaskHistory", "target": "func:deleteTask", "type": "calls" },
+    { "source": "func:MemoryManager", "target": "func:fetchMemories", "type": "calls" },
+    { "source": "func:MemoryManager", "target": "func:handleDelete", "type": "calls" },
+    { "source": "func:MemoryManager", "target": "func:handleSaveEdit", "type": "calls" },
+    { "source": "func:MemoryManager", "target": "func:handleCreate", "type": "calls" },
+    { "source": "func:MemoryManager", "target": "func:startEdit", "type": "calls" },
+    { "source": "func:MemoryManager", "target": "func:startCreate", "type": "calls" },
+    { "source": "func:TaskCreate", "target": "func:DocumentUploader", "type": "renders" }
+  ]
+}

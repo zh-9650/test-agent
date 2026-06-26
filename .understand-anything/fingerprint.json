@@ -1,0 +1,21 @@
+﻿{
+    "root":  "C:\\Users\\17381\\Desktop\\test_agent",
+    "project":  "test_agent",
+    "files":  {
+                  "intermediate":  {
+                                       "fileCount":  20,
+                                       "directory":  ".understand-anything/intermediate/"
+                                   },
+                  "domains":  {
+                                  "exists":  true,
+                                  "file":  ".understand-anything/domain-graph.json"
+                              }
+              },
+    "knowledgeGraph":  {
+                           "sizeBytes":  293467,
+                           "sha256":  "f8e12d7fa8098ea8379e3dbbe27a7247657a809f39ebd102e140bd36eab1f8e4",
+                           "generatedAt":  "2026-06-08T12:02:22.2545486+08:00",
+                           "file":  "knowledge-graph.json",
+                           "generator":  "understand-anything v1.1.0"
+                       }
+}

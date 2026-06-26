@@ -1,9 +1,9 @@
-# 缺陷 PRD - 测试 use_case_coverage 鲁棒性
+# 缺陷 PRD - 测试 fact_extractor 鲁棒性
 
 > 故意写得**模糊 / 矛盾 / 不可定位**，用于验证：
-> 1. KnowledgeExtractor 能否在 source 字段正确标记 inferred
-> 2. use_case_modeler 能否在低质量输入下生成结构化脚手架
-> 3. use_case_coverage 能否识别 paraphrase 后的规则
+> 1. fact_extractor 能否在 source 字段正确标记 inferred
+> 2. assertion_deriver 能否在低质量输入下推导出断言
+> 3. pipeline 能否识别 paraphrase 后的规则
 
 ## 业务背景
 

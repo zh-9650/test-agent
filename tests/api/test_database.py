@@ -1,308 +1,294 @@
-"""
-tests/api/test_database.py — Database model and connection tests.
-
-TDD tests for SQLAlchemy models, auto-init, CRUD, and relationships.
-Uses a separate test database (smart_test_test) created and dropped per session.
-
-All async tests are wrapped in a single event loop to avoid asyncpg
-session/connection lifecycle issues with pytest-asyncio.
-"""
-
 import asyncio
 import os
-from datetime import datetime
+from urllib.parse import urlparse
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, func, select, text
 
-# Ensure DATABASE_URL points to test DB before importing app code
-os.environ["DATABASE_URL"] = "postgresql://postgres:123456@localhost:5432/smart_test_test"
+os.environ["DATABASE_URL"] = (
+    "postgresql://postgres:123456@localhost:5432/smart_test_test"
+)
 
-from database.models import Base, Task, TaskStep, Report
+from core.execution_store import (
+    append_task_step,
+    create_execution_run,
+    fill_cancelled_results,
+    fill_failed_results,
+    list_case_results,
+    upsert_case_result,
+)
+from core.interfaces import CaseResult
+from database.connection import (
+    async_session,
+    create_async_engine_instance,
+)
+from database.models import (
+    AgentMemory,
+    Base,
+    CaseResultRecord,
+    ExecutionRunRecord,
+    Task,
+    TaskStep,
+)
 
-# ---------------------------------------------------------------------------
-# Session-scoped setup / teardown
-# ---------------------------------------------------------------------------
+
+def _admin_urls() -> tuple[str, str]:
+    parsed = urlparse(os.environ["DATABASE_URL"])
+    name = parsed.path.lstrip("/")
+    admin = (
+        f"{parsed.scheme}://{parsed.username}:{parsed.password}"
+        f"@{parsed.hostname}:{parsed.port or 5432}/postgres"
+    )
+    return admin, name
+
 
 def setup_module():
-    """Create test database and tables before running any tests."""
-    from sqlalchemy import create_engine
-    from urllib.parse import urlparse
-    from database.connection import create_async_engine_instance
+    admin_url, db_name = _admin_urls()
+    engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as connection:
+        exists = connection.execute(
+            text("SELECT 1 FROM pg_database WHERE datname=:name"),
+            {"name": db_name},
+        ).scalar()
+        if not exists:
+            connection.execute(text(f'CREATE DATABASE "{db_name}"'))
+    engine.dispose()
 
-    db_url = os.environ["DATABASE_URL"]
-    parsed = urlparse(db_url)
-    db_name = parsed.path.lstrip("/")
-    admin_url = f"{parsed.scheme}://{parsed.username}:{parsed.password}@{parsed.hostname}:{parsed.port or 5432}/postgres"
+    async def prepare():
+        async_engine = create_async_engine_instance(os.environ["DATABASE_URL"])
+        async with async_engine.begin() as connection:
+            await connection.run_sync(Base.metadata.drop_all)
+            await connection.run_sync(Base.metadata.create_all)
+        await async_engine.dispose()
 
-    # Create test database if not exists
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    with admin_engine.connect() as conn:
-        result = conn.execute(
-            text(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'")
-        )
-        if not result.scalar():
-            conn.execute(text(f"CREATE DATABASE {db_name}"))
-    admin_engine.dispose()
-
-    # Create tables using async engine
-    async def _create_tables():
-        engine = create_async_engine_instance(db_url)
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        await engine.dispose()
-    asyncio.get_event_loop().run_until_complete(_create_tables())
+    asyncio.run(prepare())
 
 
 def teardown_module():
-    """Drop the test database after all tests finish."""
-    from sqlalchemy import create_engine
-    from urllib.parse import urlparse
-
-    db_url = os.environ["DATABASE_URL"]
-    parsed = urlparse(db_url)
-    db_name = parsed.path.lstrip("/")
-    admin_url = f"{parsed.scheme}://{parsed.username}:{parsed.password}@{parsed.hostname}:{parsed.port or 5432}/postgres"
-
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    with admin_engine.connect() as conn:
-        conn.execute(
-            text(f"""
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = '{db_name}' AND pid <> pg_backend_pid()
-            """)
+    admin_url, db_name = _admin_urls()
+    engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as connection:
+        connection.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname=:name AND pid <> pg_backend_pid()"
+            ),
+            {"name": db_name},
         )
-        conn.execute(text(f"DROP DATABASE IF EXISTS {db_name}"))
-    admin_engine.dispose()
+        connection.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+    engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-async def _get_session():
-    """Yield an async session wrapped in an async context manager."""
-    from database.connection import async_session
+async def _task(name: str = "contract") -> Task:
     async with async_session() as session:
-        return session
+        task = Task(
+            task_name=name,
+            target_url="https://example.com",
+            status="running",
+            phase="executing",
+        )
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+        return task
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-def test_task_model_instantiation():
-    """Test that Task model can be instantiated with valid data."""
-    task = Task(
-        task_name="Login Test",
-        target_url="http://example.com/login",
-        status="pending",
-        config={"rules": ["rule1"], "credentials": {"user": "admin"}},
-        total_tests=0,
-        passed_tests=0,
-        failed_tests=0,
+def _result(run_id: str, case_id: str, status: str, attempts: int):
+    return CaseResult(
+        run_id=run_id,
+        candidate_case_id=case_id,
+        terminal_status=status,
+        attempt_count=attempts,
+        started_at="2026-06-11T00:00:00+00:00",
+        completed_at="2026-06-11T00:00:01+00:00",
+        summary=status,
     )
-    assert task.task_name == "Login Test"
-    assert task.target_url == "http://example.com/login"
-    assert task.status == "pending"
-    assert task.config == {"rules": ["rule1"], "credentials": {"user": "admin"}}
-    assert task.total_tests == 0
 
 
-def test_create_all_creates_tables():
-    """Test that create_all() creates all 3 tables: task, task_step, report."""
-    from database.connection import create_async_engine_instance
-
-    async def _test():
-        engine = create_async_engine_instance(os.environ["DATABASE_URL"])
-        async with engine.connect() as conn:
-            result = await conn.execute(text(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
-            ))
-            tables = {row[0] for row in result.fetchall()}
-        await engine.dispose()
-        assert "task" in tables
-        assert "task_step" in tables
-        assert "report" in tables
-
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_task_step_phase1_columns_exist():
-    """Startup schema compatibility keeps additive TaskStep columns available."""
-    from database.connection import create_async_engine_instance
-
-    async def _test():
-        engine = create_async_engine_instance(os.environ["DATABASE_URL"])
-        async with engine.connect() as conn:
-            result = await conn.execute(text(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema = 'public' AND table_name = 'task_step'"
-            ))
-            columns = {row[0] for row in result.fetchall()}
-        await engine.dispose()
-        assert {"test_case_status", "retry_count", "failure_context"} <= columns
-
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_crud_create_task():
-    """Test creating a task and reading it back."""
-    from database.connection import async_session
-
-    async def _test():
-        async with async_session() as db_session:
-            task = Task(
-                task_name="CRUD Test",
-                target_url="http://example.com",
-                status="running",
-                config={"key": "value"},
-                total_tests=5,
-                passed_tests=2,
-                failed_tests=1,
+@pytest.mark.asyncio
+async def test_authoritative_tables_and_columns_exist():
+    engine = create_async_engine_instance(os.environ["DATABASE_URL"])
+    async with engine.connect() as connection:
+        rows = await connection.execute(
+            text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema='public'"
             )
-            db_session.add(task)
-            await db_session.commit()
-            await db_session.refresh(task)
+        )
+        tables = {row[0] for row in rows}
+    await engine.dispose()
+    assert {
+        "task",
+        "execution_run",
+        "case_result",
+        "task_step",
+        "report",
+        "agent_memory",
+    } <= tables
+    assert not hasattr(Task, "test_plan")
+    assert not hasattr(Task, "total_tests")
 
-            assert task.id is not None
-            assert task.created_at is not None
 
-            result = await db_session.get(Task, task.id)
-            assert result is not None
-            assert result.task_name == "CRUD Test"
-            assert result.status == "running"
-            assert result.config == {"key": "value"}
+@pytest.mark.asyncio
+async def test_duplicate_case_result_updates_without_duplicate_count():
+    task = await _task("idempotent")
+    run = await create_execution_run(task.id, ["CASE-1"])
+    await upsert_case_result(_result(run.run_id, "CASE-1", "failed", 1))
+    await upsert_case_result(_result(run.run_id, "CASE-1", "passed", 2))
 
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_crud_add_steps_and_query_by_task_id():
-    """Test adding task steps and querying steps by task_id."""
-    from database.connection import async_session
-
-    async def _test():
-        async with async_session() as db_session:
-            task = Task(
-                task_name="Step Test",
-                target_url="http://example.com",
-                status="running",
+    async with async_session() as session:
+        count = await session.scalar(
+            select(func.count(CaseResultRecord.id)).where(
+                CaseResultRecord.run_id == run.run_id
             )
-            db_session.add(task)
-            await db_session.commit()
-            await db_session.refresh(task)
+        )
+    rows = await list_case_results(run.run_id)
+    assert count == 1
+    assert rows[0].terminal_status == "passed"
+    assert rows[0].attempt_count == 2
+    async with async_session() as session:
+        refreshed_run = await session.get(ExecutionRunRecord, run.run_id)
+        assert refreshed_run.summary == {
+            "planned": 1,
+            "terminal": 1,
+            "passed": 1,
+            "failed": 0,
+            "skipped": 0,
+            "incomplete": 0,
+            "human_review_required": 0,
+        }
 
-            step1 = TaskStep(
-                task_id=task.id,
-                test_case_id="TC-001",
-                step_index=0,
-                action_type="click",
-                action_target="#login-button",
-                action_args={"wait_for": "navigation"},
-                result="Clicked login button",
-                assertion_result={"status": "pass", "reasoning": "Login succeeded"},
+
+@pytest.mark.asyncio
+async def test_three_attempts_keep_three_step_histories():
+    task = await _task("attempts")
+    run = await create_execution_run(task.id, ["CASE-1"])
+    for attempt in (1, 2, 3):
+        await append_task_step(
+            task_id=task.id,
+            run_id=run.run_id,
+            candidate_case_id="CASE-1",
+            attempt_no=attempt,
+            step_index=0,
+            action={"tool": "click", "args": {"selector": "#submit"}},
+            result=f"attempt-{attempt}",
+        )
+    await upsert_case_result(_result(run.run_id, "CASE-1", "passed", 3))
+
+    async with async_session() as session:
+        attempts = list(
+            (
+                await session.execute(
+                    select(TaskStep.attempt_no)
+                    .where(TaskStep.run_id == run.run_id)
+                    .order_by(TaskStep.attempt_no)
+                )
+            ).scalars()
+        )
+    assert attempts == [1, 2, 3]
+    assert len(await list_case_results(run.run_id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_duplicate_step_identity_updates_without_duplicate_history():
+    task = await _task("step-idempotent")
+    run = await create_execution_run(task.id, ["CASE-1"])
+    common = {
+        "task_id": task.id,
+        "run_id": run.run_id,
+        "candidate_case_id": "CASE-1",
+        "attempt_no": 1,
+        "step_index": 0,
+    }
+    await append_task_step(
+        **common,
+        action={"tool": "click", "args": {"selector": "#submit"}},
+        result="first",
+    )
+    await append_task_step(
+        **common,
+        action={"tool": "click", "args": {"selector": "#submit"}},
+        result="updated",
+    )
+
+    async with async_session() as session:
+        rows = list(
+            (
+                await session.execute(
+                    select(TaskStep).where(TaskStep.run_id == run.run_id)
+                )
+            ).scalars()
+        )
+    assert len(rows) == 1
+    assert rows[0].result == "updated"
+
+
+@pytest.mark.asyncio
+async def test_cancel_marks_active_incomplete_and_unstarted_skipped():
+    task = await _task("cancel")
+    run = await create_execution_run(task.id, ["DONE", "ACTIVE", "WAITING"])
+    await upsert_case_result(_result(run.run_id, "DONE", "passed", 1))
+    summary = await fill_cancelled_results(run.run_id)
+    rows = {
+        row.candidate_case_id: row.terminal_status
+        for row in await list_case_results(run.run_id)
+    }
+    assert rows == {
+        "DONE": "passed",
+        "ACTIVE": "incomplete",
+        "WAITING": "skipped",
+    }
+    assert summary["terminal"] == summary["planned"] == 3
+
+
+@pytest.mark.asyncio
+async def test_execution_crash_fills_missing_results():
+    task = await _task("crash")
+    run = await create_execution_run(task.id, ["DONE", "ACTIVE", "WAITING"])
+    await upsert_case_result(_result(run.run_id, "DONE", "passed", 1))
+    summary = await fill_failed_results(run.run_id, "browser crashed")
+    rows = {
+        row.candidate_case_id: row.terminal_status
+        for row in await list_case_results(run.run_id)
+    }
+    assert rows["ACTIVE"] == "incomplete"
+    assert rows["WAITING"] == "skipped"
+    assert summary["terminal"] == 3
+
+
+@pytest.mark.asyncio
+async def test_resume_run_keeps_source_and_only_selected_cases():
+    task = await _task("resume")
+    first = await create_execution_run(task.id, ["PASS", "FAIL"])
+    resumed = await create_execution_run(
+        task.id,
+        ["FAIL"],
+        resumed_from_run_id=first.run_id,
+    )
+    async with async_session() as session:
+        row = await session.get(ExecutionRunRecord, resumed.run_id)
+        assert row.resumed_from_run_id == first.run_id
+        assert row.candidate_case_ids == ["FAIL"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_reset_preserves_agent_memory():
+    async with async_session() as session:
+        session.add(
+            AgentMemory(
+                scope_type="global",
+                scope_value="*",
+                memory_key="key",
+                memory_value="value",
             )
-            step2 = TaskStep(
-                task_id=task.id,
-                test_case_id="TC-001",
-                step_index=1,
-                action_type="input_text",
-                action_target="#username",
-                action_args={"text": "admin"},
-                result="Entered username",
-            )
-            db_session.add_all([step1, step2])
-            await db_session.commit()
+        )
+        await session.commit()
+    from database.connection import reset_runtime_database
 
-            result = await db_session.execute(
-                text("SELECT * FROM task_step WHERE task_id = :tid"),
-                {"tid": task.id},
-            )
-            rows = result.fetchall()
-            assert len(rows) == 2
-
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_foreign_key_relationships():
-    """Test that foreign key relationships (task.steps, task.reports) work."""
-    from database.connection import async_session
-
-    async def _test():
-        async with async_session() as db_session:
-            task = Task(
-                task_name="Relationship Test",
-                target_url="http://example.com",
-                status="completed",
-            )
-            db_session.add(task)
-            await db_session.commit()
-            await db_session.refresh(task)
-
-            step = TaskStep(
-                task_id=task.id,
-                test_case_id="TC-002",
-                step_index=0,
-                action_type="navigate",
-                action_target="http://example.com/dashboard",
-            )
-            report = Report(
-                task_id=task.id,
-                report_path="/reports/test_report.html",
-                summary="All tests passed successfully.",
-            )
-            db_session.add_all([step, report])
-            await db_session.commit()
-
-            await db_session.refresh(task, attribute_names=["steps", "reports"])
-
-            assert len(task.steps) == 1
-            assert task.steps[0].action_type == "navigate"
-            assert len(task.reports) == 1
-            assert task.reports[0].summary == "All tests passed successfully."
-
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_task_plan_jsonb():
-    """Test that test_plan JSONB column stores and retrieves data correctly."""
-    from database.connection import async_session
-
-    async def _test():
-        async with async_session() as db_session:
-            plan = [
-                {"id": "TC-001", "title": "Login", "steps": ["open page", "enter credentials"]},
-                {"id": "TC-002", "title": "Logout", "steps": ["click logout", "confirm"]},
-            ]
-            task = Task(
-                task_name="Plan Test",
-                target_url="http://example.com",
-                status="pending",
-                test_plan=plan,
-            )
-            db_session.add(task)
-            await db_session.commit()
-            await db_session.refresh(task)
-
-            fetched = await db_session.get(Task, task.id)
-            assert fetched.test_plan == plan
-
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_timestamps_are_timezone_aware():
-    """Test that created_at and other timestamps are timezone-aware."""
-    from database.connection import async_session
-
-    async def _test():
-        async with async_session() as db_session:
-            task = Task(task_name="Timestamp Test", target_url="http://example.com")
-            db_session.add(task)
-            await db_session.commit()
-            await db_session.refresh(task)
-
-            assert task.created_at is not None
-            assert task.created_at.tzinfo is not None
-
-    asyncio.get_event_loop().run_until_complete(_test())
+    await reset_runtime_database(
+        "smart_test_test",
+        os.environ["DATABASE_URL"],
+    )
+    async with async_session() as session:
+        assert await session.scalar(select(func.count(AgentMemory.id))) == 1
+        assert await session.scalar(select(func.count(Task.id))) == 0

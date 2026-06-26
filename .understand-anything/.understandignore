@@ -1,0 +1,26 @@
+# .understandignore - patterns for files/dirs to exclude from analysis
+# Syntax follows .gitignore.
+
+# Runtime and generated output
+data/diag/
+data/screenshots/
+data/sessions/
+data/reports/
+data/bench_errors/
+logs/
+scratch/
+*.log
+*.db
+
+# Local tooling state
+.codegraph/
+.codex/
+.playwright-mcp/
+.claude/
+
+# Suggested optional exclusions (uncomment if desired)
+# tests/
+# docs/
+# data/fixtures/
+# *.test.*
+# *.spec.*

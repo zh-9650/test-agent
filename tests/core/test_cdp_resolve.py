@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from core.cdp_client import resolve_node, release_object
+from core.cdp_client import _ax_role_to_type, release_object, resolve_node
 
 
 class FakeCDP:
@@ -84,3 +84,18 @@ async def test_release_object_cdp_error_swallowed():
         async def send(self, method, params=None):
             raise RuntimeError("CDP gone")
     await release_object(ErrorCDP(), "obj-123")  # should not raise
+
+
+def test_ax_role_mapping_preserves_complex_form_control_types():
+    assert _ax_role_to_type(
+        "button",
+        {"tagName": "input", "type": "file"},
+    ) == "input"
+    assert _ax_role_to_type(
+        "textbox",
+        {"tagName": "textarea"},
+    ) == "textarea"
+    assert _ax_role_to_type(
+        "combobox",
+        {"tagName": "select"},
+    ) == "select"

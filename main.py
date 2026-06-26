@@ -20,7 +20,8 @@ if hasattr(sys.stderr, 'reconfigure'):
 
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+# Deployment/test process environment takes precedence over local .env defaults.
+load_dotenv(override=False)
 
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "5173"))

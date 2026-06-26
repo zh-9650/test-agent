@@ -10,6 +10,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from core.input_normalization import normalize_task_config
+
 
 # ---------------------------------------------------------------------------
 # Request models
@@ -21,6 +23,16 @@ class CreateTaskRequest(BaseModel):
     target_url: str = Field(..., description="Target URL to test")
     task_name: str = Field(default="", description="Task name")
     config: dict[str, Any] = Field(default_factory=dict, description="Test config: accounts, rules, focus_areas")
+
+    def model_post_init(self, __context: Any) -> None:
+        self.config = normalize_task_config(self.config)
+        profile = self.config.get("execution_profile", "balanced")
+        if profile not in {"smoke", "balanced", "full"}:
+            raise ValueError("execution_profile must be smoke, balanced, or full")
+        target = self.config.get("execution_target")
+        if target is not None and (not isinstance(target, int) or target <= 0):
+            raise ValueError("execution_target must be a positive integer")
+        self.config["execution_profile"] = profile
 
 
 class AccountConfig(BaseModel):
@@ -42,11 +54,12 @@ class TaskResponse(BaseModel):
     task_name: str
     target_url: str
     status: str
+    phase: Optional[str] = None
+    report_status: str = "pending"
+    failure_reason: Optional[str] = None
     config: Optional[dict] = None
-    test_plan: Optional[list] = None
-    total_tests: int = 0
-    passed_tests: int = 0
-    failed_tests: int = 0
+    analysis_package: Optional[dict] = None
+    latest_run: Optional[dict] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: datetime
@@ -65,7 +78,9 @@ class StepResponse(BaseModel):
     """Response model for a single task step."""
 
     id: int
+    run_id: str
     test_case_id: str
+    attempt_no: int
     step_index: int
     action_type: str
     action_target: str
@@ -83,6 +98,43 @@ class StepListResponse(BaseModel):
     """Response model for a list of task steps."""
 
     steps: list[StepResponse]
+    total: int
+
+
+class ExecutionRunResponse(BaseModel):
+    run_id: str
+    task_id: int
+    schema_version: str
+    status: str
+    candidate_case_ids: list[str]
+    resumed_from_run_id: Optional[str] = None
+    summary: dict[str, Any]
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ExecutionRunListResponse(BaseModel):
+    runs: list[ExecutionRunResponse]
+    total: int
+
+
+class CaseResultResponse(BaseModel):
+    candidate_case_id: str
+    terminal_status: str
+    attempt_count: int
+    summary: str
+    evidence_refs: list[str]
+    failure_reason: Optional[str] = None
+    started_at: datetime
+    completed_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CaseResultListResponse(BaseModel):
+    results: list[CaseResultResponse]
     total: int
 
 

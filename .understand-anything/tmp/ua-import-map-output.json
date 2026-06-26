@@ -1,0 +1,336 @@
+{
+  "scriptCompleted": true,
+  "stats": {
+    "filesScanned": 137,
+    "filesWithImports": 61,
+    "totalEdges": 128
+  },
+  "importMap": {
+    ".understand-anything/.understandignore": [],
+    ".understand-anything/config.json": [],
+    ".understand-anything/domain-graph.json": [],
+    "AGENTS.md": [],
+    "agents/__init__.py": [],
+    "agents/base.py": [],
+    "agents/ui/__init__.py": [],
+    "agents/ui/execution_graph.py": [
+      "agents/ui/prompts.py",
+      "agents/ui/tools.py",
+      "core/change_detector.py",
+      "core/execution_logger.py",
+      "core/interfaces.py",
+      "core/llm_client.py",
+      "core/page_semantic.py"
+    ],
+    "agents/ui/planning_graph.py": [
+      "agents/ui/prompts.py",
+      "agents/ui/tools.py",
+      "core/interfaces.py",
+      "core/llm_client.py",
+      "core/page_semantic.py"
+    ],
+    "agents/ui/prompts.py": [
+      "core/interfaces.py"
+    ],
+    "agents/ui/setup_manager.py": [
+      "agents/ui/execution_graph.py",
+      "core/interfaces.py"
+    ],
+    "agents/ui/tools.py": [
+      "core/cdp_client.py",
+      "core/interfaces.py"
+    ],
+    "api/__init__.py": [
+      "api/app.py"
+    ],
+    "api/app.py": [
+      "api/schemas.py",
+      "api/utils.py",
+      "api/websocket.py",
+      "core/execution_logger.py",
+      "core/memory_utils.py",
+      "database/connection.py",
+      "database/models.py"
+    ],
+    "api/schemas.py": [],
+    "api/utils.py": [],
+    "api/websocket.py": [
+      "database/connection.py",
+      "database/models.py"
+    ],
+    "CLAUDE.md": [],
+    "CONTEXT.md": [],
+    "core/__init__.py": [],
+    "core/backend_node_map.py": [],
+    "core/cdp_client.py": [],
+    "core/change_detector.py": [
+      "core/interfaces.py"
+    ],
+    "core/context_manager.py": [
+      "core/llm_client.py"
+    ],
+    "core/dependency.py": [],
+    "core/diag_logger.py": [],
+    "core/document_parser.py": [],
+    "core/execution_logger.py": [
+      "core/interfaces.py",
+      "database/connection.py",
+      "database/models.py"
+    ],
+    "core/interfaces.py": [],
+    "core/llm_client.py": [],
+    "core/memory_utils.py": [
+      "core/llm_client.py",
+      "database/connection.py",
+      "database/models.py"
+    ],
+    "core/page_semantic.py": [],
+    "core/parallel_executor.py": [
+      "core/dependency.py"
+    ],
+    "core/report_builder.py": [
+      "core/interfaces.py",
+      "core/llm_client.py"
+    ],
+    "core/runtime.py": [
+      "agents/ui/execution_graph.py",
+      "agents/ui/planning_graph.py",
+      "agents/ui/setup_manager.py",
+      "agents/ui/tools.py",
+      "core/diag_logger.py",
+      "core/execution_logger.py",
+      "core/interfaces.py",
+      "core/report_builder.py",
+      "core/skills/coverage_tracker.py",
+      "core/skills/session_summary.py",
+      "database/connection.py",
+      "database/models.py"
+    ],
+    "core/skills/__init__.py": [
+      "core/skills/base.py",
+      "core/skills/registry.py"
+    ],
+    "core/skills/base.py": [],
+    "core/skills/coverage_tracker.py": [],
+    "core/skills/goal_extractor.py": [
+      "core/diag_logger.py",
+      "core/interfaces.py",
+      "core/llm_client.py"
+    ],
+    "core/skills/knowledge_extractor.py": [
+      "core/diag_logger.py",
+      "core/interfaces.py",
+      "core/llm_client.py"
+    ],
+    "core/skills/registry.py": [
+      "core/skills/base.py"
+    ],
+    "core/skills/risk_analyzer.py": [
+      "core/llm_client.py"
+    ],
+    "core/skills/scenario_extractor.py": [
+      "core/llm_client.py"
+    ],
+    "core/skills/session_summary.py": [
+      "core/llm_client.py"
+    ],
+    "core/skills/system_mapper.py": [
+      "core/llm_client.py"
+    ],
+    "core/skills/system_modeler.py": [
+      "core/diag_logger.py",
+      "core/interfaces.py",
+      "core/llm_client.py"
+    ],
+    "core/skills/use_case_coverage.py": [
+      "core/diag_logger.py",
+      "core/interfaces.py",
+      "core/llm_client.py"
+    ],
+    "core/skills/use_case_modeler.py": [
+      "core/diag_logger.py",
+      "core/interfaces.py",
+      "core/llm_client.py"
+    ],
+    "data/fixtures/changelog_aitalk.md": [],
+    "data/fixtures/changelog_automation_exercise.md": [],
+    "data/fixtures/prd_adversarial.md": [],
+    "data/fixtures/prd_aitalk.md": [],
+    "data/fixtures/prd_automation_exercise.md": [],
+    "data/fixtures/prd_minimal.md": [],
+    "data/fixtures/prd_purchase.md": [],
+    "data/fixtures/README.md": [],
+    "data/fixtures/swagger_aitalk.yaml": [],
+    "data/fixtures/swagger_automation_exercise.yaml": [],
+    "data/fixtures/swagger_purchase.txt": [],
+    "database/__init__.py": [
+      "database/connection.py",
+      "database/models.py"
+    ],
+    "database/connection.py": [
+      "database/models.py"
+    ],
+    "database/models.py": [],
+    "docs/benchmark/2026-06-05-browser-use-alignment.md": [],
+    "docs/business_workflow.md": [],
+    "docs/DEVELOPMENT.md": [],
+    "docs/master-roadmap.md": [],
+    "docs/PRD.md": [],
+    "docs/prompt-engineering.md": [],
+    "frontend/eslint.config.js": [],
+    "frontend/index.html": [],
+    "frontend/package.json": [],
+    "frontend/README.md": [],
+    "frontend/src/api/client.ts": [
+      "frontend/src/types/index.ts"
+    ],
+    "frontend/src/App.css": [],
+    "frontend/src/App.tsx": [
+      "frontend/src/pages/MemoryManager.tsx",
+      "frontend/src/pages/Monitor.tsx",
+      "frontend/src/pages/Report.tsx",
+      "frontend/src/pages/TaskCreate.tsx",
+      "frontend/src/pages/TaskHistory.tsx"
+    ],
+    "frontend/src/components/DocumentUploader.tsx": [],
+    "frontend/src/hooks/useWebSocket.ts": [
+      "frontend/src/types/index.ts"
+    ],
+    "frontend/src/index.css": [],
+    "frontend/src/main.tsx": [
+      "frontend/src/App.tsx",
+      "frontend/src/index.css"
+    ],
+    "frontend/src/pages/MemoryManager.tsx": [],
+    "frontend/src/pages/Monitor.tsx": [
+      "frontend/src/api/client.ts",
+      "frontend/src/hooks/useWebSocket.ts",
+      "frontend/src/types/index.ts"
+    ],
+    "frontend/src/pages/Report.tsx": [
+      "frontend/src/api/client.ts",
+      "frontend/src/types/index.ts"
+    ],
+    "frontend/src/pages/TaskCreate.tsx": [
+      "frontend/src/api/client.ts",
+      "frontend/src/components/DocumentUploader.tsx",
+      "frontend/src/types/index.ts"
+    ],
+    "frontend/src/pages/TaskHistory.tsx": [
+      "frontend/src/api/client.ts",
+      "frontend/src/types/index.ts"
+    ],
+    "frontend/src/types/index.ts": [],
+    "frontend/tsconfig.app.json": [],
+    "frontend/tsconfig.json": [],
+    "frontend/tsconfig.node.json": [],
+    "frontend/vite.config.ts": [],
+    "main.py": [],
+    "opencode.json": [],
+    "README.md": [],
+    "requirements.txt": [],
+    "tests/__init__.py": [],
+    "tests/agents/__init__.py": [],
+    "tests/agents/ui/__init__.py": [],
+    "tests/agents/ui/test_action_result.py": [
+      "agents/ui/tools.py",
+      "core/interfaces.py"
+    ],
+    "tests/agents/ui/test_assert_integration.py": [],
+    "tests/agents/ui/test_execution_graph.py": [
+      "core/interfaces.py"
+    ],
+    "tests/agents/ui/test_planning_graph.py": [
+      "core/interfaces.py"
+    ],
+    "tests/agents/ui/test_resolve_via_cdp.py": [
+      "agents/ui/tools.py"
+    ],
+    "tests/agents/ui/test_screenshot_on_demand.py": [
+      "agents/ui/tools.py"
+    ],
+    "tests/agents/ui/test_tools.py": [
+      "agents/ui/tools.py"
+    ],
+    "tests/api/__init__.py": [],
+    "tests/api/test_app.py": [
+      "api/app.py",
+      "database/connection.py",
+      "database/models.py"
+    ],
+    "tests/api/test_database.py": [
+      "database/models.py"
+    ],
+    "tests/api/test_websocket.py": [
+      "api/app.py",
+      "api/websocket.py"
+    ],
+    "tests/benchmarks/__init__.py": [],
+    "tests/benchmarks/webvoyager_subset/__init__.py": [],
+    "tests/benchmarks/webvoyager_subset/runner.py": [],
+    "tests/benchmarks/webvoyager_subset/tasks.json": [],
+    "tests/benchmarks/webvoyager_subset/test_day4_integration.py": [
+      "core/backend_node_map.py",
+      "core/page_semantic.py"
+    ],
+    "tests/benchmarks/webvoyager_subset/test_dry_run.py": [
+      "tests/benchmarks/webvoyager_subset/runner.py"
+    ],
+    "tests/benchmarks/webvoyager_subset/test_lc_schema.py": [
+      "agents/ui/tools.py"
+    ],
+    "tests/benchmarks/webvoyager_subset/test_lg_compat.py": [],
+    "tests/benchmarks/webvoyager_subset/test_mimo_vision.py": [],
+    "tests/benchmarks/webvoyager_subset/test_mimo_vision2.py": [],
+    "tests/benchmarks/webvoyager_subset/test_mimo.py": [],
+    "tests/benchmarks/webvoyager_subset/test_smoke.py": [
+      "tests/benchmarks/webvoyager_subset/runner.py"
+    ],
+    "tests/conftest.py": [],
+    "tests/core/__init__.py": [],
+    "tests/core/test_backend_node_map.py": [
+      "tests/core/__init__.py"
+    ],
+    "tests/core/test_cdp_resolve.py": [
+      "core/cdp_client.py"
+    ],
+    "tests/core/test_change_detector.py": [
+      "core/change_detector.py",
+      "core/interfaces.py"
+    ],
+    "tests/core/test_context_manager.py": [
+      "core/context_manager.py",
+      "tests/core/__init__.py"
+    ],
+    "tests/core/test_dependency.py": [
+      "core/dependency.py"
+    ],
+    "tests/core/test_diag_logger.py": [
+      "core/diag_logger.py"
+    ],
+    "tests/core/test_l1_prompts.py": [
+      "core/skills/system_modeler.py"
+    ],
+    "tests/core/test_l2_prompts.py": [],
+    "tests/core/test_llm_client.py": [
+      "core/interfaces.py",
+      "core/llm_client.py"
+    ],
+    "tests/core/test_logger_report.py": [
+      "core/interfaces.py",
+      "database/models.py"
+    ],
+    "tests/core/test_page_semantic.py": [
+      "core/page_semantic.py"
+    ],
+    "tests/core/test_parallel_executor.py": [],
+    "tests/core/test_phase15_prompts.py": [],
+    "tests/core/test_runtime_retry.py": [
+      "core/interfaces.py"
+    ],
+    "tests/core/test_runtime.py": [
+      "core/interfaces.py"
+    ],
+    "tests/core/test_system_mapper.py": []
+  }
+}

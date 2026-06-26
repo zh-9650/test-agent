@@ -1,0 +1,313 @@
+{
+  "batch": 3,
+  "description": "Batch 3 — API layer, Core/DB, and Tests",
+  "nodes": [
+    {
+      "id": "api/__init__.py",
+      "type": "file",
+      "path": "api/__init__.py",
+      "summary": "API 包初始化，导出 FastAPI app 实例",
+      "metrics": { "totalLines": 5, "nonEmptyLines": 3 }
+    },
+    {
+      "id": "api/app.py",
+      "type": "file",
+      "path": "api/app.py",
+      "summary": "FastAPI 主应用，定义 REST 端点(任务CRUD、内存管理、诊断日志、Layer1测试流水线)、后台任务执行器(LLM节点编排)、CORS和静态文件挂载",
+      "metrics": { "totalLines": 606, "nonEmptyLines": 513, "functionCount": 17, "classCount": 2, "exportCount": 19 }
+    },
+    {
+      "id": "api/schemas.py",
+      "type": "file",
+      "path": "api/schemas.py",
+      "summary": "Pydantic 请求/响应模型：CreateTaskRequest、TaskResponse、StepResponse、AgentMemoryItem 等",
+      "metrics": { "totalLines": 110, "nonEmptyLines": 76, "classCount": 9, "exportCount": 9 }
+    },
+    {
+      "id": "api/utils.py",
+      "type": "file",
+      "path": "api/utils.py",
+      "summary": "API 工具路由：文件解析(txt/md/docx)和URL抓取代理",
+      "metrics": { "totalLines": 49, "nonEmptyLines": 42, "functionCount": 2, "classCount": 3, "exportCount": 5 }
+    },
+    {
+      "id": "api/websocket.py",
+      "type": "file",
+      "path": "api/websocket.py",
+      "summary": "WebSocket 连接管理器及端点，支持实时任务监控和停止命令",
+      "metrics": { "totalLines": 135, "nonEmptyLines": 105, "functionCount": 4, "classCount": 1, "exportCount": 5 }
+    },
+    {
+      "id": "core/execution_logger.py",
+      "type": "file",
+      "path": "core/execution_logger.py",
+      "summary": "执行日志记录器，将测试步骤/结果持久化到 PostgreSQL，含节点事件缓冲、截图Base64解码落盘、重试元数据记录",
+      "metrics": { "totalLines": 293, "nonEmptyLines": 237, "functionCount": 10, "exportCount": 10 }
+    },
+    {
+      "id": "core/memory_utils.py",
+      "type": "file",
+      "path": "core/memory_utils.py",
+      "summary": "智能体记忆系统：根据域/URL 检索记忆(PostgreSQL全文搜索)，任务完成后用 LLM 总结失败经验生成新记忆",
+      "metrics": { "totalLines": 125, "nonEmptyLines": 105, "functionCount": 3, "exportCount": 3 }
+    },
+    {
+      "id": "database/__init__.py",
+      "type": "file",
+      "path": "database/__init__.py",
+      "summary": "数据库包初始化，导出连接和模型",
+      "metrics": { "totalLines": 22, "nonEmptyLines": 20 }
+    },
+    {
+      "id": "database/connection.py",
+      "type": "file",
+      "path": "database/connection.py",
+      "summary": "SQLAlchemy 异步/同步引擎工厂，数据库自动初始化(创建库+建表+Phase1兼容列)",
+      "metrics": { "totalLines": 170, "nonEmptyLines": 134, "functionCount": 7, "exportCount": 7 }
+    },
+    {
+      "id": "database/models.py",
+      "type": "file",
+      "path": "database/models.py",
+      "summary": "ORM 模型：Task(测试任务)、TaskStep(步骤含重试)、Report(报告)、AgentMemory(智能体记忆)",
+      "metrics": { "totalLines": 144, "nonEmptyLines": 116, "classCount": 5, "exportCount": 5 }
+    },
+    {
+      "id": "tests/api/test_app.py",
+      "type": "file",
+      "path": "tests/api/test_app.py",
+      "summary": "API 端点测试：创建/列出/获取/停止/删除任务、步骤查询、CORS 头",
+      "metrics": { "totalLines": 347, "nonEmptyLines": 275, "functionCount": 14 }
+    },
+    {
+      "id": "tests/api/test_database.py",
+      "type": "file",
+      "path": "tests/api/test_database.py",
+      "summary": "数据库模型测试：CRUD、外键关系、JSONB 列、时间戳时区感知、Phase1兼容列",
+      "metrics": { "totalLines": 308, "nonEmptyLines": 250, "functionCount": 11 }
+    },
+    {
+      "id": "tests/api/test_websocket.py",
+      "type": "file",
+      "path": "tests/api/test_websocket.py",
+      "summary": "WebSocket 单元测试：连接管理、消息发送、广播、端点连接",
+      "metrics": { "totalLines": 118, "nonEmptyLines": 86, "functionCount": 6 }
+    },
+    {
+      "id": "api/app.py::create_task",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "POST /api/tasks — 创建测试任务并启动后台运行",
+      "line": 74
+    },
+    {
+      "id": "api/app.py::list_tasks",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "GET /api/tasks — 分页列出任务",
+      "line": 99
+    },
+    {
+      "id": "api/app.py::get_task",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "GET /api/tasks/{task_id} — 获取单个任务详情",
+      "line": 117
+    },
+    {
+      "id": "api/app.py::get_task_steps",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "GET /api/tasks/{task_id}/steps — 获取任务步骤(可按test_case_id过滤)",
+      "line": 128
+    },
+    {
+      "id": "api/app.py::get_diag_list",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "GET /api/tasks/{task_id}/diag — 列出诊断日志文件",
+      "line": 152
+    },
+    {
+      "id": "api/app.py::get_diag_file",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "GET /api/tasks/{task_id}/diag/{stage} — 获取单个诊断日志",
+      "line": 201
+    },
+    {
+      "id": "api/app.py::get_report",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "GET /api/tasks/{task_id}/report — 获取报告(支持下载)",
+      "line": 223
+    },
+    {
+      "id": "api/app.py::stop_task",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "POST /api/tasks/{task_id}/stop — 停止运行中的任务",
+      "line": 249
+    },
+    {
+      "id": "api/app.py::delete_task",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "DELETE /api/tasks/{task_id} — 删除任务(不可删除运行中)",
+      "line": 271
+    },
+    {
+      "id": "api/app.py::resume_task",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "POST /api/tasks/{task_id}/resume — 恢复等待人工干预的任务",
+      "line": 288
+    },
+    {
+      "id": "api/app.py::test_layer1_endpoint",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "POST /api/test/layer1 — Layer1 提取流水线(SSE流式输出)",
+      "line": 304
+    },
+    {
+      "id": "api/app.py::list_memories",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "GET /api/memory — 列出智能体记忆(可按scope_type过滤)",
+      "line": 362
+    },
+    {
+      "id": "api/app.py::create_memory",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "POST /api/memory — 创建智能体记忆",
+      "line": 381
+    },
+    {
+      "id": "api/app.py::update_memory",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "PUT /api/memory/{memory_id} — 更新智能体记忆",
+      "line": 396
+    },
+    {
+      "id": "api/app.py::delete_memory",
+      "type": "endpoint",
+      "path": "api/app.py",
+      "summary": "DELETE /api/memory/{memory_id} — 删除智能体记忆",
+      "line": 411
+    },
+    {
+      "id": "api/app.py::_run_test_session",
+      "type": "function",
+      "path": "api/app.py",
+      "summary": "后台测试会话执行器：知识提取->用例建模->覆盖检查->系统建模->Runtime 流式执行",
+      "line": 431
+    },
+    {
+      "id": "api/websocket.py::ConnectionManager",
+      "type": "class",
+      "path": "api/websocket.py",
+      "summary": "WebSocket 连接管理器，按 task_id 管理连接池",
+      "line": 14
+    },
+    {
+      "id": "api/websocket.py::websocket_endpoint",
+      "type": "function",
+      "path": "api/websocket.py",
+      "summary": "WebSocket 端点 ws://localhost:8000/ws/tasks/{task_id}",
+      "line": 76
+    },
+    {
+      "id": "database/models.py::Task",
+      "type": "model",
+      "path": "database/models.py",
+      "summary": "任务表：名称/URL/状态/config(JSONB)/test_plan(JSONB)/计数/时间戳",
+      "line": 20
+    },
+    {
+      "id": "database/models.py::TaskStep",
+      "type": "model",
+      "path": "database/models.py",
+      "summary": "步骤表：关联task、action信息、screenshot、assertion、retry",
+      "line": 59
+    },
+    {
+      "id": "database/models.py::Report",
+      "type": "model",
+      "path": "database/models.py",
+      "summary": "报告表：报告路径和AI摘要",
+      "line": 99
+    },
+    {
+      "id": "database/models.py::AgentMemory",
+      "type": "model",
+      "path": "database/models.py",
+      "summary": "记忆表：scope类型(global/domain)、键值对、时间戳",
+      "line": 122
+    },
+    {
+      "id": "core/execution_logger.py::_task_id_map",
+      "type": "variable",
+      "path": "core/execution_logger.py",
+      "summary": "外部task_id到DB内部ID的映射字典",
+      "line": 21
+    },
+    {
+      "id": "api/utils.py::parse_doc",
+      "type": "function",
+      "path": "api/utils.py",
+      "summary": "POST /api/utils/parse-doc — 解析上传文档(txt/md/docx)",
+      "line": 19
+    },
+    {
+      "id": "api/utils.py::fetch_url",
+      "type": "function",
+      "path": "api/utils.py",
+      "summary": "POST /api/utils/fetch-url — 代理抓取URL内容",
+      "line": 41
+    }
+  ],
+  "edges": [
+    { "source": "api/app.py", "target": "api/schemas.py", "type": "imports", "label": "导入Pydantic模型" },
+    { "source": "api/app.py", "target": "api/websocket.py", "type": "imports", "label": "导入WebSocket管理器" },
+    { "source": "api/app.py", "target": "api/utils.py", "type": "imports", "label": "导入工具路由" },
+    { "source": "api/app.py", "target": "database/connection.py", "type": "imports", "label": "导入DB会话" },
+    { "source": "api/app.py", "target": "database/models.py", "type": "imports", "label": "导入ORM模型" },
+    { "source": "api/app.py", "target": "core/execution_logger.py", "type": "imports", "label": "导入_task_id_map" },
+    { "source": "api/app.py", "target": "core/memory_utils.py", "type": "imports", "label": "导入记忆检索/反思" },
+    { "source": "api/websocket.py", "target": "database/connection.py", "type": "imports", "label": "导入DB会话" },
+    { "source": "api/websocket.py", "target": "database/models.py", "type": "imports", "label": "导入Task模型" },
+    { "source": "core/execution_logger.py", "target": "database/connection.py", "type": "imports", "label": "导入DB会话" },
+    { "source": "core/execution_logger.py", "target": "database/models.py", "type": "imports", "label": "导入Task/TaskStep模型" },
+    { "source": "core/memory_utils.py", "target": "database/connection.py", "type": "imports", "label": "导入DB会话" },
+    { "source": "core/memory_utils.py", "target": "database/models.py", "type": "imports", "label": "导入AgentMemory/Task/TaskStep模型" },
+    { "source": "database/__init__.py", "target": "database/connection.py", "type": "imports", "label": "导出连接模块" },
+    { "source": "database/__init__.py", "target": "database/models.py", "type": "imports", "label": "导出模型" },
+    { "source": "database/connection.py", "target": "database/models.py", "type": "imports", "label": "导入Base元数据" },
+    { "source": "api/__init__.py", "target": "api/app.py", "type": "imports", "label": "导出app实例" },
+    { "source": "tests/api/test_app.py", "target": "api/app.py", "type": "imports", "label": "导入app测试" },
+    { "source": "tests/api/test_app.py", "target": "database/models.py", "type": "imports", "label": "导入模型" },
+    { "source": "tests/api/test_app.py", "target": "database/connection.py", "type": "imports", "label": "导入引擎和会话" },
+    { "source": "tests/api/test_database.py", "target": "database/models.py", "type": "imports", "label": "导入模型测试" },
+    { "source": "tests/api/test_database.py", "target": "database/connection.py", "type": "imports", "label": "导入连接模块" },
+    { "source": "tests/api/test_websocket.py", "target": "api/app.py", "type": "imports", "label": "导入app" },
+    { "source": "tests/api/test_websocket.py", "target": "api/websocket.py", "type": "imports", "label": "导入WebSocket模块" },
+    { "source": "api/app.py", "target": "api/app.py::_run_test_session", "type": "calls", "label": "create_task启动后台任务" },
+    { "source": "api/app.py::_run_test_session", "target": "core/memory_utils.py", "type": "calls", "label": "调用记忆检索" },
+    { "source": "api/app.py::_run_test_session", "target": "api/websocket.py::ConnectionManager", "type": "calls", "label": "发送WebSocket更新" },
+    { "source": "api/websocket.py::_handle_stop", "target": "api/app.py", "type": "calls", "label": "引用_running_tasks" },
+    { "source": "api/app.py::stop_task", "target": "api/websocket.py::ConnectionManager", "type": "calls", "label": "发送停止通知" },
+    { "source": "core/execution_logger.py", "target": "database/models.py::Task", "type": "reads", "label": "读写Task表" },
+    { "source": "core/execution_logger.py", "target": "database/models.py::TaskStep", "type": "reads", "label": "读写TaskStep表" },
+    { "source": "core/memory_utils.py", "target": "database/models.py::AgentMemory", "type": "reads", "label": "读写AgentMemory表" },
+    { "source": "core/memory_utils.py", "target": "database/models.py::Task", "type": "reads", "label": "读取Task表" },
+    { "source": "core/memory_utils.py", "target": "database/models.py::TaskStep", "type": "reads", "label": "读取TaskStep表" },
+    { "source": "api/app.py::create_task", "target": "database/models.py::Task", "type": "writes", "label": "创建Task记录" },
+    { "source": "api/app.py::get_report", "target": "database/models.py::Report", "type": "reads", "label": "读取Report表" },
+    { "source": "api/app.py::create_memory", "target": "database/models.py::AgentMemory", "type": "writes", "label": "创建记忆" },
+    { "source": "api/app.py::list_memories", "target": "database/models.py::AgentMemory", "type": "reads", "label": "查询记忆" },
+    { "source": "api/app.py::test_layer1_endpoint", "target": "api/app.py::_run_test_session", "type": "related", "label": "共享Layer1节点逻辑" }
+  ]
+}

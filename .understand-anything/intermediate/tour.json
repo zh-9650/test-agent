@@ -1,0 +1,116 @@
+[
+  {
+    "order": 1,
+    "title": "项目概览",
+    "description": "了解 Smart Test Agent 的定位和技术栈。README 介绍项目为 AI-native web testing 平台；CONTEXT 记录架构上下文和已知问题；PRD 定义产品需求；DEVELOPMENT 提供开发指南和验证流程。从文档入手建立全局认知。",
+    "nodeIds": [
+      "document:README.md",
+      "document:CONTEXT.md",
+      "document:docs/PRD.md",
+      "document:docs/DEVELOPMENT.md",
+      "document:docs/master-roadmap.md",
+      "document:docs/business_workflow.md"
+    ]
+  },
+  {
+    "order": 2,
+    "title": "系统入口与 API",
+    "description": "从入口 main.py 进入系统，它同时启动后端 uvicorn 和前端 dev server。API 层基于 FastAPI，提供任务 CRUD（POST/GET/DELETE /api/tasks）、WebSocket 实时监控、文档解析和 URL 抓取工具路由、诊断日志和报告查看接口。后台 _run_test_session 编排完整的 LLM 流水线。",
+    "nodeIds": [
+      "file:main.py",
+      "file:api/app.py",
+      "file:api/schemas.py",
+      "file:api/websocket.py",
+      "file:api/utils.py",
+      "function:__nofilepath__:api/app.py::_run_test_session"
+    ]
+  },
+  {
+    "order": 3,
+    "title": "核心数据模型与类型系统",
+    "description": "core/interfaces.py 是全平台 Pydantic 类型中枢。定义 TestState（LangGraph 完整状态）、AgentDecision（LLM 结构化输出）、ActionResult/StepResult/TestResult（执行结果链）、KnowledgeBase/UseCaseModel/SystemModel（L1 流水线模型）、ChangeReport（页面变化检测）、AssertionResult（断言结果）等核心类型。所有模块依赖此文件。",
+    "nodeIds": [
+      "file:core/interfaces.py"
+    ]
+  },
+  {
+    "order": 4,
+    "title": "LLM 客户端与上下文管理",
+    "description": "core/llm_client.py 统一 LLM 调用：管理 ChatAnthropic 实例缓存、多模型切换、safe_structured_invoke（结构化输出 + JSON 回退 + pydantic 强制转换）。core/context_manager.py 实现 LLM 上下文窗口双策略压缩（语义压缩 + 物理截断），对标 browser-use MessageManager。",
+    "nodeIds": [
+      "file:core/llm_client.py",
+      "file:core/context_manager.py"
+    ]
+  },
+  {
+    "order": 5,
+    "title": "Agent 架构：规划与执行",
+    "description": "核心 AI 编排层。planning_graph 实现探索→建模→生成测试计划：从 UseCaseModel 提取探索目标→浏览页面→提取系统地图和场景→生成结构化测试计划。execution_graph 实现 observe→decide→execute→assert→record 五节点循环。prompts.py 提供全部中文 5 段 XML 提示词模板（含角色/上下文/任务/规则/示例/输出契约）。tools.py 封装 25 个 LLM 可调工具。setup_manager 复用 execution_graph 执行前置条件。",
+    "nodeIds": [
+      "module:batch2-mod-execution_graph",
+      "module:batch2-mod-planning_graph",
+      "module:batch2-mod-prompts",
+      "module:batch2-mod-tools",
+      "module:batch2-mod-setup_manager"
+    ]
+  },
+  {
+    "order": 6,
+    "title": "浏览器自动化：CDP 与页面语义",
+    "description": "核心浏览器交互层。cdp_client.py 封装 Chrome DevTools Protocol：AXTree 元素提取、CDP 鼠标/键盘事件、DOM 节点解析。page_semantic.py 是 AI 的'眼睛'：三层语义提取（交互元素→页面结构→状态信息），CDP AXTree 优先→Playwright 兜底。backend_node_map.py 持久化 backendNodeId 映射，支持跨步骤元素锚定。",
+    "nodeIds": [
+      "file:core/cdp_client.py",
+      "file:core/page_semantic.py",
+      "file:core/backend_node_map.py",
+      "file:core/change_detector.py",
+      "file:core/dependency.py",
+      "file:core/parallel_executor.py"
+    ]
+  },
+  {
+    "order": 7,
+    "title": "运行时编排与诊断",
+    "description": "core/runtime.py 是完整测试会话编排器：启动浏览器→规划→逐用例执行（含重试）→保存报告。支持流式（run_stream 为 WebSocket 推送事件）。diag_logger.py 按 task 粒度异步诊断日志落盘（脱敏+元数据注入）。execution_logger.py 将步骤持久化到 PostgreSQL。report_builder.py 用 Jinja2 生成玻璃态 UI 的 HTML 报告。memory_utils.py 实现智能体记忆的全文搜索与 LLM 总结。",
+    "nodeIds": [
+      "file:core/runtime.py",
+      "file:core/diag_logger.py",
+      "file:core/execution_logger.py",
+      "file:core/report_builder.py",
+      "file:core/memory_utils.py",
+      "file:core/document_parser.py"
+    ]
+  },
+  {
+    "order": 8,
+    "title": "持久化层与前端",
+    "description": "database/ 提供 SQLAlchemy ORM：Task（测试任务）、TaskStep（步骤含截图和断言）、Report（报告路径和AI摘要）、AgentMemory（智能体记忆 key-value 存储）。前端为 React + TypeScript SPA：5 个路由页面（创建/监控/报告/历史/记忆管理）、WebSocket 实时日志、文档上传组件、分页历史列表、诊断日志 JSON 树查看器。",
+    "nodeIds": [
+      "file:database/__init__.py",
+      "file:database/connection.py",
+      "file:database/models.py",
+      "file:frontend/src/main.tsx",
+      "file:frontend/src/App.tsx",
+      "file:frontend/src/api/client.ts",
+      "file:frontend/src/pages/TaskCreate.tsx",
+      "file:frontend/src/pages/Monitor.tsx",
+      "file:frontend/src/pages/Report.tsx",
+      "file:frontend/src/pages/TaskHistory.tsx",
+      "file:frontend/src/pages/MemoryManager.tsx"
+    ]
+  },
+  {
+    "order": 9,
+    "title": "L1 流水线技能与测试",
+    "description": "Skills 层实现知识驱动的测试生成流水线。knowledge_extractor 从 PRD/Swagger/Changelog 提取结构化知识库 → use_case_modeler 聚合成业务用例 → use_case_coverage 自检补全 → system_modeler 生成状态机模型。tests/ 提供 23+ 个测试套件覆盖全模块，benchmarks/ 包含 WebVoyager 子集端到端基准。fixtures/ 提供多产品线测试数据。",
+    "nodeIds": [
+      "file:core/skills/knowledge_extractor.py",
+      "file:core/skills/use_case_modeler.py",
+      "file:core/skills/use_case_coverage.py",
+      "file:core/skills/system_modeler.py",
+      "file:core/skills/goal_extractor.py",
+      "file:core/skills/scenario_extractor.py",
+      "file:core/skills/risk_analyzer.py",
+      "file:core/skills/system_mapper.py"
+    ]
+  }
+]

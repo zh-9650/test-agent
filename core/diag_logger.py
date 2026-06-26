@@ -42,16 +42,9 @@ _PREVIEW_MAX_CHARS = 500
 # 阶段 → 序号 (控制文件名前缀顺序)
 _STAGE_ORDER: dict[str, str] = {
     "00_entry": "00",
-    "01_l1_knowledge": "01",
-    "02_l1_use_case": "02",
-    "03_l1_coverage": "03",
-    "04_l1_system_model": "04",
-    "04_l1_system_model_raw": "04",
-    "05_l1_goals": "05",
     # Tier 2 (2026-06-05): astream 监听
     "06_l2_planning_extract_goals": "06",
     "07_l2_planning_explore_step": "07",
-    "08_l2_planning_generate_system_map": "08",
     "09_l2_planning_extract_scenarios": "09",
     "10_l2_planning_generate_plan": "10",
     "11_l3_execution_step": "11",

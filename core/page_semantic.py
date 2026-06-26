@@ -127,8 +127,11 @@ async def extract_page_semantics(page: Any, task_id: str | None = None,
         "url": page.url,
         "title": await page.title(),
         "interactive_elements": [],
+        "visible_texts": [],
         "headings": [],
         "forms": [],
+        "frames": [],
+        "shadow_dom": [],
         "modals": [],
         "nav_items": [],
         "error_messages": [],
@@ -142,7 +145,10 @@ async def extract_page_semantics(page: Any, task_id: str | None = None,
 
     # Layer 2: Page structure
     result["headings"] = await _extract_headings(page)
+    result["visible_texts"] = await _extract_visible_texts(page)
     result["forms"] = await _extract_forms(page)
+    result["frames"] = await _extract_frames(page)
+    result["shadow_dom"] = await _extract_shadow_dom(page)
     result["modals"] = await _extract_modals(page)
     result["nav_items"] = await _extract_nav_items(page)
 
@@ -217,6 +223,9 @@ async def extract_page_semantics(page: Any, task_id: str | None = None,
 
     # Layer 1: Interactive elements (collected last so we can truncate)
     all_interactive_elements = await _collect_interactive_elements(page)
+    result["semantic_extraction"] = dict(
+        getattr(page, "_last_semantic_extraction", {}) or {}
+    )
 
     # Fallback truncation if still too many elements (env-overridable, default 100)
     import os as _os
@@ -334,16 +343,32 @@ async def take_screenshot_compressed(page: Any, quality: int | None = None) -> s
 
 async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
     """Phase 2.0C: CDP AXTree 优先, 回退 browser-use DOM service, 最差 Playwright locator."""
+    page._last_semantic_extraction = {
+        "source": "unknown",
+        "element_count": 0,
+        "cdp_available": False,
+    }
     # Priority 1: CDP AXTree (Phase 2.0C Sprint 1)
     try:
         from core.cdp_client import extract_elements_via_cdp, get_cdp_session
         cdp_session = await get_cdp_session(page)
         if cdp_session:
+            page._last_semantic_extraction["cdp_available"] = True
             cdp_elements = await extract_elements_via_cdp(page, cdp_session)
             if cdp_elements:
+                page._last_semantic_extraction = {
+                    "source": "cdp",
+                    "element_count": len(cdp_elements),
+                    "cdp_available": True,
+                }
                 return cdp_elements
-    except Exception:
-        pass
+    except Exception as exc:
+        page._last_semantic_extraction = {
+            "source": "cdp_error",
+            "element_count": 0,
+            "cdp_available": False,
+            "error": str(exc)[:160],
+        }
 
     # Priority 2: browser-use DOM service (existing)
     session = getattr(page, "_browser_session", None)
@@ -359,7 +384,15 @@ async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
                         "xpath": node.xpath,
                         "text": node.get_meaningful_text_for_llm(),
                     })
-            return elements
+            if elements:
+                page._last_semantic_extraction = {
+                    "source": "browser_session",
+                    "element_count": len(elements),
+                    "cdp_available": bool(
+                        page._last_semantic_extraction.get("cdp_available")
+                    ),
+                }
+                return elements
         except Exception as e:
             logger.warning(f"BrowserSession extraction failed: {e}")
 
@@ -367,13 +400,30 @@ async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
     elements = []
     counter = 1
 
-    # Inputs (excluding hidden, checkboxes, radios — those have dedicated extractors below)
-    inputs = page.locator("input:visible:not([type='checkbox']):not([type='radio'])")
+    # File inputs are often visually hidden behind a custom upload button but
+    # remain directly actionable through Playwright's set_input_files().
+    inputs = page.locator(
+        "input[type='file'], "
+        "input:visible:not([type='checkbox']):not([type='radio'])"
+    )
     input_count = await inputs.count()
     for i in range(input_count):
         el = inputs.nth(i)
         try:
             info = await _extract_input(page, el, counter)
+            if info:
+                elements.append(info)
+                counter += 1
+        except Exception:
+            pass
+
+    # Textareas
+    textareas = page.locator("textarea:visible")
+    textarea_count = await textareas.count()
+    for i in range(textarea_count):
+        el = textareas.nth(i)
+        try:
+            info = await _extract_textarea(page, el, counter)
             if info:
                 elements.append(info)
                 counter += 1
@@ -445,6 +495,13 @@ async def _collect_interactive_elements(page: Any) -> list[dict[str, Any]]:
         except Exception:
             pass
 
+    page._last_semantic_extraction = {
+        "source": "playwright_locator",
+        "element_count": len(elements),
+        "cdp_available": bool(
+            page._last_semantic_extraction.get("cdp_available")
+        ),
+    }
     return elements
 
 
@@ -462,6 +519,7 @@ async def _get_element_role(el: Any, el_type: str, tag: str = "") -> str:
         "checkbox": "checkbox",
         "radio": "radio",
         "select": "combobox",
+        "textarea": "textbox",
         "input": "textbox" if tag != "submit" else "button",
     }
     return role_map.get(el_type, tag or el_type)
@@ -618,6 +676,39 @@ async def _extract_input(page: Any, el: Any, counter: int) -> dict[str, Any] | N
         "id": f"#{counter}",
         "type": "input",
         "input_type": input_type,
+        "label": label,
+        "placeholder": placeholder,
+        "required": required,
+        "disabled": disabled,
+        "value": value,
+        "coords": coords,
+        **semantics,
+    }
+
+
+async def _extract_textarea(page: Any, el: Any, counter: int) -> dict[str, Any] | None:
+    """Extract info from a textarea element."""
+    label = await _find_label(page, el)
+    placeholder = await el.get_attribute("placeholder") or ""
+    required = await el.get_attribute("required") is not None
+    disabled = False
+    try:
+        disabled = await el.is_disabled()
+    except Exception:
+        pass
+
+    value = ""
+    try:
+        value = await el.input_value()
+    except Exception:
+        pass
+
+    semantics = await _get_element_semantics(el, "textarea", page)
+    coords = await _get_bbox(el)
+
+    return {
+        "id": f"#{counter}",
+        "type": "textarea",
         "label": label,
         "placeholder": placeholder,
         "required": required,
@@ -871,14 +962,208 @@ async def _extract_forms(page: Any) -> list[dict[str, Any]]:
             form_id = await el.get_attribute("id") or ""
             action = await el.get_attribute("action") or ""
             method = await el.get_attribute("method") or "GET"
+            fields = await _extract_form_fields(page, el)
+            submit_count = await el.locator(
+                "button[type='submit'], input[type='submit'], button:not([type])"
+            ).count()
             result.append({
                 "id": form_id,
                 "action": action,
                 "method": method.upper(),
+                "field_count": len(fields),
+                "fields": fields,
+                "submit_count": submit_count,
             })
         except Exception:
             pass
     return result
+
+
+async def _extract_form_fields(page: Any, form: Any) -> list[dict[str, Any]]:
+    """Extract compact field metadata from a form."""
+    fields = form.locator("input, textarea, select")
+    count = await fields.count()
+    result: list[dict[str, Any]] = []
+    max_fields = 20
+
+    for i in range(min(count, max_fields)):
+        el = fields.nth(i)
+        try:
+            tag = await el.evaluate("el => el.tagName.toLowerCase()")
+        except Exception:
+            tag = ""
+
+        try:
+            raw_type = await el.get_attribute("type") or ""
+        except Exception:
+            raw_type = ""
+
+        field_type = raw_type.lower() if tag == "input" else tag
+        if not field_type:
+            field_type = tag or "field"
+
+        try:
+            name = await el.get_attribute("name") or ""
+            element_id = await el.get_attribute("id") or ""
+            placeholder = await el.get_attribute("placeholder") or ""
+            required = await el.get_attribute("required") is not None
+            disabled = await el.is_disabled()
+            label = await _find_label(page, el)
+        except Exception:
+            name = ""
+            element_id = ""
+            placeholder = ""
+            required = False
+            disabled = False
+            label = ""
+
+        field: dict[str, Any] = {
+            "tag": tag,
+            "field_type": field_type,
+            "name": name,
+            "id": element_id,
+            "label": label,
+            "placeholder": placeholder,
+            "required": required,
+            "disabled": disabled,
+        }
+
+        if tag == "select":
+            try:
+                field["options"] = await el.evaluate(
+                    "el => Array.from(el.options).map(o => o.text.trim()).filter(Boolean).slice(0, 20)"
+                )
+            except Exception:
+                field["options"] = []
+
+        result.append(field)
+
+    return result
+
+
+async def _extract_frames(page: Any) -> list[dict[str, Any]]:
+    """Extract compact iframe/frame summaries."""
+    result: list[dict[str, Any]] = []
+    try:
+        frames = list(page.frames)
+        main_frame = page.main_frame
+    except Exception:
+        return result
+
+    for index, frame in enumerate(frames):
+        if frame == main_frame:
+            continue
+        try:
+            name = frame.name or ""
+        except Exception:
+            name = ""
+        try:
+            url = frame.url or ""
+        except Exception:
+            url = ""
+        try:
+            title = await frame.evaluate("document.title || ''")
+        except Exception:
+            title = ""
+        try:
+            text = await frame.locator("body").inner_text(timeout=500)
+        except Exception:
+            text = ""
+        try:
+            interactive_count = await frame.locator(
+                "input, textarea, select, button, a[href], [role='button']"
+            ).count()
+        except Exception:
+            interactive_count = 0
+
+        result.append({
+            "index": index,
+            "name": name,
+            "url": url,
+            "title": title,
+            "text": " ".join(str(text or "").split())[:200],
+            "interactive_count": interactive_count,
+        })
+
+    return result[:20]
+
+
+async def _extract_shadow_dom(page: Any) -> list[dict[str, Any]]:
+    """Extract compact summaries for open shadow roots."""
+    try:
+        summaries = await page.evaluate(
+            """() => {
+                const MAX_HOSTS = 20;
+                const MAX_CONTROLS = 10;
+                const results = [];
+
+                const normalize = (value) =>
+                    (value || "").replace(/\\s+/g, " ").trim();
+
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    if (!style) return false;
+                    if (style.display === "none" || style.visibility === "hidden") {
+                        return false;
+                    }
+                    if (Number(style.opacity || "1") === 0) {
+                        return false;
+                    }
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                };
+
+                const describeHost = (host) => {
+                    const tag = (host.tagName || "").toLowerCase();
+                    const id = host.id ? `#${host.id}` : "";
+                    return `${tag}${id}` || "shadow-host";
+                };
+
+                const describeControl = (el) => ({
+                    tag: (el.tagName || "").toLowerCase(),
+                    type: el.getAttribute("type") || "",
+                    role: el.getAttribute("role") || "",
+                    label: el.getAttribute("aria-label") || el.getAttribute("title") || "",
+                    text: normalize(el.innerText || el.textContent || "").slice(0, 80),
+                });
+
+                const collectControls = (root) =>
+                    Array.from(root.querySelectorAll(
+                        "input, textarea, select, button, a[href], [role='button'], [role='checkbox'], [role='radio']"
+                    ))
+                        .filter(isVisible)
+                        .slice(0, MAX_CONTROLS)
+                        .map(describeControl);
+
+                const walk = (root) => {
+                    if (results.length >= MAX_HOSTS || !root.querySelectorAll) {
+                        return;
+                    }
+                    for (const el of root.querySelectorAll("*")) {
+                        if (results.length >= MAX_HOSTS) break;
+                        if (!el.shadowRoot) continue;
+                        const controls = collectControls(el.shadowRoot);
+                        results.push({
+                            host: describeHost(el),
+                            text: normalize(el.shadowRoot.textContent || "").slice(0, 200),
+                            interactive_count: controls.length,
+                            controls,
+                        });
+                        walk(el.shadowRoot);
+                    }
+                };
+
+                walk(document);
+                return results;
+            }"""
+        )
+    except Exception:
+        return []
+
+    if not isinstance(summaries, list):
+        return []
+    return summaries
 
 
 async def _extract_modals(page: Any) -> list[dict[str, Any]]:
@@ -919,6 +1204,96 @@ async def _extract_nav_items(page: Any) -> list[str]:
         except Exception:
             pass
     return result
+
+
+async def _extract_visible_texts(page: Any) -> list[str]:
+    """Extract compact read-only text snippets from the main content area."""
+    try:
+        texts = await page.evaluate(
+            """() => {
+                const MAX_ITEMS = 30;
+                const MAX_LENGTH = 80;
+                const LEAF_TAGS = new Set([
+                    "h1", "h2", "h3", "h4", "h5", "h6",
+                    "p", "span", "div", "li", "dt", "dd",
+                    "td", "th", "strong", "small"
+                ]);
+                const seen = new Set();
+                const results = [];
+                const root =
+                    document.querySelector("main, [role='main'], article") ||
+                    document.body;
+
+                const normalize = (value) =>
+                    (value || "").replace(/\\s+/g, " ").trim();
+
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    if (!style) return false;
+                    if (style.display === "none" || style.visibility === "hidden") {
+                        return false;
+                    }
+                    if (Number(style.opacity || "1") === 0) {
+                        return false;
+                    }
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                };
+
+                const hasMeaningfulVisibleChild = (el, text) =>
+                    Array.from(el.children || []).some((child) => {
+                        if (!isVisible(child)) return false;
+                        const childTag = (child.tagName || "").toLowerCase();
+                        if (!LEAF_TAGS.has(childTag)) return false;
+                        const childText = normalize(child.innerText || child.textContent || "");
+                        return Boolean(childText && childText !== text);
+                    });
+
+                const pushText = (text) => {
+                    if (!text || text.length < 2 || text.length > MAX_LENGTH) {
+                        return;
+                    }
+                    if (seen.has(text)) {
+                        return;
+                    }
+                    seen.add(text);
+                    results.push(text);
+                };
+
+                const candidates = root.querySelectorAll(
+                    "h1, h2, h3, h4, h5, h6, p, span, div, li, dt, dd, td, th, strong, small"
+                );
+
+                for (const el of candidates) {
+                    if (results.length >= MAX_ITEMS) break;
+                    const tag = (el.tagName || "").toLowerCase();
+                    if (!LEAF_TAGS.has(tag) || !isVisible(el)) continue;
+                    if (el.closest("button, a, input, textarea, select, option, label")) {
+                        continue;
+                    }
+
+                    const text = normalize(el.innerText || el.textContent || "");
+                    if (!text) continue;
+                    if (hasMeaningfulVisibleChild(el, text) && text.length > 40) {
+                        continue;
+                    }
+                    pushText(text);
+                }
+
+                return results;
+            }"""
+        )
+    except Exception:
+        return []
+
+    if not isinstance(texts, list):
+        return []
+    return [
+        str(value).strip()
+        for value in texts
+        if str(value or "").strip()
+    ]
 
 
 async def _extract_tables(page: Any) -> list[dict[str, Any]]:

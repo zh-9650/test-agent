@@ -1,69 +1,42 @@
 # Master Roadmap
 
-Last updated: 2026-06-08.
+P0 authoritative lifecycle/results and P1 frontend/test-contract work are no
+longer active roadmap items. Current feature work starts at P2.
+
+Last updated: 2026-06-18.
 
 This file contains active priorities only. Completed implementation history
 belongs in Git commits, not duplicated phase documents.
 
-## P0: Trustworthy Lifecycle And Results
-
-1. M1: unify Review Gate semantics across Phase 1 and Phase 2, introduce strict
-   exploration goals, and add deterministic L1 quality gates.
-2. M2: split Runtime into explicit explore/execute phases and make
-   `CandidateTestCase` the authoritative execution input.
-3. M3: add durable `ExecutionRun` / `CaseResult` authority, preserve retry
-   attempts, and derive counters from persisted terminal results.
-4. Make `TestResult` or its successor a view of the authoritative case outcome.
-5. Ensure every authoritative candidate case receives exactly one terminal
-   result per execution run.
-6. Treat empty execution, graph crashes, assertion exceptions, and analysis
-   failures explicitly.
-7. Align retry eligibility for `failed`, `incomplete`, and execution errors.
-8. Derive final task lifecycle status separately from test outcome summary.
-9. Align database counters, WebSocket final payload, and HTML report totals.
-10. Add regression tests for partial execution and premature completion.
-11. Reproduce one real task with diagnostic artifacts and identify the first
-   divergence from a human oracle.
-
-Exit criteria:
-
-- planned count equals terminal result count;
-- persisted totals equal report and WebSocket totals;
-- no incomplete task is marked `completed`;
-- regression tests cover the original failure shape.
-
-## P1: Fast Health Checks And Frontend Contracts
-
-1. Define a fast backend test subset for routine development.
-2. Isolate database-backed test modules so the full pytest suite can run in
-   one process without global engine or event-loop contamination.
-3. Remove remaining debug prints from runtime hot paths.
-4. Document and verify stop/resume semantics.
-
-Exit criteria:
-
-- `npm run build` and `npm run lint` pass;
-- the documented fast pytest command completes predictably;
-- diagnostics can be enabled without changing runtime behavior.
-
 ## P2: Execution Quality
 
-1. Compare tool schemas with prompt examples automatically.
-2. Improve invalid tool-call recovery.
-3. Measure locator/CDP failure rates before changing the default backend.
-4. Improve final-evidence validation for completion markers.
-5. Add fixtures for iframe, shadow DOM, multi-tab, file upload, and complex
-   form interaction.
+1. *(Completed)* Runtime tool schemas, prompt tool lists, and prompt examples
+   are compared automatically through the shared runtime tool contract.
+2. *(Completed)* Invalid or empty action decisions are persisted explicitly,
+   and structured action recovery uses the shared structured-output path.
+3. *(Completed)* Locator/CDP failure-rate measurement is retained in case
+   evidence before changing the default backend.
+4. *(Completed)* Final evidence checks use deterministic stable page evidence
+   before semantic judgment and retain the matched reason in case evidence.
+5. *(Completed)* Real Chromium fixtures cover iframe, open shadow DOM,
+   multi-tab, file upload, and complex-form semantics across CDP and
+   Playwright fallback paths.
 
 ## P3: Planning And Model Quality
 
-1. Establish human-oracle fixtures for requirement facts, assertions,
-   exploration evidence, and plan quality.
-2. Improve exploration evidence quality based on real failure data.
+1. *(Completed)* Versioned human-oracle fixtures and a deterministic evaluator
+   cover requirement facts, assertions, exploration evidence, and plan quality
+   with source-hash and provenance checks.
+2. *(Completed)* Real failure data showed page-only system maps and ungrounded
+   exploration decisions. Exploration now persists evidence-backed
+   page/action/form/navigation maps, goal-result summaries, canonical routes,
+   and bounded value-redacted semantic decision context.
 3. *(Completed)* Test asset coverage and executability evaluation is tracked
    through `TestAssetPackage.manual_review_items` and `TraceabilityMatrix` status.
 4. *(Completed)* Automated traceability from requirement fact to candidate case
    is implemented in `core/skills/traceability_builder.py`.
+5. *(Completed)* Planning now preserves a complete grounded candidate asset
+   pool and selects deterministic smoke, balanced, or full execution sets.
 
 ## P4: Platform Growth
 

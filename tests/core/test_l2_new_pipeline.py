@@ -14,8 +14,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from core.interfaces import (
-    RequirementFact, RequirementAssertion, TestCondition,
-    TestDesignTechnique, CoverageItem, CandidateTestCase,
+    RequirementFact, RequirementAssertion, TestCondition as ConditionModel,
+    TestDesignTechnique as TechniqueModel, CoverageItem, CandidateTestCase,
+    CoverageBlueprint,
 )
 from core.skills.fact_extractor import FactExtractionResult
 from core.skills.assertion_deriver import AssertionDerivationResult
@@ -75,16 +76,16 @@ def _make_sample_assertions() -> list[RequirementAssertion]:
     ]
 
 
-def _make_sample_conditions() -> list[TestCondition]:
+def _make_sample_conditions() -> list[ConditionModel]:
     return [
-        TestCondition(
+        ConditionModel(
             id="COND-001", assertion_ref="ASSERT-001",
             condition_type="functional",
             statement="登录用户在采购页面点击创建申请按钮",
             oracle="系统展示采购申请创建表单",
             oracle_type="ui_state",
         ),
-        TestCondition(
+        ConditionModel(
             id="COND-002", assertion_ref="ASSERT-002",
             condition_type="data_rule",
             statement="在采购申请中输入金额6000元并提交",
@@ -96,15 +97,15 @@ def _make_sample_conditions() -> list[TestCondition]:
     ]
 
 
-def _make_sample_techniques() -> list[TestDesignTechnique]:
+def _make_sample_techniques() -> list[TechniqueModel]:
     return [
-        TestDesignTechnique(
+        TechniqueModel(
             id="TECH-COND-001",
             condition_id="COND-001",
             primary_technique="equivalence_partitioning",
             rationale="按操作流程划分等价类",
         ),
-        TestDesignTechnique(
+        TechniqueModel(
             id="TECH-COND-002",
             condition_id="COND-002",
             primary_technique="boundary_value_analysis",
@@ -143,8 +144,32 @@ def _make_sample_cases() -> list[CandidateTestCase]:
         CandidateTestCase(
             id="TC-CAND-002", title="金额超过5000触发审批",
             goal="验证金额6000时触发部门经理审批",
-            preconditions=["已登录", "有采购申请权限"],
-            input_data={"金额": "6000"},
+            preconditions=[
+                {
+                    "type": "account_role",
+                    "description": "已登录",
+                    "required_role": "purchaser",
+                    "satisfiable_by_agent": True,
+                    "failure_policy": "incomplete",
+                },
+                {
+                    "type": "business_state",
+                    "description": "有采购申请权限",
+                    "satisfiable_by_agent": True,
+                    "failure_policy": "failed",
+                },
+            ],
+            required_roles=["purchaser"],
+            input_data=[
+                {
+                    "name": "金额",
+                    "value": "6000",
+                    "source": "fixture",
+                    "sensitivity": "public",
+                    "generation_strategy": "boundary",
+                    "boundary_category": "above_threshold",
+                }
+            ],
             expected_result="系统提示需要部门经理审批",
             priority="high",
             trace_references=["COV-002"],
@@ -185,6 +210,87 @@ async def test_fact_extractor_empty_fallback():
 
 
 @pytest.mark.asyncio
+async def test_fact_extractor_chunks_long_markdown_and_normalizes_ids(monkeypatch):
+    monkeypatch.setenv("L1_CHUNK_MAX_CHARS", "1000")
+    long_prd = "\n\n".join([
+        "# 模块一\n" + ("需求一内容。" * 140),
+        "# 模块二\n" + ("需求二内容。" * 140),
+    ])
+    first = RequirementFact(
+        id="FACT-001",
+        source_type="prd",
+        source_reference="模块一",
+        quote="需求一内容",
+        subject="模块一",
+        action="展示",
+        object="内容",
+        confidence=0.9,
+        status="confirmed",
+    )
+    second = RequirementFact(
+        id="FACT-001",
+        source_type="prd",
+        source_reference="模块二",
+        quote="需求二内容",
+        subject="模块二",
+        action="展示",
+        object="内容",
+        confidence=0.9,
+        status="confirmed",
+    )
+
+    with patch(
+        "core.skills.fact_extractor.safe_structured_invoke",
+        new=AsyncMock(side_effect=[
+            FactExtractionResult(facts=[first]),
+            FactExtractionResult(facts=[second]),
+        ]),
+    ) as mock:
+        from core.skills.fact_extractor import extract_facts
+        result = await extract_facts(prd_content=long_prd)
+
+    assert mock.await_count == 2
+    assert [fact.id for fact in result] == ["FACT-001", "FACT-002"]
+    assert result[0].source_reference.startswith("PRD > 模块一")
+    assert result[1].source_reference.startswith("PRD > 模块二")
+
+
+@pytest.mark.asyncio
+async def test_fact_extractor_scopes_chunks_by_focus(monkeypatch):
+    monkeypatch.setenv("L1_CHUNK_MAX_CHARS", "1000")
+    long_prd = "\n\n".join([
+        "# 15-数据看板\n" + ("看板指标内容。 " * 160),
+        "# 01-开发者配置中心\n" + ("配置中心内容。 " * 160),
+    ])
+    dashboard_fact = RequirementFact(
+        id="FACT-001",
+        source_type="prd",
+        source_reference="PRD > 15-数据看板",
+        quote="看板指标内容",
+        subject="系统",
+        action="展示",
+        object="数据看板",
+        confidence=0.9,
+        status="confirmed",
+    )
+
+    with patch(
+        "core.skills.fact_extractor.safe_structured_invoke",
+        new=AsyncMock(return_value=FactExtractionResult(facts=[dashboard_fact])),
+    ) as mock:
+        from core.skills.fact_extractor import extract_facts
+
+        result = await extract_facts(
+            prd_content=long_prd,
+            focus_areas="dashboard",
+            target_url="http://localhost:5000/dashboard",
+        )
+
+    assert mock.await_count == 2
+    assert [fact.id for fact in result] == ["FACT-001"]
+
+
+@pytest.mark.asyncio
 async def test_assertion_deriver_mocked():
     """Mocked: derive_assertions returns valid RequirementAssertion list."""
     mock_assertions = _make_sample_assertions()
@@ -203,11 +309,192 @@ async def test_assertion_deriver_mocked():
 
 
 @pytest.mark.asyncio
+async def test_assertion_deriver_batches_and_normalizes_references(monkeypatch):
+    monkeypatch.setenv("L1_ASSERTION_BATCH_SIZE", "5")
+    facts = [
+        RequirementFact(
+            id=f"FACT-{index:03d}",
+            source_type="prd",
+            source_reference="PRD",
+            quote=f"原文 {index}",
+            subject=f"主体 {index}",
+            action="展示",
+            object="内容",
+            confidence=0.9,
+            status="confirmed",
+        )
+        for index in range(1, 7)
+    ]
+    first = RequirementAssertion(
+        id="ASSERT-001",
+        fact_ids=["FACT-001", "FACT-NOT-FOUND"],
+        assertion_text="系统必须展示第一批内容",
+        assertion_type="functional",
+        risk_level="medium",
+        review_status="auto_generated",
+    )
+    second = RequirementAssertion(
+        id="ASSERT-001",
+        fact_ids=["FACT-006"],
+        assertion_text="系统必须展示第二批内容",
+        assertion_type="functional",
+        risk_level="medium",
+        review_status="auto_generated",
+    )
+
+    with patch(
+        "core.skills.assertion_deriver.safe_structured_invoke",
+        new=AsyncMock(side_effect=[
+            AssertionDerivationResult(assertions=[first]),
+            AssertionDerivationResult(assertions=[second]),
+        ]),
+    ) as mock:
+        from core.skills.assertion_deriver import derive_assertions
+        result = await derive_assertions(facts)
+
+    assert mock.await_count == 2
+    assert [assertion.id for assertion in result] == ["ASSERT-001", "ASSERT-002"]
+    assert result[0].fact_ids == ["FACT-001"]
+    assert result[1].fact_ids == ["FACT-006"]
+
+
+@pytest.mark.asyncio
 async def test_assertion_deriver_empty_facts():
     """Empty input → empty output."""
     from core.skills.assertion_deriver import derive_assertions
     result = await derive_assertions([])
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_generate_exploration_goals_respects_focus_areas():
+    dashboard_fact = RequirementFact(
+        id="FACT-001",
+        source_type="prd",
+        source_reference="PRD > 15-数据看板",
+        quote="系统展示数据看板指标",
+        subject="系统",
+        action="展示",
+        object="数据看板指标",
+        confidence=0.9,
+        status="confirmed",
+    )
+    admin_fact = RequirementFact(
+        id="FACT-002",
+        source_type="prd",
+        source_reference="PRD > 01-开发者配置中心",
+        quote="系统展示7个核心业务Tab",
+        subject="系统",
+        action="展示",
+        object="7个核心业务Tab",
+        confidence=0.9,
+        status="confirmed",
+    )
+    dashboard_assertion = RequirementAssertion(
+        id="ASSERT-001",
+        fact_ids=["FACT-001"],
+        assertion_text="系统必须展示数据看板核心指标卡",
+        assertion_type="functional",
+        risk_level="medium",
+        source_references=["PRD > 15-数据看板"],
+    )
+    admin_assertion = RequirementAssertion(
+        id="ASSERT-002",
+        fact_ids=["FACT-002"],
+        assertion_text="系统必须展示开发者配置中心的7个业务Tab",
+        assertion_type="functional",
+        risk_level="medium",
+        source_references=["PRD > 01-开发者配置中心"],
+    )
+
+    with patch(
+        "core.skills.fact_extractor.extract_facts",
+        new=AsyncMock(return_value=[dashboard_fact, admin_fact]),
+    ), patch(
+        "core.skills.assertion_deriver.derive_assertions",
+        new=AsyncMock(return_value=[dashboard_assertion, admin_assertion]),
+    ):
+        from core.skills.l2_pipeline import generate_exploration_goals
+
+        goals, review_items, facts, assertions = await generate_exploration_goals(
+            prd_content=SAMPLE_PRD,
+            focus_areas="dashboard",
+            target_url="http://localhost:5000/dashboard",
+        )
+
+    assert review_items == []
+    assert [fact.id for fact in facts] == ["FACT-001"]
+    assert [assertion.id for assertion in assertions] == ["ASSERT-001"]
+    assert len(goals) == 1
+    assert goals[0].assertion_refs == ["ASSERT-001"]
+
+
+@pytest.mark.asyncio
+async def test_run_l2_pipeline_scopes_downstream_assets_by_focus():
+    dashboard_fact = RequirementFact(
+        id="FACT-001",
+        source_type="prd",
+        source_reference="PRD > 15-数据看板",
+        quote="系统展示数据看板指标",
+        subject="系统",
+        action="展示",
+        object="数据看板指标",
+        confidence=0.9,
+        status="confirmed",
+    )
+    admin_fact = RequirementFact(
+        id="FACT-002",
+        source_type="prd",
+        source_reference="PRD > 01-开发者配置中心",
+        quote="系统展示7个核心业务Tab",
+        subject="系统",
+        action="展示",
+        object="7个核心业务Tab",
+        confidence=0.9,
+        status="confirmed",
+    )
+    dashboard_assertion = RequirementAssertion(
+        id="ASSERT-001",
+        fact_ids=["FACT-001"],
+        assertion_text="系统必须展示数据看板核心指标卡",
+        assertion_type="functional",
+        risk_level="medium",
+        source_references=["PRD > 15-数据看板"],
+    )
+    admin_assertion = RequirementAssertion(
+        id="ASSERT-002",
+        fact_ids=["FACT-002"],
+        assertion_text="系统必须展示开发者配置中心的7个业务Tab",
+        assertion_type="functional",
+        risk_level="medium",
+        source_references=["PRD > 01-开发者配置中心"],
+    )
+
+    with patch(
+        "core.skills.fact_extractor.extract_facts",
+        new=AsyncMock(return_value=[dashboard_fact, admin_fact]),
+    ), patch(
+        "core.skills.assertion_deriver.derive_assertions",
+        new=AsyncMock(return_value=[dashboard_assertion, admin_assertion]),
+    ), patch(
+        "core.skills.coverage_planner.plan_coverage_blueprint",
+        new=AsyncMock(return_value=CoverageBlueprint()),
+    ), patch(
+        "core.skills.condition_analyzer.analyze_conditions",
+        new=AsyncMock(return_value=[]),
+    ):
+        from core.skills.l2_pipeline import run_l2_pipeline
+
+        package = await run_l2_pipeline(
+            prd_content=SAMPLE_PRD,
+            focus_areas="dashboard",
+            target_url="http://localhost:5000/dashboard",
+        )
+
+    assert [fact.id for fact in package.facts] == ["FACT-001"]
+    assert [assertion.id for assertion in package.assertions] == ["ASSERT-001"]
+    assert len(package.exploration_goals) == 1
+    assert package.exploration_goals[0].assertion_refs == ["ASSERT-001"]
 
 
 @pytest.mark.asyncio
@@ -223,7 +510,7 @@ async def test_condition_analyzer_mocked():
         result = await analyze_conditions(assertions)
 
         assert len(result) == 2
-        assert all(isinstance(c, TestCondition) for c in result)
+        assert all(isinstance(c, ConditionModel) for c in result)
         assert result[0].oracle_type == "ui_state"
 
 
@@ -245,6 +532,23 @@ async def test_technique_selector_mocked():
 
 
 @pytest.mark.asyncio
+async def test_technique_selector_has_deterministic_empty_fallback():
+    from core.skills.technique_selector import select_techniques
+
+    conditions = _make_sample_conditions()
+    with patch(
+        "core.skills.technique_selector.safe_structured_invoke",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await select_techniques(conditions)
+
+    assert len(result) == len(conditions)
+    assert {item.condition_id for item in result} == {
+        condition.id for condition in conditions
+    }
+
+
+@pytest.mark.asyncio
 async def test_coverage_analyzer_mocked():
     """Mocked: analyze_coverage returns valid CoverageItem list."""
     conditions = _make_sample_conditions()
@@ -259,6 +563,58 @@ async def test_coverage_analyzer_mocked():
 
         assert len(result) == 2
         assert result[0].coverage_dimension == "normal"
+
+
+@pytest.mark.asyncio
+async def test_coverage_analyzer_has_deterministic_empty_fallback():
+    from core.skills.coverage_analyzer import analyze_coverage
+    from core.skills.technique_selector import fallback_techniques
+
+    conditions = _make_sample_conditions()
+    techniques = fallback_techniques(conditions)
+    with patch(
+        "core.skills.coverage_analyzer.safe_structured_invoke",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await analyze_coverage(conditions, techniques)
+
+    assert len(result) == len(conditions)
+    assert {item.condition_id for item in result} == {
+        condition.id for condition in conditions
+    }
+
+
+def test_coverage_normalization_preserves_distinct_variants():
+    from core.skills.coverage_analyzer import normalize_coverage
+
+    condition = _make_sample_conditions()[0].model_copy(
+        update={"risk_level": "medium"}
+    )
+    technique = _make_sample_techniques()[0].model_copy(
+        update={"condition_id": condition.id}
+    )
+    items = [
+        CoverageItem(
+            id=f"COV-{index}",
+            condition_id=condition.id,
+            technique_id=technique.id,
+            coverage_dimension=dimension,
+            goal=goal,
+            risk_level="medium",
+        )
+        for index, (dimension, goal) in enumerate([
+            ("exception", "模拟网络错误"),
+            ("normal", "验证正常导航"),
+            ("boundary", "快速连续点击"),
+        ], start=1)
+    ]
+
+    result = normalize_coverage([condition], [technique], items)
+
+    assert len(result) == 3
+    assert {item.coverage_dimension for item in result} == {
+        "exception", "normal", "boundary"
+    }
 
 
 @pytest.mark.asyncio
@@ -595,7 +951,7 @@ async def test_phase2_precomputed_review_gate_matches_phase1_for_functional_high
 
     observed_assertion_ids: list[str] = []
 
-    async def fake_analyze_conditions(confirmed_assertions, system_map):
+    async def fake_analyze_conditions(confirmed_assertions, system_map, blueprint):
         observed_assertion_ids.extend(a.id for a in confirmed_assertions)
         return []
 
@@ -639,6 +995,27 @@ def test_goals_from_confirmed_assertions_are_strict():
     assert goal.stop_condition
     assert goal.source_refs == ["FACT-LOGIN"]
     assert goal.priority == "high"
+
+
+def test_l1_prompts_forbid_meta_requirements_and_fact_quotas():
+    from core.skills.assertion_deriver import _assertion_prompt
+    from core.skills.document_chunking import DocumentChunk
+    from core.skills.fact_extractor import _fact_prompt
+
+    fact_prompt = _fact_prompt(
+        DocumentChunk(
+            source_type="prd",
+            source_reference="PRD > 极简",
+            content="用于验证 fast path。用户登录后可访问首页。",
+        ),
+        1,
+    )
+    assertion_prompt = _assertion_prompt([])
+
+    assert "提取 0-" in fact_prompt
+    assert "文档目的、测试说明" in fact_prompt
+    assert "禁止反向脑补" in assertion_prompt
+    assert "允许零断言" in assertion_prompt
 
 
 # ---------------------------------------------------------------------------

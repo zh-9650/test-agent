@@ -9,7 +9,7 @@
 import pytest
 from core.interfaces import (
     CandidateTestCase,
-    TestAssetPackage,
+    TestAssetPackage as AssetPackageModel,
 )
 from core.skills.quality_gates import run_quality_gates
 
@@ -48,7 +48,7 @@ class TestQualityGatesSchemaVersion:
             trace_references=["COV-001"],
             schema_version="",  # 故意清空
         )
-        package = TestAssetPackage(candidate_cases=[case])
+        package = AssetPackageModel.model_construct(candidate_cases=[case])
         report = run_quality_gates(package)
         codes = [f.code for f in report.findings]
         assert "missing_schema_version" in codes
@@ -60,7 +60,7 @@ class TestQualityGatesSchemaVersion:
             goal="验证",
             trace_references=["COV-001"],
         )
-        package = TestAssetPackage(candidate_cases=[case])
+        package = AssetPackageModel.model_construct(candidate_cases=[case])
         report = run_quality_gates(package)
         codes = [f.code for f in report.findings]
         assert "missing_schema_version" not in codes
@@ -75,17 +75,23 @@ class TestQualityGatesRequiredRoles:
             id="TC-CAND-001",
             title="测试",
             goal="验证",
-            preconditions=["需要管理员登录"],
+            preconditions=[{
+                "type": "account_role",
+                "description": "需要管理员登录",
+                "required_role": "admin",
+            }],
             trace_references=["COV-001"],
-            required_roles=[],  # 故意清空
+            required_roles=["admin"],
         )
-        package = TestAssetPackage(candidate_cases=[case])
+        case.required_roles = []  # 绕过构造校验，验证质量门的防御性检查。
+        package = AssetPackageModel.model_construct(candidate_cases=[case])
         report = run_quality_gates(package)
         codes = [f.code for f in report.findings]
         assert "missing_required_roles" in codes
-        # 警告级别，不阻断
+        # 结构化角色契约缺失是设计错误，必须阻断。
         findings_with_code = [f for f in report.findings if f.code == "missing_required_roles"]
-        assert findings_with_code[0].severity == "warning"
+        assert findings_with_code[0].severity == "error"
+        assert report.passed is False
 
     def test_required_roles_filled_passes(self):
         """required_roles 已填写时不应该报警告。"""
@@ -93,11 +99,15 @@ class TestQualityGatesRequiredRoles:
             id="TC-CAND-001",
             title="测试",
             goal="验证",
-            preconditions=["需要管理员登录"],
+            preconditions=[{
+                "type": "account_role",
+                "description": "需要管理员登录",
+                "required_role": "admin",
+            }],
             trace_references=["COV-001"],
             required_roles=["admin"],
         )
-        package = TestAssetPackage(candidate_cases=[case])
+        package = AssetPackageModel(candidate_cases=[case])
         report = run_quality_gates(package)
         codes = [f.code for f in report.findings]
         assert "missing_required_roles" not in codes
@@ -108,26 +118,32 @@ class TestQualityGatesRequiredRoles:
             id="TC-CAND-001",
             title="测试",
             goal="验证",
-            preconditions=["用户已在订单页面"],
+            preconditions=[{
+                "type": "business_state",
+                "description": "用户已在订单页面",
+            }],
             trace_references=["COV-001"],
             required_roles=[],
         )
-        package = TestAssetPackage(candidate_cases=[case])
+        package = AssetPackageModel(candidate_cases=[case])
         report = run_quality_gates(package)
         codes = [f.code for f in report.findings]
         assert "missing_required_roles" not in codes
 
-    def test_english_role_keyword(self):
-        """英文角色关键词也能检测到。"""
+    def test_natural_language_does_not_trigger_role_inference(self):
+        """普通文本不再参与角色类型推断。"""
         case = CandidateTestCase(
             id="TC-CAND-002",
             title="测试",
             goal="验证",
-            preconditions=["login as admin"],
+            preconditions=[{
+                "type": "business_state",
+                "description": "login as admin",
+            }],
             trace_references=["COV-001"],
             required_roles=[],
         )
-        package = TestAssetPackage(candidate_cases=[case])
+        package = AssetPackageModel(candidate_cases=[case])
         report = run_quality_gates(package)
         codes = [f.code for f in report.findings]
-        assert "missing_required_roles" in codes
+        assert "missing_required_roles" not in codes

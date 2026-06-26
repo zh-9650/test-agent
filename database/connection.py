@@ -13,12 +13,13 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.models import Base
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:123456@localhost:5432/smart_test")
 
@@ -46,7 +47,7 @@ def create_async_engine_instance(database_url: str | None = None) -> AsyncEngine
         url,
         echo=False,
         future=True,
-        pool_pre_ping=True,
+        poolclass=NullPool,
         connect_args={"server_settings": {"client_encoding": "utf8"}},
     )
 
@@ -125,25 +126,44 @@ def _create_database_if_not_exists(db_name: str, admin_url: str) -> None:
 
 
 def _run_create_all(sync_url: str) -> None:
-    """Create tables and apply the small Phase 1 compatibility upgrades."""
+    """Create the current schema."""
     engine = create_engine(sync_url)
     with engine.begin() as connection:
         Base.metadata.create_all(bind=connection)
-        # create_all() does not add columns to existing tables. Phase 1 avoids
-        # Alembic, so additive schema changes must remain idempotent here.
-        connection.execute(text(
-            "ALTER TABLE task_step "
-            "ADD COLUMN IF NOT EXISTS test_case_status VARCHAR(50)"
-        ))
-        connection.execute(text(
-            "ALTER TABLE task_step "
-            "ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0"
-        ))
-        connection.execute(text(
-            "ALTER TABLE task_step "
-            "ADD COLUMN IF NOT EXISTS failure_context JSONB"
-        ))
     engine.dispose()
+
+
+async def reset_runtime_database(
+    confirm_database: str,
+    database_url: str | None = None,
+) -> None:
+    """Explicitly rebuild runtime tables while preserving agent memory.
+
+    The caller must pass the exact configured database name. This function is
+    never invoked during normal startup.
+    """
+    target_url = database_url or DATABASE_URL
+    admin_url, database_name = _parse_db_url(target_url)
+    if confirm_database != database_name:
+        raise ValueError(
+            f"Database confirmation mismatch: expected '{database_name}'"
+        )
+
+    _create_database_if_not_exists(database_name, admin_url)
+    engine = create_async_engine_instance(target_url)
+    runtime_tables = [
+        Base.metadata.tables[name]
+        for name in ("report", "task_step", "case_result", "execution_run", "task")
+    ]
+    async with engine.begin() as connection:
+        await connection.run_sync(
+            lambda sync_connection: Base.metadata.drop_all(
+                bind=sync_connection,
+                tables=runtime_tables,
+            )
+        )
+        await connection.run_sync(Base.metadata.create_all)
+    await engine.dispose()
 
 
 async def init_database() -> None:

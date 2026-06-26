@@ -1,347 +1,433 @@
-"""tests/api/test_app.py — FastAPI REST endpoint tests.
-
-TDD tests for the API layer. Uses httpx.AsyncClient with ASGITransport.
-The background task runner is mocked to avoid running actual tests.
-
-All async tests are wrapped in a single event loop to avoid asyncpg
-session/connection lifecycle issues with pytest-asyncio.
-"""
-
 import asyncio
 import importlib
 import os
+from unittest.mock import AsyncMock
+from urllib.parse import urlparse
+
+import httpx
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+import pytest_asyncio
+from sqlalchemy import create_engine, text
 
-# Ensure DATABASE_URL points to test DB before importing app code
-os.environ["DATABASE_URL"] = "postgresql://postgres:123456@localhost:5432/smart_test_test"
+os.environ["DATABASE_URL"] = (
+    "postgresql://postgres:123456@localhost:5432/smart_test_test"
+)
 
-from sqlalchemy import select, text as sa_text
+api_app = importlib.import_module("api.app")
+from core.execution_store import (
+    append_task_step,
+    create_execution_run,
+    finalize_execution_run,
+    upsert_case_result,
+)
+from core.interfaces import (
+    CandidateTestCase,
+    CaseResult,
+    ExecutionSelection,
+    ExplorationGoal,
+    ExplorationResult,
+    GoalResult,
+    PageMap,
+    QualityGateReport,
+    RequirementAssertion,
+    RequirementFact,
+    SystemMapEvid,
+    TestAssetPackage as AssetPackage,
+)
+from database.connection import create_async_engine_instance
+from database.models import Base
 
-# Disable background tasks before importing app
-import api.app as _api_app_module
-_api_app_module._background_tasks_enabled = False
-
-from api.app import app
-from database.models import Base, Task, TaskStep, Report
-from database.connection import async_session, create_async_engine_instance
-
-from httpx import AsyncClient, ASGITransport
+api_app._background_tasks_enabled = False
 
 
-# ---------------------------------------------------------------------------
-# Session-scoped setup / teardown
-# ---------------------------------------------------------------------------
+def _admin_urls() -> tuple[str, str]:
+    parsed = urlparse(os.environ["DATABASE_URL"])
+    name = parsed.path.lstrip("/")
+    admin = (
+        f"{parsed.scheme}://{parsed.username}:{parsed.password}"
+        f"@{parsed.hostname}:{parsed.port or 5432}/postgres"
+    )
+    return admin, name
+
 
 def setup_module():
-    """Create test database tables before running any tests."""
-    from sqlalchemy import create_engine, text
-    from urllib.parse import urlparse
+    admin_url, db_name = _admin_urls()
+    engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as connection:
+        exists = connection.execute(
+            text("SELECT 1 FROM pg_database WHERE datname=:name"),
+            {"name": db_name},
+        ).scalar()
+        if not exists:
+            connection.execute(text(f'CREATE DATABASE "{db_name}"'))
+    engine.dispose()
 
-    db_url = os.environ["DATABASE_URL"]
-    parsed = urlparse(db_url)
-    db_name = parsed.path.lstrip("/")
-    admin_url = f"{parsed.scheme}://{parsed.username}:{parsed.password}@{parsed.hostname}:{parsed.port or 5432}/postgres"
+    async def prepare():
+        async_engine = create_async_engine_instance(os.environ["DATABASE_URL"])
+        async with async_engine.begin() as connection:
+            await connection.run_sync(Base.metadata.drop_all)
+            await connection.run_sync(Base.metadata.create_all)
+        await async_engine.dispose()
 
-    # Create test database if not exists
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    with admin_engine.connect() as conn:
-        result = conn.execute(
-            text(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'")
-        )
-        if not result.scalar():
-            conn.execute(text(f"CREATE DATABASE {db_name}"))
-    admin_engine.dispose()
-
-    # Create tables using async engine
-    async def _create_tables():
-        engine = create_async_engine_instance(db_url)
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        await engine.dispose()
-    asyncio.get_event_loop().run_until_complete(_create_tables())
+    asyncio.run(prepare())
 
 
 def teardown_module():
-    """Drop the test database after all tests finish."""
-    from sqlalchemy import create_engine, text
-    from urllib.parse import urlparse
-
-    db_url = os.environ["DATABASE_URL"]
-    parsed = urlparse(db_url)
-    db_name = parsed.path.lstrip("/")
-    admin_url = f"{parsed.scheme}://{parsed.username}:{parsed.password}@{parsed.hostname}:{parsed.port or 5432}/postgres"
-
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    with admin_engine.connect() as conn:
-        conn.execute(
-            text(f"""
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = '{db_name}' AND pid <> pg_backend_pid()
-            """)
+    admin_url, db_name = _admin_urls()
+    engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as connection:
+        connection.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname=:name AND pid <> pg_backend_pid()"
+            ),
+            {"name": db_name},
         )
-        conn.execute(text(f"DROP DATABASE IF EXISTS {db_name}"))
-    admin_engine.dispose()
+        connection.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+    engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# Client helper
-# ---------------------------------------------------------------------------
-
-async def _get_client():
-    """Async generator for httpx AsyncClient."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-def test_create_task():
-    """POST /api/tasks should create a task and return TaskResponse (201)."""
-    async def _test():
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post("/api/tasks", json={
-                "target_url": "http://example.com/login",
-                "task_name": "Login Test",
-                "config": {"rules": ["check_login"]}
-            })
-            assert response.status_code == 201
-            data = response.json()
-            assert data["target_url"] == "http://example.com/login"
-            assert data["task_name"] == "Login Test"
-            assert data["status"] == "pending"
-            assert "id" in data
-
-    asyncio.get_event_loop().run_until_complete(_test())
+@pytest_asyncio.fixture
+async def client():
+    transport = httpx.ASGITransport(app=api_app.app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as value:
+        yield value
 
 
-def test_create_task_registers_execution_logger_mapping():
-    """POST /api/tasks should register the DB task id for runtime logging."""
-    async def _test():
-        from core.execution_logger import _task_id_map
-
-        _task_id_map.clear()
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post("/api/tasks", json={
-                "target_url": "http://example.com/logger-map",
-                "task_name": "Logger Map Test",
-            })
-
-        assert response.status_code == 201
-        task_id = response.json()["id"]
-        assert _task_id_map[str(task_id)] == task_id
-
-    asyncio.get_event_loop().run_until_complete(_test())
+async def create_task(client, suffix: str = "task") -> dict:
+    response = await client.post(
+        "/api/tasks",
+        json={
+            "target_url": f"https://example.com/{suffix}",
+            "task_name": suffix,
+            "config": {"rules": ["保持幂等"]},
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
 
 
-def test_create_task_tracks_background_task():
-    """POST /api/tasks should retain the asyncio task so it can be stopped."""
-    async def _test():
-        api_app = importlib.import_module("api.app")
-
-        api_app._running_tasks.clear()
-        api_app._background_tasks_enabled = True
-
-        async def fake_runner(task_db_id, target_url, config):
-            await asyncio.sleep(60)
-
-        transport = ASGITransport(app=app)
-        try:
-            with patch("api.app._run_test_session", side_effect=fake_runner):
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    response = await client.post("/api/tasks", json={
-                        "target_url": "http://example.com/background",
-                        "task_name": "Background Test",
-                    })
-        finally:
-            api_app._background_tasks_enabled = False
-
-        assert response.status_code == 201
-        task_id = response.json()["id"]
-        assert task_id in api_app._running_tasks
-        api_app._running_tasks[task_id].cancel()
-        api_app._running_tasks.pop(task_id, None)
-
-    asyncio.get_event_loop().run_until_complete(_test())
+def result(run_id: str, case_id: str, status: str) -> CaseResult:
+    return CaseResult(
+        run_id=run_id,
+        candidate_case_id=case_id,
+        terminal_status=status,
+        attempt_count=1,
+        started_at="2026-06-11T00:00:00+00:00",
+        completed_at="2026-06-11T00:00:01+00:00",
+        summary=status,
+    )
 
 
-def test_list_tasks():
-    """GET /api/tasks should return a paginated list of tasks."""
-    async def _test():
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            # First create a task
-            await client.post("/api/tasks", json={
-                "target_url": "http://example.com/list",
-                "task_name": "List Test"
-            })
-
-            response = await client.get("/api/tasks")
-            assert response.status_code == 200
-            data = response.json()
-            assert "tasks" in data
-            assert "total" in data
-            assert len(data["tasks"]) >= 1
-
-    asyncio.get_event_loop().run_until_complete(_test())
+@pytest.mark.asyncio
+async def test_task_contract_has_lifecycle_and_no_legacy_counts(client):
+    task = await create_task(client, "contract")
+    assert task["status"] == "pending"
+    assert task["phase"] is None
+    assert task["report_status"] == "pending"
+    assert task["latest_run"] is None
+    assert "total_tests" not in task
+    assert "test_plan" not in task
 
 
-def test_get_task():
-    """GET /api/tasks/{id} should return a single task."""
-    async def _test():
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            create_response = await client.post("/api/tasks", json={
-                "target_url": "http://example.com/get",
-                "task_name": "Get Test"
-            })
-            task_id = create_response.json()["id"]
+@pytest.mark.asyncio
+async def test_create_task_normalizes_wrapped_document_inputs(client):
+    response = await client.post(
+        "/api/tasks",
+        json={
+            "target_url": "https://example.com/rich-config",
+            "task_name": "rich-config",
+            "config": {
+                "prd": {"text": "# 登录\n支持账号密码登录"},
+                "changelog": {
+                    "value": "## 变更\n- 调整审批规则",
+                    "PSPath": "C:\\temp\\change.md",
+                },
+                "rules": ["保持幂等", {"value": "覆盖权限校验"}],
+            },
+        },
+    )
 
-            response = await client.get(f"/api/tasks/{task_id}")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["id"] == task_id
-            assert data["task_name"] == "Get Test"
-
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_get_task_not_found():
-    """GET /api/tasks/99999 should return 404."""
-    async def _test():
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get("/api/tasks/99999")
-            assert response.status_code == 404
-
-    asyncio.get_event_loop().run_until_complete(_test())
+    assert response.status_code == 201
+    body = response.json()
+    assert body["config"]["prd"] == "# 登录\n支持账号密码登录"
+    assert body["config"]["changelog"] == "## 变更\n- 调整审批规则"
+    assert body["config"]["rules"] == ["保持幂等", "覆盖权限校验"]
 
 
-def test_get_task_steps():
-    """GET /api/tasks/{id}/steps should return task steps."""
-    async def _test():
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            # Create a task
-            create_response = await client.post("/api/tasks", json={
-                "target_url": "http://example.com/steps",
-                "task_name": "Steps Test"
-            })
-            task_id = create_response.json()["id"]
+@pytest.mark.asyncio
+async def test_run_detail_results_and_latest_summary(client):
+    task = await create_task(client, "runs")
+    run = await create_execution_run(task["id"], ["PASS", "FAIL"])
+    await upsert_case_result(result(run.run_id, "PASS", "passed"))
+    await upsert_case_result(result(run.run_id, "FAIL", "failed"))
+    await finalize_execution_run(run.run_id, "completed")
 
-            # Insert a step directly into the database
-            async with async_session() as session:
-                step = TaskStep(
-                    task_id=task_id,
-                    test_case_id="TC-001",
-                    step_index=0,
-                    action_type="click",
-                    action_target="#login",
-                    result="clicked",
-                    screenshot_path="/tmp/s.png",
+    runs_response = await client.get(f"/api/tasks/{task['id']}/runs")
+    detail_response = await client.get(
+        f"/api/tasks/{task['id']}/runs/{run.run_id}"
+    )
+    results_response = await client.get(
+        f"/api/tasks/{task['id']}/runs/{run.run_id}/results"
+    )
+    task_response = await client.get(f"/api/tasks/{task['id']}")
+
+    assert runs_response.status_code == 200
+    assert detail_response.json()["summary"]["planned"] == 2
+    assert results_response.json()["total"] == 2
+    assert task_response.json()["latest_run"]["summary"]["failed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_steps_require_run_id_and_filter_attempt(client):
+    task = await create_task(client, "steps")
+    run = await create_execution_run(task["id"], ["CASE-1"])
+    for attempt in (1, 2):
+        await append_task_step(
+            task_id=task["id"],
+            run_id=run.run_id,
+            candidate_case_id="CASE-1",
+            attempt_no=attempt,
+            step_index=0,
+            action={"tool": "click", "args": {"selector": "#ok"}},
+            result="clicked",
+        )
+
+    missing = await client.get(f"/api/tasks/{task['id']}/steps")
+    filtered = await client.get(
+        f"/api/tasks/{task['id']}/steps",
+        params={
+            "run_id": run.run_id,
+            "test_case_id": "CASE-1",
+            "attempt_no": 2,
+        },
+    )
+    assert missing.status_code == 422
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["steps"][0]["attempt_no"] == 2
+
+
+@pytest.mark.asyncio
+async def test_resume_has_no_body_and_selects_only_non_passed(client, monkeypatch):
+    task = await create_task(client, "resume")
+    run = await create_execution_run(task["id"], ["PASS", "FAIL", "SKIP"])
+    await upsert_case_result(result(run.run_id, "PASS", "passed"))
+    await upsert_case_result(result(run.run_id, "FAIL", "failed"))
+    await upsert_case_result(result(run.run_id, "SKIP", "skipped"))
+    await finalize_execution_run(run.run_id, "completed")
+
+    captured = {}
+
+    async def capture_runner(task_id, target_url, config, **kwargs):
+        captured.update(kwargs)
+        return None
+
+    monkeypatch.setattr(api_app, "_run_test_session", capture_runner)
+    response = await client.post(f"/api/tasks/{task['id']}/resume")
+    await asyncio.sleep(0)
+    assert response.status_code == 200
+    assert captured["resume_case_ids"] == ["FAIL", "SKIP"]
+    assert captured["resumed_from_run_id"] == run.run_id
+
+
+@pytest.mark.asyncio
+async def test_run_must_belong_to_task(client):
+    first = await create_task(client, "first")
+    second = await create_task(client, "second")
+    run = await create_execution_run(first["id"], ["CASE-1"])
+    response = await client.get(
+        f"/api/tasks/{second['id']}/runs/{run.run_id}"
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_task_not_found(client):
+    response = await client.get("/api/tasks/99999999")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_run_session_keeps_partial_exploration_page_evidence(
+    client,
+    monkeypatch,
+):
+    task = await create_task(client, "exploration-partial")
+    facts = [
+        RequirementFact(
+            id="FACT-1",
+            source_type="prd",
+            source_reference="PRD > Dashboard",
+            quote="Dashboard shows summary widgets.",
+            subject="dashboard",
+            action="show",
+            object="summary widgets",
+            confidence=0.9,
+        )
+    ]
+    assertions = [
+        RequirementAssertion(
+            id="ASSERT-1",
+            fact_ids=["FACT-1"],
+            assertion_text="Dashboard should expose summary widgets.",
+            assertion_type="functional",
+            risk_level="medium",
+            source_references=["FACT-1"],
+        )
+    ]
+    goals = [
+        ExplorationGoal(
+            id="GOAL-1",
+            goal="Inspect dashboard widgets",
+            assertion_refs=["ASSERT-1"],
+            expected_evidence=["summary widgets"],
+            stop_condition="The dashboard widgets are observable",
+            priority="medium",
+        )
+    ]
+    exploration = ExplorationResult(
+        system_map=SystemMapEvid(
+            pages=[
+                PageMap(
+                    name="Dashboard",
+                    url_pattern="https://example.com/exploration-partial",
+                    title="Dashboard",
+                    elements=["Overview", "Widget summary"],
+                    discovered_actions=["button:Refresh"],
                 )
-                session.add(step)
-                await session.commit()
-
-            response = await client.get(f"/api/tasks/{task_id}/steps")
-            assert response.status_code == 200
-            data = response.json()
-            assert "steps" in data
-            assert data["total"] >= 1
-
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_stop_task_not_running():
-    """POST /api/tasks/{id}/stop on non-running task should return 400."""
-    async def _test():
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            # Create a task (defaults to pending)
-            create_response = await client.post("/api/tasks", json={
-                "target_url": "http://example.com/stop",
-                "task_name": "Stop Test"
-            })
-            task_id = create_response.json()["id"]
-
-            response = await client.post(f"/api/tasks/{task_id}/stop")
-            assert response.status_code == 400
-
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_stop_task_cancels_running_background_task():
-    """POST /api/tasks/{id}/stop cancels the retained asyncio task."""
-    async def _test():
-        api_app = importlib.import_module("api.app")
-
-        async with async_session() as session:
-            task = Task(
-                task_name="Running Stop Test",
-                target_url="http://example.com/running-stop",
-                status="running",
+            ]
+        ),
+        goal_results=[
+            GoalResult(
+                goal_id="GOAL-1",
+                status="insufficient",
+                stop_reason="Need more proof for the assertion",
+                observed_at="2026-06-16T00:00:00+00:00",
             )
-            session.add(task)
-            await session.commit()
-            await session.refresh(task)
-            task_id = task.id
+        ],
+    )
+    captured: dict[str, object] = {}
 
-        fake_task = MagicMock()
-        fake_task.done.return_value = False
-        api_app._running_tasks[task_id] = fake_task
+    class FakeRuntimeSession:
+        def __init__(self, *_args, **_kwargs):
+            pass
 
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(f"/api/tasks/{task_id}/stop")
+        async def __aenter__(self):
+            return self
 
-        assert response.status_code == 200
-        fake_task.cancel.assert_called_once()
-        assert task_id not in api_app._running_tasks
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
 
-    asyncio.get_event_loop().run_until_complete(_test())
+        async def explore(self, incoming_goals):
+            assert incoming_goals == goals
+            return exploration
 
+        async def execute(self, run_id, _cases):
+            await upsert_case_result(result(run_id, "TC-1", "skipped"))
+            return None
 
-def test_delete_task():
-    """DELETE /api/tasks/{id} should delete a task."""
-    async def _test():
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            create_response = await client.post("/api/tasks", json={
-                "target_url": "http://example.com/delete",
-                "task_name": "Delete Test"
-            })
-            task_id = create_response.json()["id"]
+    async def fake_run_l2_pipeline(**kwargs):
+        captured["system_map"] = kwargs.get("system_map")
+        return AssetPackage(
+            facts=facts,
+            assertions=assertions,
+            exploration_goals=goals,
+            system_map=kwargs.get("system_map"),
+            candidate_cases=[
+                CandidateTestCase(
+                    id="TC-1",
+                    title="Dashboard widget smoke",
+                    goal="Verify dashboard widget shell",
+                    expected_result="The dashboard widget shell is visible.",
+                    trace_references=["COV-1"],
+                )
+            ],
+        )
 
-            response = await client.delete(f"/api/tasks/{task_id}")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["message"] == "Task deleted"
+    monkeypatch.setattr(
+        "core.document_parser.parse_and_fetch_links",
+        AsyncMock(return_value=task["config"]),
+    )
+    monkeypatch.setattr(
+        "core.skills.l2_pipeline.generate_exploration_goals",
+        AsyncMock(return_value=(goals, [], facts, assertions)),
+    )
+    monkeypatch.setattr(
+        "core.skills.l2_pipeline.run_l2_pipeline",
+        fake_run_l2_pipeline,
+    )
+    monkeypatch.setattr(
+        "core.runtime_session.RuntimeSession",
+        FakeRuntimeSession,
+    )
+    monkeypatch.setattr(
+        "core.skills.execution_selector.select_execution_cases",
+        lambda package, profile, target_count: ExecutionSelection(
+            profile=profile,
+            target_count=target_count,
+            mandatory_count=1,
+            selected_count=1,
+            deferred_count=0,
+            selected_case_ids=["TC-1"],
+        ),
+    )
+    monkeypatch.setattr(
+        "core.skills.case_adapter.adapt_executable_cases",
+        lambda candidates: candidates,
+    )
+    monkeypatch.setattr(
+        "core.skills.quality_gates.run_quality_gates",
+        lambda _package: QualityGateReport(passed=True),
+    )
+    monkeypatch.setattr(
+        "core.run_report.build_run_report",
+        lambda *_args, **_kwargs: "<html></html>",
+    )
+    monkeypatch.setattr(
+        "core.run_report.save_run_report",
+        lambda run_id, _html: f"data/reports/report_{run_id}.html",
+    )
+    monkeypatch.setattr(
+        api_app.websocket_manager,
+        "send_message",
+        AsyncMock(return_value=None),
+    )
 
-            # Verify it's gone
-            get_response = await client.get(f"/api/tasks/{task_id}")
-            assert get_response.status_code == 404
+    await api_app._run_test_session(
+        task["id"],
+        task["target_url"],
+        task["config"],
+    )
 
-    asyncio.get_event_loop().run_until_complete(_test())
-
-
-def test_cors_headers():
-    """Response should include CORS headers for frontend dev server."""
-    async def _test():
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.options("/api/tasks", headers={
-                "Origin": "http://localhost:5173",
-                "Access-Control-Request-Method": "POST",
-            })
-            assert response.status_code == 200
-            assert "access-control-allow-origin" in response.headers
-            assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
-
-    asyncio.get_event_loop().run_until_complete(_test())
+    response = await client.get(f"/api/tasks/{task['id']}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["report_status"] == "completed"
+    assert body["failure_reason"] is None
+    assert len(body["analysis_package"]["system_map"]["pages"]) == 1
+    assert (
+        body["analysis_package"]["system_map"]["pages"][0]["title"]
+        == "Dashboard"
+    )
+    exploration_evidence = body["analysis_package"]["exploration_evidence"]
+    assert exploration_evidence["summary"] == {
+        "total": 1,
+        "found": 0,
+        "not_found": 0,
+        "blocked": 0,
+        "insufficient": 1,
+        "pages": 1,
+        "actions": 0,
+        "forms": 0,
+        "navigations": 0,
+        "evidence_ref_count": 0,
+    }
+    assert exploration_evidence["goal_results"][0]["goal_id"] == "GOAL-1"
+    assert exploration_evidence["goal_results"][0]["status"] == "insufficient"
+    assert isinstance(captured["system_map"], SystemMapEvid)
+    assert captured["system_map"].pages[0].title == "Dashboard"

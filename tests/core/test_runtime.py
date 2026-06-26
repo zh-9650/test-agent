@@ -1,996 +1,1379 @@
-"""Tests for core/runtime.py (TDD)
-
-Tests the Runtime orchestrator with mocked external dependencies.
-No real LLM or browser calls in unit tests.
-"""
-
-import os
-import sys
-import time
-from pathlib import Path
+import asyncio
+from typing import get_args
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langchain_core.messages import AIMessage
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from core.interfaces import AssertionResult, ChangeReport, Setup, StepResult, TestCase, TestResult
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-SAMPLE_TEST_CASE_1 = TestCase(
-    id="TC-001",
-    title="登录成功测试",
-    description="验证用户可以正常登录系统",
-    preconditions=["login_as_test"],
-    steps=["打开登录页面", "输入用户名", "输入密码", "点击登录按钮"],
-    expected="成功登录并跳转到主页",
-    priority="high",
-    category="functional",
+from core.interfaces import (
+    CaseResult,
+    ExplorationGoal,
+    RuntimeExecutableCase,
+    StructuredPrecondition,
+    SystemMapEvid,
+    TerminalAssertion,
 )
-
-SAMPLE_TEST_CASE_2 = TestCase(
-    id="TC-002",
-    title="导航栏测试",
-    description="验证导航栏可以正常使用",
-    preconditions=["login_as_test"],
-    steps=["点击导航栏菜单", "验证页面跳转"],
-    expected="页面正常跳转",
-    priority="medium",
-    category="functional",
-)
-
-SAMPLE_SETUP = Setup(id="login_as_test", description="以测试用户登录系统")
-
-BASIC_TASK_CONFIG = {
-    "task_id": "task-rt-001",
-    "target_url": "http://example.com/login",
-    "accounts": [{"role": "test", "username": "test_c", "password": "123456"}],
-}
-
-PASSING_STEP = StepResult(
-    step_index=0,
-    action_type="click",
-    action_target="#1",
-    result="已点击",
-    assertion=AssertionResult(status="pass", reasoning="通过"),
+from core.runtime import BrowserAction, Runtime
+from core.runtime_locator_metrics import RuntimeLocatorMetrics
+from core.runtime_session import RuntimeSession
+from core.runtime_tool_contract import (
+    EXECUTION_ACTION_TOOLS,
+    EXPLORATION_ACTION_TOOLS,
+    RUNTIME_ACTION_TOOLS,
+    TOOL_ARGUMENT_EXAMPLES,
+    format_tool_prompt_line,
 )
 
 
-@pytest.fixture(autouse=True)
-def mock_generate_case_summary():
-    with patch("core.runtime.generate_case_summary", new_callable=AsyncMock) as m:
-        m.return_value = {"case_id": "TC-001", "summary": "Mocked summary"}
-        yield m
-
-
-@pytest.fixture(autouse=True)
-def mock_browser_session():
-    with patch("browser_use.BrowserSession") as mock_bs:
-        mock_instance = MagicMock()
-        mock_instance.start = AsyncMock()
-        mock_instance.close = AsyncMock()
-        mock_instance.cdp_url = "ws://localhost:9222/playwright"
-        mock_bs.return_value = mock_instance
-        yield mock_bs
-
-
-# ---------------------------------------------------------------------------
-# test_runtime_init
-# ---------------------------------------------------------------------------
-
-
-def test_runtime_init():
-    """Runtime initializes with task_config, sets attributes correctly."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-
-    assert rt.task_id == "task-rt-001"
-    assert rt.target_url == "http://example.com/login"
-    assert rt.task_config == BASIC_TASK_CONFIG
-    assert rt.browser is None
-    assert rt.context is None
-    assert rt.page is None
-    assert rt._playwright is None
-    assert rt._checkpointer is None
-
-
-def test_runtime_init_generates_uuid_if_missing():
-    """Runtime generates a UUID task_id if not provided in task_config."""
-    from core.runtime import Runtime
-
-    config = {"target_url": "http://example.com/login"}
-    rt = Runtime(config)
-
-    assert rt.task_id  # not empty
-    assert len(rt.task_id) > 0
-
-
-# ---------------------------------------------------------------------------
-# test_empty_test_plan
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_empty_test_plan():
-    """Planning returns empty test_plan -> run returns empty results."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-
-    # Mock _launch_browser and _close_browser to avoid real browser
-    rt._launch_browser = AsyncMock()
-    rt._close_browser = AsyncMock()
-
-    # Mock planning graph to return empty test_plan
-    mock_planning_graph = MagicMock()
-    mock_planning_graph.ainvoke = AsyncMock(return_value={
-        "test_plan": [],
-        "setups": {},
-        "messages": [],
-    })
-
-    with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph):
-        results = await rt.run()
-
-    assert results == []
-    rt._launch_browser.assert_called_once()
-    rt._close_browser.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# test_run_full_session_mock
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_run_full_session_mock():
-    """Mock both graphs -> runs full session, returns results for all test cases."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-
-    rt._launch_browser = AsyncMock()
-    rt._close_browser = AsyncMock()
-    rt._reset_browser_state = AsyncMock()
-
-    # Mock planning graph
-    mock_planning_graph = MagicMock()
-    mock_planning_graph.ainvoke = AsyncMock(return_value={
-        "test_plan": [SAMPLE_TEST_CASE_1, SAMPLE_TEST_CASE_2],
-        "setups": {"login_as_test": SAMPLE_SETUP},
-        "messages": [],
-    })
-
-    # Mock execution graph
-    mock_execution_graph = MagicMock()
-    mock_execution_graph.ainvoke = AsyncMock(return_value={
-        "messages": [],
-        "test_plan": [SAMPLE_TEST_CASE_1, SAMPLE_TEST_CASE_2],
-        "setups": {"login_as_test": SAMPLE_SETUP},
-        "current_index": 0,
-        "current_step": 5,
-        "results": [],
-        "consecutive_failures": 0,
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [PASSING_STEP],
-    })
-
-    # Mock execute_setup (the setup_manager)
-    mock_setup_result_state = {
-        "messages": [],
-        "test_plan": [],
-        "setups": {},
-        "current_index": 0,
-        "current_step": 0,
-        "results": [],
-        "consecutive_failures": 0,
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
+def executable_case(**overrides):
+    data = {
+        "id": "CASE-1",
+        "objective": "提交表单",
+        "expected": "显示成功提示",
+        "trace_references": ["COV-1"],
     }
-
-    with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
-         patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
-         patch("core.runtime.execute_setup", new_callable=AsyncMock, return_value=mock_setup_result_state), \
-         patch("core.runtime.set_current_page") as mock_set_page, \
-         patch.object(rt, "_save_report", new_callable=AsyncMock) as mock_save_report:
-
-        results = await rt.run()
-
-    assert len(results) == 2
-    assert results[0].test_case_id == "TC-001"
-    assert results[1].test_case_id == "TC-002"
-    # Both should be "passed" since consecutive_failures = 0 and no failing assertions
-    assert results[0].status == "passed"
-    assert results[1].status == "passed"
-    rt._launch_browser.assert_called_once()
-    rt._close_browser.assert_called_once()
-    rt._reset_browser_state.assert_awaited_once()
-    mock_save_report.assert_called_once()
-    assert len(mock_save_report.call_args.args[0]) == 2
+    data.update(overrides)
+    return RuntimeExecutableCase(**data)
 
 
-# ---------------------------------------------------------------------------
-# test_execute_test_case_mock
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_execute_test_case_mock():
-    """Mock execution graph -> returns TestResult for a single test case."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt._launch_browser = AsyncMock()
-    rt.page = AsyncMock()  # pretend browser is already launched
-
-    # Mock execution graph to return a state with some steps
-    mock_execution_graph = MagicMock()
-    mock_execution_graph.ainvoke = AsyncMock(return_value={
-        "messages": [],
-        "test_plan": [SAMPLE_TEST_CASE_1],
-        "setups": {"login_as_test": SAMPLE_SETUP},
-        "current_index": 0,
-        "current_step": 4,
-        "results": [],
-        "consecutive_failures": 0,
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [PASSING_STEP],
-    })
-
-    with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
-         patch("core.runtime.execute_setup", new_callable=AsyncMock) as mock_setup, \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15"}):
-
-        result = await rt._execute_test_case(
-            index=0,
-            test_case=SAMPLE_TEST_CASE_1,
-            test_plan=[SAMPLE_TEST_CASE_1],
-            setups={"login_as_test": SAMPLE_SETUP},
-        )
-
-    assert isinstance(result, TestResult)
-    assert result.test_case_id == "TC-001"
-    assert result.status == "passed"
-    assert result.duration_seconds > 0
-
-
-# ---------------------------------------------------------------------------
-# test_execute_test_case_failed_status
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_execute_test_case_failed_status():
-    """When consecutive_failures >= threshold, result status is 'failed'."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt.page = AsyncMock()
-
-    mock_execution_graph = MagicMock()
-    mock_execution_graph.ainvoke = AsyncMock(return_value={
-        "messages": [],
-        "test_plan": [SAMPLE_TEST_CASE_1],
-        "setups": {},
-        "current_index": 0,
-        "current_step": 5,
-        "results": [],
-        "consecutive_failures": 3,  # >= threshold
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [],
-    })
-
-    with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
-         patch("core.runtime.execute_setup", new_callable=AsyncMock), \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15", "MAX_TEST_CASE_RETRIES": "0"}):
-
-        result = await rt._execute_test_case(
-            index=0,
-            test_case=SAMPLE_TEST_CASE_1,
-            test_plan=[SAMPLE_TEST_CASE_1],
-            setups={},
-        )
-
-    assert result.status == "failed"
-
-
-# ---------------------------------------------------------------------------
-# test_execute_test_case_incomplete_status
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_execute_test_case_incomplete_status():
-    """When current_step >= MAX_STEPS_PER_CASE, result status is 'incomplete'."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt.page = AsyncMock()
-
-    mock_execution_graph = MagicMock()
-    mock_execution_graph.ainvoke = AsyncMock(return_value={
-        "messages": [],
-        "test_plan": [SAMPLE_TEST_CASE_1],
-        "setups": {},
-        "current_index": 0,
-        "current_step": 15,  # >= max steps
-        "results": [],
-        "consecutive_failures": 0,
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [],
-    })
-
-    with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
-         patch("core.runtime.execute_setup", new_callable=AsyncMock), \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15"}):
-
-        result = await rt._execute_test_case(
-            index=0,
-            test_case=SAMPLE_TEST_CASE_1,
-            test_plan=[SAMPLE_TEST_CASE_1],
-            setups={},
-        )
-
-    assert result.status == "incomplete"
-
-
-def test_determine_status_without_terminal_evidence_is_incomplete():
-    """A case cannot pass without a passing assertion or terminal evidence."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-
-    status = rt._determine_status(
-        {"current_step": 1, "consecutive_failures": 0},
-        [],
+def case_result(status: str, attempt: int = 1) -> CaseResult:
+    return CaseResult(
+        run_id="",
+        candidate_case_id="CASE-1",
+        terminal_status=status,
+        attempt_count=attempt,
+        started_at="2026-06-11T00:00:00+00:00",
+        completed_at="2026-06-11T00:00:01+00:00",
+        summary=status,
     )
 
-    assert status == "incomplete"
+
+def test_runtime_has_no_legacy_session_entrypoints():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    assert not hasattr(runtime, "run")
+    assert not hasattr(runtime, "run_stream")
+    assert not hasattr(runtime, "_execute_test_case")
 
 
-def test_determine_status_max_steps_overrides_earlier_pass():
-    """Hitting the safety limit cannot be hidden by an earlier passing step."""
-    from core.runtime import Runtime
+def test_runtime_tool_contract_matches_browser_action_schema():
+    schema_tools = get_args(BrowserAction.model_fields["tool"].annotation)
 
-    rt = Runtime(BASIC_TASK_CONFIG)
+    assert schema_tools == RUNTIME_ACTION_TOOLS
+    assert set(EXPLORATION_ACTION_TOOLS) <= set(schema_tools)
+    assert set(EXECUTION_ACTION_TOOLS) <= set(schema_tools)
+    assert set(TOOL_ARGUMENT_EXAMPLES) == set(schema_tools)
 
-    status = rt._determine_status(
-        {"current_step": 15, "consecutive_failures": 0},
-        [PASSING_STEP],
+
+def test_terminal_assertion_requires_all_three_conditions():
+    complete = TerminalAssertion(
+        objective_satisfied=True,
+        expected_result_supported=True,
+        terminal_evidence_sufficient=True,
+    )
+    missing_evidence = complete.model_copy(
+        update={"terminal_evidence_sufficient": False}
+    )
+    assert Runtime._all_terminal_satisfied(complete) is True
+    assert Runtime._all_terminal_satisfied(missing_evidence) is False
+
+
+def test_exploration_stops_when_one_expected_evidence_is_observed():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    goal = ExplorationGoal(
+        id="GOAL-1",
+        goal="验证首页",
+        assertion_refs=["ASSERT-1"],
+        expected_evidence=["Example Domain", "不存在的次要证据"],
+        stop_condition="发现任一明确页面证据",
+        priority="medium",
+    )
+    assert runtime._check_stop_condition(
+        goal,
+        {"title": "Example Domain"},
+    ) is True
+
+
+def test_exploration_matches_distinctive_literal_inside_semantic_evidence():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    goal = ExplorationGoal(
+        id="GOAL-1",
+        goal="验证首页标题是否为 Example Domain",
+        assertion_refs=["ASSERT-1"],
+        expected_evidence=["页面清晰显示标题“Example Domain”"],
+        stop_condition="标题内容可直接核验",
+        priority="medium",
     )
 
-    assert status == "incomplete"
+    assert runtime._check_stop_condition(
+        goal,
+        {
+            "url": "https://example.com/",
+            "title": "Example Domain",
+            "headings": ["Example Domain"],
+        },
+    ) is True
 
 
-# ---------------------------------------------------------------------------
-# test_execute_test_case_failing_assertion
-# ---------------------------------------------------------------------------
+def test_exploration_does_not_match_generic_semantic_description():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    goal = ExplorationGoal(
+        id="GOAL-1",
+        goal="验证首页符合需求",
+        assertion_refs=["ASSERT-1"],
+        expected_evidence=["页面呈现约定的主标题"],
+        stop_condition="标题内容可直接核验",
+        priority="medium",
+    )
+
+    assert runtime._check_stop_condition(
+        goal,
+        {"url": "https://example.com/", "title": "Unrelated"},
+    ) is False
 
 
 @pytest.mark.asyncio
-async def test_execute_test_case_failing_assertion():
-    """When a step has a failing assertion, result status is 'failed'."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt.page = AsyncMock()
-
-    failing_step = StepResult(
-        step_index=2,
-        action_type="click",
-        action_target="#3",
-        result="点击失败",
-        assertion=AssertionResult(status="fail", reasoning="按钮不存在"),
+async def test_exploration_global_budget_marks_remaining_goals_insufficient(
+    monkeypatch,
+):
+    monkeypatch.setenv("MAX_EXPLORE_PAGES", "1")
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime._observe_page = AsyncMock(
+        return_value={"url": "https://example.com", "title": "Example"}
     )
-
-    mock_execution_graph = MagicMock()
-    mock_execution_graph.ainvoke = AsyncMock(return_value={
-        "messages": [],
-        "test_plan": [SAMPLE_TEST_CASE_1],
-        "setups": {},
-        "current_index": 0,
-        "current_step": 5,
-        "results": [],
-        "consecutive_failures": 0,
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [failing_step],
-    })
-
-    with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
-         patch("core.runtime.execute_setup", new_callable=AsyncMock), \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15", "MAX_TEST_CASE_RETRIES": "0"}):
-
-        result = await rt._execute_test_case(
-            index=0,
-            test_case=SAMPLE_TEST_CASE_1,
-            test_plan=[SAMPLE_TEST_CASE_1],
-            setups={},
+    runtime._evaluate_goal_evidence = AsyncMock(return_value=False)
+    runtime._decide_explore_action = AsyncMock(return_value=None)
+    goals = [
+        ExplorationGoal(
+            id=f"GOAL-{index}",
+            goal=f"目标 {index}",
+            assertion_refs=[f"ASSERT-{index}"],
+            expected_evidence=[f"证据 {index}"],
+            stop_condition="发现证据",
+            priority="medium",
         )
-
-    assert result.status == "failed"
-
-
-# ---------------------------------------------------------------------------
-# test_browser_crash_recovery
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_browser_crash_recovery():
-    """Mock browser crash -> recovers, continues with remaining test cases."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt._launch_browser = AsyncMock()
-    rt._close_browser = AsyncMock()
-
-    # Mock planning graph
-    mock_planning_graph = MagicMock()
-    mock_planning_graph.ainvoke = AsyncMock(return_value={
-        "test_plan": [SAMPLE_TEST_CASE_1, SAMPLE_TEST_CASE_2],
-        "setups": {"login_as_test": SAMPLE_SETUP},
-        "messages": [],
-    })
-
-    # First execution call crashes, second succeeds
-    crash_exc = RuntimeError("Browser crashed")
-    mock_execution_graph = MagicMock()
-
-    # First invocation crashes (for TC-001)
-    # Second invocation succeeds (for TC-002)
-    success_result = {
-        "messages": [],
-        "test_plan": [SAMPLE_TEST_CASE_2],
-        "setups": {"login_as_test": SAMPLE_SETUP},
-        "current_index": 1,
-        "current_step": 3,
-        "results": [],
-        "consecutive_failures": 0,
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [PASSING_STEP],
-    }
-
-    # TC-001 execution raises, TC-002 succeeds
-    mock_execution_graph.ainvoke = AsyncMock(side_effect=[crash_exc, success_result])
-
-    with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
-         patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
-         patch("core.runtime.execute_setup", new_callable=AsyncMock), \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15", "MAX_TEST_CASE_RETRIES": "0"}):
-
-        results = await rt.run()
-
-    # TC-001 should be 'failed' (crash recovery), TC-002 should be 'passed'
-    assert len(results) == 2
-    assert results[0].status == "failed"
-    assert results[0].test_case_id == "TC-001"
-    assert results[1].status == "passed"
-    assert results[1].test_case_id == "TC-002"
-
-
-# ---------------------------------------------------------------------------
-# test_browser_lifecycle_mock
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_browser_lifecycle_mock():
-    """_launch_browser and _close_browser are called in run()."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-
-    # Mock everything so browser isn't actually launched
-    mock_planning_graph = MagicMock()
-    mock_planning_graph.ainvoke = AsyncMock(return_value={
-        "test_plan": [],
-        "setups": {},
-        "messages": [],
-    })
-
-    mock_pw = MagicMock()
-    mock_browser = MagicMock()
-    mock_context = MagicMock()
-    mock_page = MagicMock()
-
-    mock_pw.start = AsyncMock(return_value=mock_pw)
-    mock_pw.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
-    mock_browser.contexts = [mock_context]
-    mock_browser.new_context = AsyncMock(return_value=mock_context)
-    mock_context.pages = []
-    mock_context.new_page = AsyncMock(return_value=mock_page)
-    mock_context.tracing.start = AsyncMock()
-    mock_page.goto = AsyncMock()
-    mock_context.tracing.stop = AsyncMock()
-    mock_context.close = AsyncMock()
-    mock_browser.close = AsyncMock()
-    mock_pw.stop = AsyncMock()
-
-    with patch("core.runtime.async_playwright", return_value=mock_pw), \
-         patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
-         patch("core.runtime.set_current_page") as mock_set_page:
-
-        results = await rt.run()
-
-    # Verify browser was launched and closed
-    mock_pw.start.assert_called_once()
-    mock_pw.chromium.connect_over_cdp.assert_called_once_with("ws://localhost:9222/playwright")
-    mock_context.new_page.assert_called_once()
-    mock_page.goto.assert_called_once_with("http://example.com/login", wait_until="load", timeout=30000)
-    mock_context.tracing.start.assert_called_once()
-    mock_context.tracing.stop.assert_called_once()
-    mock_context.close.assert_called_once()
-    mock_browser.close.assert_called_once()
-    mock_pw.stop.assert_called_once()
-    mock_set_page.assert_called_once_with(mock_page, task_id=rt.task_id)
-
-
-# ---------------------------------------------------------------------------
-# test_run_stream_yields_updates
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_run_stream_yields_updates():
-    """run_stream yields WebSocket-compatible dicts."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt._launch_browser = AsyncMock()
-    rt._close_browser = AsyncMock()
-
-    # Mock planning graph with astream (run_stream now uses astream)
-    mock_planning_graph = MagicMock()
-
-    async def mock_astream(state):
-        yield ("generate_plan", {
-            "test_plan": [SAMPLE_TEST_CASE_1],
-            "setups": {"login_as_test": SAMPLE_SETUP},
-            "messages": [],
-        })
-
-    mock_planning_graph.astream = mock_astream
-
-    # Mock _execute_test_case_stream to yield a test_case_complete update
-    async def mock_execute_stream(index, test_case, test_plan, setups):
-        rt._stream_results.append(TestResult(
-            test_case_id=test_case.id,
-            status="passed",
-            summary="通过: 登录成功测试",
-            duration_seconds=5.0,
-        ))
-        yield {
-            "type": "test_case_complete",
-            "test_case_id": test_case.id,
-            "step_index": 0,
-            "data": {"status": "passed", "summary": "通过: 登录成功测试", "duration": 5.0},
-            "timestamp": "2026-05-28T00:00:00+00:00",
-        }
-
-    with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
-         patch.object(rt, "_execute_test_case_stream", side_effect=mock_execute_stream), \
-         patch.object(rt, "_save_report", new_callable=AsyncMock) as mock_save_report:
-        mock_save_report.return_value = "data/reports/task-rt-001/report.html"
-
-        updates = []
-        async for update in rt.run_stream():
-            updates.append(update)
-
-    # Should have: planning_complete + test_case_complete + final complete
-    assert len(updates) >= 3
-
-    # Check planning_complete message
-    planning_update = updates[0]
-    assert planning_update["type"] == "session_complete"
-    assert planning_update["data"]["phase"] == "planning_complete"
-    assert planning_update["data"]["total_tests"] == 1
-
-    # Check test_case_complete message
-    tc_update = updates[1]
-    assert tc_update["type"] == "test_case_complete"
-    assert tc_update["test_case_id"] == "TC-001"
-    assert tc_update["data"]["status"] == "passed"
-
-    final_update = updates[2]
-    assert final_update["type"] == "session_complete"
-    assert final_update["data"]["phase"] == "final"
-    assert final_update["data"]["report_data"]["report_path"] == "data/reports/task-rt-001/report.html"
-    assert final_update["data"]["report_data"]["test_plan"][0]["status"] == "passed"
-    mock_save_report.assert_called_once()
-    assert mock_save_report.call_args.args[0][0].test_case_id == "TC-001"
-
-
-@pytest.mark.asyncio
-async def test_run_stream_accepts_langgraph_update_dicts():
-    """run_stream consumes LangGraph's real astream update shape."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt._launch_browser = AsyncMock()
-    rt._close_browser = AsyncMock()
-
-    mock_planning_graph = MagicMock()
-
-    async def mock_astream(state):
-        yield {"explore_observe": {"page_info": {"url": "http://example.com/login"}}}
-        yield {"explore_decide": {"messages": [AIMessage(content="继续探索页面")]}}
-        yield {"generate_plan": {
-            "test_plan": [SAMPLE_TEST_CASE_2],
-            "setups": {},
-            "messages": [],
-        }}
-
-    mock_planning_graph.astream = mock_astream
-
-    async def mock_execute_stream(index, test_case, test_plan, setups):
-        yield {
-            "type": "test_case_complete",
-            "test_case_id": test_case.id,
-            "step_index": 0,
-            "data": {"status": "passed", "summary": "通过", "duration": 1.0},
-            "timestamp": "2026-05-28T00:00:00+00:00",
-        }
-
-    with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
-         patch.object(rt, "_execute_test_case_stream", side_effect=mock_execute_stream):
-        updates = [update async for update in rt.run_stream()]
-
-    assert [update["type"] for update in updates] == [
-        "page_update",
-        "ai_thinking",
-        "session_complete",
-        "test_case_complete",
-        "session_complete",
+        for index in range(2)
     ]
-    assert updates[2]["data"]["total_tests"] == 1
-    assert updates[-1]["data"]["phase"] == "final"
+
+    result = await runtime.explore(goals)
+
+    assert runtime._observe_page.await_count == 1
+    assert [item.status for item in result.goal_results] == [
+        "insufficient",
+        "insufficient",
+    ]
+    assert "全局探索" in result.goal_results[1].stop_reason
 
 
 @pytest.mark.asyncio
-async def test_execute_test_case_stream_accepts_langgraph_update_dicts():
-    """_execute_test_case_stream emits per-node messages from LangGraph update dicts."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-
-    tool_message = AIMessage(
-        content="点击登录按钮",
-        tool_calls=[{"name": "click", "args": {"target": "#1"}, "id": "call-1"}],
+async def test_exploration_retains_page_map_without_found_goal():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime._observe_page = AsyncMock(
+        return_value={
+            "url": "https://example.com/dashboard",
+            "title": "Dashboard",
+            "headings": ["Overview"],
+            "forms": [{"name": "SearchForm"}],
+            "interactive_elements": [
+                {"role": "button", "label": "Search"},
+                {"role": "link", "text": "Details"},
+            ],
+            "tables": [{"headers": ["Name", "Status"]}],
+        }
     )
-    step = StepResult(
-        step_index=0,
-        action_type="click",
-        action_target="#1",
-        result="已点击 #1",
-        assertion=AssertionResult(status="pass", reasoning="通过"),
+    runtime._evaluate_goal_evidence = AsyncMock(return_value=False)
+    runtime._decide_explore_action = AsyncMock(return_value=None)
+    goals = [
+        ExplorationGoal(
+            id="GOAL-1",
+            goal="Inspect dashboard",
+            assertion_refs=["ASSERT-1"],
+            expected_evidence=["A hidden compliance marker"],
+            stop_condition="Dashboard content is confirmed",
+            priority="medium",
+        )
+    ]
+
+    result = await runtime.explore(goals)
+
+    assert result.goal_results[0].status == "insufficient"
+    assert len(result.system_map.pages) == 1
+    page = result.system_map.pages[0]
+    assert page.url_pattern == "https://example.com/dashboard"
+    assert "Overview" in page.elements
+    assert "form:SearchForm" in page.elements
+    assert "button:Search" in page.discovered_actions
+    assert any(
+        action.action_name == "Search"
+        and action.trigger == "button"
+        and action.source_page == "Overview"
+        and "page_url: https://example.com/dashboard" in action.evidence_refs
+        for action in result.system_map.actions
+    )
+    assert any(
+        action.action_name == "Details"
+        and action.trigger == "link"
+        for action in result.system_map.actions
+    )
+    assert len(result.system_map.forms) == 1
+    assert result.system_map.forms[0].form_name == "SearchForm"
+    assert result.system_map.forms[0].page == "Overview"
+    assert result.system_map.forms[0].evidence_refs == [
+        "page_url: https://example.com/dashboard",
+        "form: SearchForm",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_exploration_records_navigation_after_successful_action():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime._observe_page = AsyncMock(side_effect=[
+        {
+            "url": "https://example.com/purchases?tab=open",
+            "title": "Purchases",
+            "headings": ["采购申请"],
+            "interactive_elements": [
+                {
+                    "id": "#1",
+                    "role": "link",
+                    "type": "link",
+                    "text": "新建采购申请",
+                    "href": "/purchases/new",
+                }
+            ],
+        },
+        {
+            "url": "https://example.com/purchases/new",
+            "title": "Create Purchase",
+            "headings": ["创建采购申请"],
+            "forms": [
+                {
+                    "id": "purchase-form",
+                    "fields": [
+                        {
+                            "field_type": "number",
+                            "label": "采购金额",
+                        },
+                        {
+                            "field_type": "textarea",
+                            "label": "采购说明",
+                        },
+                    ],
+                }
+            ],
+            "interactive_elements": [
+                {
+                    "id": "#1",
+                    "role": "textbox",
+                    "type": "input",
+                    "label": "采购金额",
+                },
+                {
+                    "id": "#2",
+                    "role": "button",
+                    "type": "button",
+                    "button_type": "submit",
+                    "text": "提交申请",
+                },
+            ],
+        },
+    ])
+    runtime._check_stop_condition = MagicMock(side_effect=[False, True])
+    runtime._evaluate_goal_evidence = AsyncMock(return_value=False)
+    runtime._decide_explore_action = AsyncMock(return_value={
+        "tool": "click",
+        "args": {"selector": "link#1"},
+    })
+    runtime._execute_explore_action = AsyncMock(return_value="clicked: #1")
+    goal = ExplorationGoal(
+        id="GOAL-1",
+        goal="发现采购申请表单",
+        assertion_refs=["ASSERT-1"],
+        expected_evidence=["创建采购申请"],
+        stop_condition="采购申请表单可观察",
+        priority="high",
     )
 
-    mock_execution_graph = MagicMock()
+    result = await runtime.explore([goal])
 
-    async def mock_astream(state):
-        yield {"observe": {
-            "page_info": {"url": "http://example.com/login", "title": "Login"},
-            "screenshot": "base64-screen",
-        }}
-        yield {"decide": {"messages": [tool_message]}}
-        yield {"execute": {
-            "current_step": 1,
-            "_last_tool_result": "已点击 #1",
-            "state_after": {"url": "http://example.com/home"},
-        }}
-        yield {"assert": {
-            "_last_change_report": ChangeReport(url_changed=True),
-            "_last_assertion": AssertionResult(status="pass", reasoning="通过"),
-        }}
-        yield {"record": {"_collected_steps": [step]}}
+    assert result.goal_results[0].status == "found"
+    assert len(result.system_map.pages) == 2
+    assert len(result.system_map.navigations) == 1
+    navigation = result.system_map.navigations[0]
+    assert navigation.source == "采购申请"
+    assert navigation.target == "创建采购申请"
+    assert navigation.via == "click"
+    assert navigation.action == "新建采购申请"
+    assert navigation.evidence_refs == [
+        "source_url: https://example.com/purchases",
+        "target_url: https://example.com/purchases/new",
+        "action: 新建采购申请",
+    ]
+    assert result.system_map.forms[0].form_name == "purchase-form"
+    assert result.system_map.forms[0].fields == [
+        "number:采购金额",
+        "textarea:采购说明",
+    ]
+    assert result.system_map.forms[0].submit_action == "提交申请"
+    create_action = next(
+        action
+        for action in result.system_map.actions
+        if action.action_name == "新建采购申请"
+    )
+    assert create_action.target_page == "https://example.com/purchases/new"
+    assert create_action.source_page == "采购申请"
+    assert result.goal_results[0].evidence_refs[:3] == [
+        "page_url: https://example.com/purchases/new",
+        "page_title: Create Purchase",
+        "heading: 创建采购申请",
+    ]
 
-    mock_execution_graph.astream = mock_astream
 
-    with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
-         patch("core.runtime.log_step", new_callable=AsyncMock), \
-         patch("core.runtime.log_test_result", new_callable=AsyncMock):
-        updates = [
-            update
-            async for update in rt._execute_test_case_stream(
-                index=0,
-                test_case=SAMPLE_TEST_CASE_2,
-                test_plan=[SAMPLE_TEST_CASE_2],
-                setups={},
+def test_same_named_actions_on_different_pages_remain_distinct():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    system_map = SystemMapEvid()
+
+    runtime._remember_exploration_observation(system_map, {
+        "url": "https://example.com/purchases/new",
+        "title": "Create Purchase",
+        "headings": ["创建采购申请"],
+        "interactive_elements": [
+            {
+                "id": "#1",
+                "type": "button",
+                "role": "button",
+                "text": "提交",
+            }
+        ],
+    })
+    runtime._remember_exploration_observation(system_map, {
+        "url": "https://example.com/approvals/1",
+        "title": "Approval",
+        "headings": ["审批详情"],
+        "interactive_elements": [
+            {
+                "id": "#1",
+                "type": "button",
+                "role": "button",
+                "text": "提交",
+            }
+        ],
+    })
+
+    submit_actions = [
+        action
+        for action in system_map.actions
+        if action.action_name == "提交"
+    ]
+    assert len(submit_actions) == 2
+    assert {action.source_page for action in submit_actions} == {
+        "创建采购申请",
+        "审批详情",
+    }
+
+
+def test_page_identity_ignores_query_and_fragment_noise():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+
+    assert runtime._canonical_page_url(
+        "https://example.com/dashboard?role=manager#summary"
+    ) == "https://example.com/dashboard"
+    assert runtime._canonical_page_url(
+        "https://example.com/approvals/123?tab=history"
+    ) == "https://example.com/approvals/:id"
+    assert runtime._canonical_page_url(
+        "https://example.com/users/550e8400-e29b-41d4-a716-446655440000"
+    ) == "https://example.com/users/:id"
+    assert runtime._is_same_page_map(
+        runtime._build_page_map({
+            "url": "https://example.com/dashboard?role=manager",
+            "title": "Dashboard",
+            "headings": ["Dashboard"],
+        }),
+        runtime._build_page_map({
+            "url": "https://example.com/dashboard?role=employee",
+            "title": "Dashboard",
+            "headings": ["Dashboard"],
+        }),
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_browser_action_supports_select_option_tool():
+    runtime = Runtime(
+        {"task_id": "1", "target_url": "https://example.com/dashboard"}
+    )
+    runtime.page = MagicMock()
+    runtime.page.url = "https://example.com/dashboard"
+    runtime.page.wait_for_timeout = AsyncMock()
+    locator = MagicMock()
+    locator.select_option = AsyncMock()
+    runtime._resolve_locator = AsyncMock(
+        return_value=(locator, "select[name=plan]")
+    )
+
+    result = await runtime._execute_browser_action(
+        {
+            "tool": "select_option",
+            "args": {"selector": "#plan", "value": "all"},
+        }
+    )
+
+    assert "selected:" in result
+    locator.select_option.assert_awaited_once_with(value="all")
+
+
+@pytest.mark.asyncio
+async def test_execute_browser_action_rewrites_option_click_to_parent_select():
+    runtime = Runtime(
+        {"task_id": "1", "target_url": "https://example.com/dashboard"}
+    )
+    runtime.page = MagicMock()
+    runtime.page.url = "https://example.com/dashboard"
+    runtime.page.wait_for_timeout = AsyncMock()
+
+    option_locator = MagicMock()
+    option_locator.evaluate = AsyncMock(return_value="option")
+    option_locator.get_attribute = AsyncMock(return_value="all")
+    option_locator.text_content = AsyncMock(return_value="All plans")
+    parent_select = MagicMock()
+    parent_select.count = AsyncMock(return_value=1)
+    parent_select.select_option = AsyncMock()
+    option_locator.locator.return_value = parent_select
+
+    runtime._resolve_locator = AsyncMock(return_value=(option_locator, "#10"))
+
+    result = await runtime._execute_browser_action(
+        {"tool": "click", "args": {"selector": "#10"}}
+    )
+
+    assert "selected_option_via_parent" in result
+    parent_select.select_option.assert_awaited_once_with(value="all")
+
+
+@pytest.mark.asyncio
+async def test_unsatisfied_structured_precondition_returns_explicit_terminal():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    case = executable_case(
+        preconditions=[
+            StructuredPrecondition(
+                type="business_state",
+                description="订单必须已支付",
+                satisfiable_by_agent=False,
+                failure_policy="skipped",
             )
         ]
-
-    assert [update["type"] for update in updates] == [
-        "page_update",
-        "ai_thinking",
-        "action_result",
-        "assertion_result",
-        "test_case_complete",
-    ]
-    assert updates[0]["data"]["screenshot"] == "base64-screen"
-    assert updates[2]["data"]["result"] == "已点击 #1"
-    assert updates[-1]["data"]["status"] == "passed"
-
-
-# ---------------------------------------------------------------------------
-# test_run_stream_error_handling
-# ---------------------------------------------------------------------------
+    )
+    result = await runtime._execute_single_case(case)
+    assert result.terminal_status == "skipped"
+    assert result.attempt_count == 0
+    assert "precondition_skipped" in (result.failure_reason or "")
 
 
 @pytest.mark.asyncio
-async def test_run_stream_error_handling():
-    """run_stream yields error update when planning fails."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt._launch_browser = AsyncMock()
-    rt._close_browser = AsyncMock()
-
-    # Mock planning graph to raise exception via astream
-    mock_planning_graph = MagicMock()
-
-    async def mock_astream_error(state):
-        raise RuntimeError("Planning failed")
-        yield  # make it an async generator (unreachable but required)
-
-    mock_planning_graph.astream = mock_astream_error
-
-    with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph):
-        updates = []
-        async for update in rt.run_stream():
-            updates.append(update)
-
-    # Should yield an error session_complete
-    assert len(updates) == 1
-    assert updates[0]["type"] == "session_complete"
-    assert "error" in updates[0]["data"]
-    assert "Planning failed" in updates[0]["data"]["error"]
-
-
-# ---------------------------------------------------------------------------
-# test_handle_browser_crash
-# ---------------------------------------------------------------------------
+async def test_semantic_goal_evidence_requires_explicit_positive_result():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    goal = ExplorationGoal(
+        id="GOAL-1",
+        goal="验证首页标题",
+        assertion_refs=["ASSERT-1"],
+        expected_evidence=["页面呈现约定的主标题"],
+        stop_condition="标题可核验",
+        priority="medium",
+    )
+    with patch(
+        "core.llm_client.safe_structured_invoke",
+        new=AsyncMock(
+            return_value=type(
+                "Assessment",
+                (),
+                {"evidence_sufficient": True},
+            )()
+        ),
+    ):
+        assert await runtime._evaluate_goal_evidence(
+            goal,
+            {"title": "Example Domain"},
+        ) is True
 
 
 @pytest.mark.asyncio
-async def test_handle_browser_crash():
-    """_handle_browser_crash closes old browser, launches new one, returns error state."""
-    from core.runtime import Runtime
+async def test_observe_page_recovers_after_browser_closed_error():
+    runtime = Runtime(
+        {"task_id": "1", "target_url": "https://example.com/dashboard"}
+    )
+    runtime.page = MagicMock()
+    runtime.page.url = "https://example.com/dashboard"
+    runtime._reset_browser_state = AsyncMock()
 
-    rt = Runtime(BASIC_TASK_CONFIG)
+    with patch(
+        "core.page_semantic.extract_page_semantics",
+        new=AsyncMock(
+            side_effect=[
+                RuntimeError("Target page, context or browser has been closed"),
+                {
+                    "url": "https://example.com/dashboard",
+                    "title": "Dashboard",
+                    "headings": ["数据看板"],
+                },
+            ]
+        ),
+    ):
+        result = await runtime._observe_page()
 
-    state = {
-        "messages": [],
-        "test_plan": [SAMPLE_TEST_CASE_1],
-        "current_index": 0,
-        "current_step": 3,
-        "consecutive_failures": 0,
-    }
-
-    # Mock _close_browser and _launch_browser
-    rt._close_browser = AsyncMock()
-    rt._launch_browser = AsyncMock()
-
-    with patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3"}):
-        result_state = await rt._handle_browser_crash(SAMPLE_TEST_CASE_1, state)
-
-    rt._close_browser.assert_called_once()
-    rt._launch_browser.assert_called_once()
-    assert result_state["consecutive_failures"] == 3  # hit the threshold
-    assert result_state["_collected_steps"] == []
-
-
-# ---------------------------------------------------------------------------
-# test_now_iso
-# ---------------------------------------------------------------------------
-
-
-def test_now_iso():
-    """_now_iso returns a valid ISO format string."""
-    from core.runtime import _now_iso
-
-    result = _now_iso()
-    assert isinstance(result, str)
-    assert len(result) > 0
-    # Should contain a date pattern like 2026-05-28
-    assert "2026" in result or "2025" in result
-
-
-# ---------------------------------------------------------------------------
-# test_run_preserves_partial_results_on_error
-# ---------------------------------------------------------------------------
+    assert result["title"] == "Dashboard"
+    assert result["_browser_recovered"] is True
+    assert "closed" in result["_recovery_reason"].lower()
+    runtime._reset_browser_state.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_run_preserves_partial_results_on_error():
-    """When execution fails mid-session, partial results are still returned."""
-    from core.runtime import Runtime
+async def test_terminal_assessment_without_sufficient_evidence_keeps_observing():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    assessment = type(
+        "Assessment",
+        (),
+        {
+            "need_more_observation": False,
+            "objective_satisfied": False,
+            "expected_result_supported": False,
+            "terminal_evidence_sufficient": False,
+            "reasoning": "当前证据不足",
+        },
+    )()
 
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt._launch_browser = AsyncMock()
-    rt._close_browser = AsyncMock()
-
-    # Mock planning graph to return 2 test cases
-    mock_planning_graph = MagicMock()
-    mock_planning_graph.ainvoke = AsyncMock(return_value={
-        "test_plan": [SAMPLE_TEST_CASE_1, SAMPLE_TEST_CASE_2],
-        "setups": {},
-        "messages": [],
-    })
-
-    # TC-001 succeeds, TC-002 crashes
-    crash_exc = RuntimeError("Unexpected crash during TC-002")
-
-    success_result_state = {
-        "messages": [],
-        "test_plan": [SAMPLE_TEST_CASE_1, SAMPLE_TEST_CASE_2],
-        "setups": {},
-        "current_index": 0,
-        "current_step": 4,
-        "results": [],
-        "consecutive_failures": 0,
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [PASSING_STEP],
-    }
-
-    mock_execution_graph = MagicMock()
-    # First invocation succeeds, second raises (will be caught by crash handler)
-    mock_execution_graph.ainvoke = AsyncMock(side_effect=[success_result_state, crash_exc])
-
-    with patch("core.runtime.build_planning_graph", return_value=mock_planning_graph), \
-         patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
-         patch("core.runtime.execute_setup", new_callable=AsyncMock), \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15", "MAX_TEST_CASE_RETRIES": "0"}):
-
-        results = await rt.run()
-
-    # TC-001 should be passed, TC-002 should be failed (crash recovery)
-    assert len(results) == 2
-    assert results[0].test_case_id == "TC-001"
-    assert results[0].status == "passed"
-    assert results[1].test_case_id == "TC-002"
-    assert results[1].status == "failed"
-
-
-# ---------------------------------------------------------------------------
-# test_execute_test_case_with_setup
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_execute_test_case_with_setup():
-    """When test case has preconditions, setups are executed before the test case."""
-    from core.runtime import Runtime
-
-    rt = Runtime(BASIC_TASK_CONFIG)
-    rt.page = AsyncMock()
-
-    mock_execution_graph = MagicMock()
-    mock_execution_graph.ainvoke = AsyncMock(return_value={
-        "messages": [],
-        "test_plan": [SAMPLE_TEST_CASE_1],
-        "setups": {"login_as_test": SAMPLE_SETUP},
-        "current_index": 0,
-        "current_step": 4,
-        "results": [],
-        "consecutive_failures": 0,
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
-        "_collected_steps": [],
-    })
-
-    mock_setup_return = {
-        "messages": [],
-        "test_plan": [],
-        "setups": {},
-        "current_index": 0,
-        "current_step": 0,
-        "results": [],
-        "consecutive_failures": 0,
-        "page_info": {},
-        "screenshot": "",
-        "state_before": {},
-        "state_after": {},
-        "task_id": "task-rt-001",
-        "task_config": BASIC_TASK_CONFIG,
-    }
-
-    with patch("core.runtime.build_execution_graph", return_value=mock_execution_graph), \
-         patch("core.runtime.execute_setup", new_callable=AsyncMock, return_value=mock_setup_return) as mock_setup, \
-         patch.dict(os.environ, {"MAX_CONSECUTIVE_FAILURES": "3", "MAX_STEPS_PER_CASE": "15"}):
-
-        result = await rt._execute_test_case(
-            index=0,
-            test_case=SAMPLE_TEST_CASE_1,
-            test_plan=[SAMPLE_TEST_CASE_1],
-            setups={"login_as_test": SAMPLE_SETUP},
+    with patch(
+        "core.llm_client.safe_structured_invoke",
+        new=AsyncMock(return_value=assessment),
+    ):
+        result = await runtime._evaluate_terminal_assertion(
+            executable_case(),
+            {"url": "https://example.com", "title": "Example Domain"},
+            [],
         )
 
-    # Setup should have been called for login_as_test precondition
-    mock_setup.assert_called_once()
-    assert result.test_case_id == "TC-001"
-
-
-# ---------------------------------------------------------------------------
-# test_data_directory_creation
-# ---------------------------------------------------------------------------
+    assert result is None
 
 
 @pytest.mark.asyncio
-async def test_data_directory_creation():
-    """_launch_browser creates the data/sessions/<task_id> directory."""
-    from core.runtime import Runtime
+async def test_terminal_failure_requires_sufficient_evidence():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    assessment = type(
+        "Assessment",
+        (),
+        {
+            "need_more_observation": False,
+            "objective_satisfied": False,
+            "expected_result_supported": False,
+            "terminal_evidence_sufficient": True,
+            "reasoning": "页面稳定且明确不满足预期",
+        },
+    )()
 
-    rt = Runtime({"task_id": "dir-test-001", "target_url": "http://example.com/login"})
+    with patch(
+        "core.llm_client.safe_structured_invoke",
+        new=AsyncMock(return_value=assessment),
+    ):
+        result = await runtime._evaluate_terminal_assertion(
+            executable_case(),
+            {"url": "https://example.com", "title": "Example Domain"},
+            ["clicked: #submit"],
+        )
 
-    mock_pw = MagicMock()
-    mock_browser = MagicMock()
-    mock_context = MagicMock()
-    mock_page = MagicMock()
+    assert result is not None
+    assert result.terminal_evidence_sufficient is True
+    assert Runtime._all_terminal_satisfied(result) is False
 
-    mock_pw_instance = MagicMock()
-    mock_pw_instance.start = AsyncMock(return_value=mock_pw_instance)
-    mock_pw_instance.chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
-    mock_browser.contexts = [mock_context]
-    mock_browser.new_context = AsyncMock(return_value=mock_context)
-    mock_context.pages = []
-    mock_context.new_page = AsyncMock(return_value=mock_page)
-    mock_context.tracing.start = AsyncMock()
-    mock_page.goto = AsyncMock()
 
-    with patch("core.runtime.async_playwright", return_value=mock_pw_instance), \
-         patch("core.runtime.set_current_page"), \
-         patch("os.makedirs") as mock_makedirs:
+@pytest.mark.asyncio
+async def test_terminal_failure_can_finish_from_page_evidence_without_actions():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    assessment = type(
+        "Assessment",
+        (),
+        {
+            "need_more_observation": False,
+            "objective_satisfied": False,
+            "expected_result_supported": False,
+            "terminal_evidence_sufficient": True,
+            "reasoning": "页面已直接展示非标准标签，预期不成立",
+        },
+    )()
 
-        await rt._launch_browser()
+    with patch(
+        "core.llm_client.safe_structured_invoke",
+        new=AsyncMock(return_value=assessment),
+    ):
+        result = await runtime._evaluate_terminal_assertion(
+            executable_case(
+                objective="验证标准标签",
+                expected="仅显示标准标签",
+            ),
+            {
+                "url": "https://example.com/dashboard",
+                "title": "Dashboard",
+                "visible_texts": ["明星人才 · 4人", "关键人才 · 3人"],
+            },
+            [],
+        )
 
-    expected_dir = os.path.join("data", "sessions", "dir-test-001")
-    mock_makedirs.assert_called_once_with(expected_dir, exist_ok=True)
+    assert result is not None
+    assert result.terminal_evidence_sufficient is True
+    assert Runtime._all_terminal_satisfied(result) is False
+
+
+@pytest.mark.asyncio
+async def test_runtime_session_retries_update_one_case_result():
+    session = RuntimeSession(
+        {"task_id": "1", "target_url": "https://example.com"}
+    )
+    session.runtime._execute_single_case = AsyncMock(
+        side_effect=[
+            case_result("failed"),
+            case_result("incomplete"),
+            case_result("passed"),
+        ]
+    )
+    session.runtime._reset_browser_state = AsyncMock()
+
+    with patch(
+        "core.runtime_session.upsert_case_result",
+        new_callable=AsyncMock,
+    ) as upsert:
+        results = await session.execute("RUN-1", [executable_case()])
+
+    assert len(results) == 1
+    assert results[0].terminal_status == "passed"
+    assert results[0].attempt_count == 3
+    upsert.assert_awaited_once()
+    assert session.runtime._reset_browser_state.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_failed_retry_exhaustion_remains_failed(monkeypatch):
+    monkeypatch.setenv("MAX_TEST_CASE_RETRIES", "1")
+    session = RuntimeSession(
+        {"task_id": "1", "target_url": "https://example.com"}
+    )
+    session.runtime._execute_single_case = AsyncMock(
+        side_effect=[case_result("failed"), case_result("failed")]
+    )
+    session.runtime._reset_browser_state = AsyncMock()
+
+    with patch(
+        "core.runtime_session.upsert_case_result",
+        new_callable=AsyncMock,
+    ):
+        results = await session.execute("RUN-1", [executable_case()])
+
+    assert results[0].terminal_status == "failed"
+    assert results[0].attempt_count == 2
+
+
+@pytest.mark.asyncio
+async def test_incomplete_retry_exhaustion_requires_human_review(monkeypatch):
+    monkeypatch.setenv("MAX_TEST_CASE_RETRIES", "1")
+    session = RuntimeSession(
+        {"task_id": "1", "target_url": "https://example.com"}
+    )
+    session.runtime._execute_single_case = AsyncMock(
+        side_effect=[case_result("incomplete"), case_result("incomplete")]
+    )
+    session.runtime._reset_browser_state = AsyncMock()
+
+    with patch(
+        "core.runtime_session.upsert_case_result",
+        new_callable=AsyncMock,
+    ):
+        results = await session.execute("RUN-1", [executable_case()])
+
+    assert results[0].terminal_status == "human_review_required"
+    assert results[0].attempt_count == 2
+
+
+@pytest.mark.asyncio
+async def test_precondition_terminal_is_not_retried(monkeypatch):
+    monkeypatch.setenv("MAX_TEST_CASE_RETRIES", "2")
+    session = RuntimeSession(
+        {"task_id": "1", "target_url": "https://example.com"}
+    )
+    precondition = case_result("failed", attempt=0)
+    session.runtime._execute_single_case = AsyncMock(
+        return_value=precondition
+    )
+    session.runtime._reset_browser_state = AsyncMock()
+
+    with patch(
+        "core.runtime_session.upsert_case_result",
+        new_callable=AsyncMock,
+    ):
+        results = await session.execute("RUN-1", [executable_case()])
+
+    assert results[0].attempt_count == 0
+    session.runtime._execute_single_case.assert_awaited_once()
+    session.runtime._reset_browser_state.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_case_attempt_timeout_is_bounded(monkeypatch):
+    monkeypatch.setenv("MAX_TEST_CASE_RETRIES", "0")
+    monkeypatch.setenv("MAX_CASE_ATTEMPT_SECONDS", "0.01")
+    session = RuntimeSession(
+        {"task_id": "1", "target_url": "https://example.com"}
+    )
+
+    async def never_finishes(_case):
+        await asyncio.sleep(1)
+
+    session.runtime._execute_single_case = never_finishes
+    session.runtime._record_step = AsyncMock()
+
+    with patch(
+        "core.runtime_session.upsert_case_result",
+        new_callable=AsyncMock,
+    ):
+        results = await session.execute("RUN-1", [executable_case()])
+
+    assert results[0].terminal_status == "human_review_required"
+    assert results[0].attempt_count == 1
+    assert results[0].failure_reason == "case_attempt_timeout: 0.01s"
+
+
+@pytest.mark.asyncio
+async def test_runtime_emits_persisted_case_step():
+    event_sink = AsyncMock()
+    session = RuntimeSession(
+        {"task_id": "1", "target_url": "https://example.com"},
+        event_sink=event_sink,
+    )
+    session.runtime._check_preconditions = AsyncMock(return_value=None)
+    session.runtime._observe_page = AsyncMock(return_value={"url": "https://example.com"})
+    session.runtime._evaluate_terminal_assertion = AsyncMock(
+        side_effect=[
+            None,
+            TerminalAssertion(
+                objective_satisfied=True,
+                expected_result_supported=True,
+                terminal_evidence_sufficient=True,
+                reasoning="已验证",
+            ),
+        ]
+    )
+    session.runtime._decide_execute_action = AsyncMock(
+        return_value={"tool": "wait", "args": {"ms": 1}}
+    )
+    session.runtime._execute_test_action = AsyncMock(return_value="waited: 1ms")
+    session.runtime._active_run_id = "RUN-1"
+    session.runtime._active_attempt_no = 2
+
+    persisted_step = type("PersistedStep", (), {"id": 42})()
+    with patch(
+        "core.execution_store.append_task_step",
+        new=AsyncMock(return_value=persisted_step),
+    ):
+        await session.runtime._execute_single_case(executable_case())
+
+    event_sink.assert_awaited_once()
+    event_type, payload = event_sink.await_args.args
+    assert event_type == "case_step"
+    assert payload["candidate_case_id"] == "CASE-1"
+    assert payload["attempt_no"] == 2
+    assert payload["step_index"] == 0
+    assert payload["step_id"] == 42
+
+
+@pytest.mark.asyncio
+async def test_semantic_element_id_prefers_unique_role_and_text():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    role_locator = MagicMock()
+    role_locator.count = AsyncMock(return_value=1)
+    runtime.page = MagicMock()
+    runtime.page.get_by_role.return_value = role_locator
+    runtime._last_page_info = {
+        "interactive_elements": [
+            {
+                "id": "#7",
+                "type": "link",
+                "text": "能力趋势洞察",
+                "xpath": "//a[7]",
+            }
+        ]
+    }
+
+    locator, resolved = await runtime._resolve_locator("#7")
+
+    assert locator is role_locator
+    assert resolved == "role=link, name=能力趋势洞察"
+    assert runtime._locator_metrics.as_dict()["locator_success_by_strategy"] == {
+        "semantic_role": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_semantic_element_id_accepts_tag_prefixed_reference():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    role_locator = MagicMock()
+    role_locator.count = AsyncMock(return_value=1)
+    runtime.page = MagicMock()
+    runtime.page.get_by_role.return_value = role_locator
+    runtime._last_page_info = {
+        "interactive_elements": [
+            {
+                "id": "#3",
+                "type": "button",
+                "text": "部门领导",
+                "xpath": "//button[3]",
+            }
+        ]
+    }
+
+    locator, resolved = await runtime._resolve_locator("button#3")
+
+    assert locator is role_locator
+    assert resolved == "role=button, name=部门领导"
+
+
+@pytest.mark.asyncio
+async def test_observe_page_records_semantic_extraction_source():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime.page = MagicMock()
+
+    with patch(
+        "core.page_semantic.extract_page_semantics",
+        new=AsyncMock(
+            return_value={
+                "url": "https://example.com",
+                "semantic_extraction": {
+                    "source": "cdp",
+                    "element_count": 5,
+                    "cdp_available": True,
+                },
+            }
+        ),
+    ):
+        await runtime._observe_page()
+
+    metrics = runtime._locator_metrics.as_dict()
+    assert metrics["semantic_observations"] == 1
+    assert metrics["semantic_source_counts"] == {"cdp": 1}
+
+
+def test_locator_metrics_evidence_ref_is_compact_json():
+    metrics = RuntimeLocatorMetrics()
+    metrics.record_locator_attempt()
+    metrics.record_locator_success("css")
+    metrics.record_semantic_extraction({"source": "playwright_locator"})
+
+    evidence = metrics.evidence_ref()
+
+    assert evidence.startswith("locator_metrics: ")
+    assert '"locator_attempts": 1' in evidence
+    assert '"semantic_source_counts": {"playwright_locator": 1}' in evidence
+
+
+def test_runtime_appends_locator_metrics_to_evidence_refs():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime._locator_metrics.record_locator_attempt()
+    runtime._locator_metrics.record_locator_failure("ambiguous")
+
+    refs = runtime._evidence_refs_with_locator_metrics(["clicked: #1"])
+
+    assert refs[0] == "clicked: #1"
+    assert refs[1].startswith("locator_metrics: ")
+
+
+def test_deterministic_terminal_uses_stable_heading_not_navigation_text():
+    case = executable_case(
+        objective="点击'能力趋势洞察'后进入目标页面",
+        expected="页面主体显示“能力趋势洞察”标题",
+    )
+
+    initial = Runtime._deterministic_terminal_assertion(
+        case,
+        {
+            "url": "http://localhost:5000/dashboard",
+            "title": "TalentMap",
+            "headings": ["数据看板"],
+            "interactive_elements": [{"text": "能力趋势洞察"}],
+        },
+    )
+    completed = Runtime._deterministic_terminal_assertion(
+        case,
+        {
+            "url": "http://localhost:5000/reports",
+            "title": "TalentMap",
+            "headings": ["能力趋势洞察"],
+        },
+    )
+
+    assert initial is None
+    assert completed is not None
+    assert Runtime._all_terminal_satisfied(completed) is True
+
+
+def test_deterministic_terminal_can_match_visible_read_only_text():
+    case = executable_case(
+        objective="验证首页指标卡片展示",
+        expected="页面显示“明星/核心人才”卡片",
+    )
+
+    result = Runtime._deterministic_terminal_assertion(
+        case,
+        {
+            "url": "http://localhost:5000/dashboard",
+            "title": "TalentMap",
+            "headings": ["数据看板"],
+            "visible_texts": ["盘点项目", "明星/核心人才", "待关注人员"],
+        },
+    )
+
+    assert result is not None
+    assert Runtime._all_terminal_satisfied(result) is True
+
+
+def test_deterministic_terminal_does_not_pass_formula_from_label_only():
+    case = executable_case(
+        objective="验证明星/核心人才卡片公式",
+        expected="“明星/核心人才”人数等于“明星人才”与“核心人才”人数之和。",
+    )
+
+    result = Runtime._deterministic_terminal_assertion(
+        case,
+        {
+            "url": "http://localhost:5000/dashboard",
+            "title": "TalentMap",
+            "headings": ["数据看板"],
+            "visible_texts": ["明星/核心人才", "明星人才", "核心人才"],
+        },
+    )
+
+    assert result is None
+
+
+def test_deterministic_terminal_validates_dashboard_formula_numbers():
+    case = executable_case(
+        objective="验证明星/核心人才卡片公式",
+        expected="“明星/核心人才”人数等于“明星人才”与“核心人才”人数之和。",
+    )
+
+    result = Runtime._deterministic_terminal_assertion(
+        case,
+        {
+            "url": "http://localhost:5000/dashboard",
+            "title": "TalentMap",
+            "headings": ["数据看板"],
+            "visible_texts": [
+                "明星/核心人才",
+                "10人",
+                "明星人才 · 4人",
+                "核心人才 · 6人",
+            ],
+        },
+    )
+
+    assert result is not None
+    assert Runtime._all_terminal_satisfied(result) is True
+    assert "确定性公式证据匹配" in result.reasoning
+
+
+def test_deterministic_terminal_fails_dashboard_formula_mismatch():
+    case = executable_case(
+        objective="验证待关注人员卡片公式",
+        expected="“待关注人员”人数等于“业绩不佳者”与“关注”人数之和。",
+    )
+
+    result = Runtime._deterministic_terminal_assertion(
+        case,
+        {
+            "url": "http://localhost:5000/dashboard",
+            "title": "TalentMap",
+            "headings": ["数据看板"],
+            "visible_texts": [
+                "待关注人员",
+                "3人",
+                "业绩不佳者 · 2人",
+                "关注 · 2人",
+            ],
+        },
+    )
+
+    assert result is not None
+    assert Runtime._all_terminal_satisfied(result) is False
+    assert "确定性公式证据不匹配" in result.reasoning
+
+
+@pytest.mark.asyncio
+async def test_contenteditable_dom_assertion_passes_without_llm():
+    runtime = Runtime(
+        {"task_id": "1", "target_url": "https://example.com/dashboard"}
+    )
+    runtime.page = MagicMock()
+    runtime.page.url = "https://example.com/dashboard"
+    runtime.page.evaluate = AsyncMock(
+        return_value={
+            "inspectedCount": 42,
+            "regionCount": 6,
+            "regionViolations": [],
+            "visibleEditableViolations": [],
+        }
+    )
+    case = executable_case(
+        objective="验证所有展示区域的 contenteditable 属性处于边界状态",
+        expected="通过 DOM API 检查所有元素的 contenteditable 属性值严格等于 false 或不存在",
+    )
+
+    with patch(
+        "core.llm_client.safe_structured_invoke",
+        new=AsyncMock(return_value=None),
+    ) as invoke:
+        result = await runtime._evaluate_terminal_assertion(
+            case,
+            {
+                "url": "https://example.com/dashboard",
+                "title": "TalentMap",
+                "headings": ["数据看板"],
+                "interactive_elements": [{"id": "#1"}],
+                "tables": [],
+                "error_messages": [],
+                "loading": False,
+            },
+            [],
+        )
+
+    assert result is not None
+    assert Runtime._all_terminal_satisfied(result) is True
+    assert "DOM 属性校验通过" in result.reasoning
+    invoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_contenteditable_dom_assertion_fails_on_editable_region():
+    runtime = Runtime(
+        {"task_id": "1", "target_url": "https://example.com/dashboard"}
+    )
+    runtime.page = MagicMock()
+    runtime.page.url = "https://example.com/dashboard"
+    runtime.page.evaluate = AsyncMock(
+        return_value={
+            "inspectedCount": 35,
+            "regionCount": 4,
+            "regionViolations": [
+                {
+                    "tag": "div",
+                    "id": "dashboard-card",
+                    "role": "region",
+                    "attrValue": "true",
+                    "reason": "isContentEditable",
+                    "text": "能力趋势洞察",
+                }
+            ],
+            "visibleEditableViolations": [],
+        }
+    )
+    case = executable_case(
+        objective="验证所有展示区域的 contenteditable 属性处于边界状态",
+        expected="通过 DOM API 检查所有元素的 contenteditable 属性值严格等于 false 或不存在",
+    )
+
+    with patch(
+        "core.llm_client.safe_structured_invoke",
+        new=AsyncMock(return_value=None),
+    ) as invoke:
+        result = await runtime._evaluate_terminal_assertion(
+            case,
+            {
+                "url": "https://example.com/dashboard",
+                "title": "TalentMap",
+                "headings": ["数据看板"],
+                "interactive_elements": [{"id": "#1"}],
+                "tables": [],
+                "error_messages": [],
+                "loading": False,
+            },
+            [],
+        )
+
+    assert result is not None
+    assert Runtime._all_terminal_satisfied(result) is False
+    assert result.terminal_evidence_sufficient is True
+    assert "contenteditable 风险元素" in result.reasoning
+    assert "dashboard-card" in result.reasoning
+    invoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_contenteditable_dom_assertion_requires_target_route_context():
+    runtime = Runtime(
+        {"task_id": "1", "target_url": "https://example.com/dashboard"}
+    )
+    runtime.page = MagicMock()
+    runtime.page.url = "https://example.com/login"
+    runtime.page.evaluate = AsyncMock(
+        return_value={
+            "inspectedCount": 30,
+            "regionCount": 5,
+            "regionViolations": [],
+            "visibleEditableViolations": [],
+        }
+    )
+    case = executable_case(
+        objective="验证所有展示区域的 contenteditable 属性处于边界状态",
+        expected="通过 DOM API 检查所有元素的 contenteditable 属性值严格等于 false 或不存在",
+    )
+
+    with patch(
+        "core.llm_client.safe_structured_invoke",
+        new=AsyncMock(return_value=None),
+    ) as invoke:
+        result = await runtime._evaluate_terminal_assertion(
+            case,
+            {
+                "url": "https://example.com/login",
+                "title": "登录",
+                "headings": ["登录"],
+                "interactive_elements": [{"id": "#1"}],
+                "tables": [],
+                "error_messages": [],
+                "loading": False,
+            },
+            [],
+        )
+
+    assert result is None
+    runtime.page.evaluate.assert_not_awaited()
+    invoke.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_invalid_action_is_persisted_as_decision_error():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime._active_run_id = "RUN-1"
+    runtime._check_preconditions = AsyncMock(return_value=None)
+    runtime._observe_page = AsyncMock(return_value={"url": "https://example.com"})
+    runtime._evaluate_terminal_assertion = AsyncMock(return_value=None)
+    runtime._decide_execute_action = AsyncMock(return_value=None)
+    runtime._record_step = AsyncMock()
+
+    result = await runtime._execute_single_case(executable_case())
+
+    assert result.terminal_status == "incomplete"
+    runtime._record_step.assert_awaited_once()
+    action = runtime._record_step.await_args.args[1]
+    assert action["tool"] == "decision_error"
+
+
+@pytest.mark.asyncio
+async def test_case_result_keeps_terminal_assertion_reason_as_evidence():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime._check_preconditions = AsyncMock(return_value=None)
+    runtime._observe_page = AsyncMock(
+        return_value={
+            "url": "https://example.com/reports",
+            "title": "TalentMap",
+            "headings": ["能力趋势洞察"],
+        }
+    )
+    case = executable_case(
+        objective="打开'能力趋势洞察'",
+        expected="页面显示“能力趋势洞察”标题",
+    )
+
+    result = await runtime._execute_single_case(case)
+
+    assert result.terminal_status == "passed"
+    assert any(
+        ref.startswith("terminal_assertion: 确定性页面证据匹配")
+        for ref in result.evidence_refs
+    )
+
+
+@pytest.mark.asyncio
+async def test_context_manager_always_closes_browser():
+    session = RuntimeSession(
+        {"task_id": "1", "target_url": "https://example.com"}
+    )
+    session.runtime._launch_browser = AsyncMock()
+    session.runtime._close_browser = AsyncMock()
+
+    with pytest.raises(RuntimeError):
+        async with session:
+            raise RuntimeError("boom")
+
+    session.runtime._launch_browser.assert_awaited_once()
+    session.runtime._close_browser.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_browser_action_blocks_forbidden_navigation_target():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+
+    result = await runtime._execute_browser_action(
+        {"tool": "navigate", "args": {"url": "view-source:https://example.com"}}
+    )
+
+    assert result == "error: action_blocked:forbidden_navigation_target"
+
+
+@pytest.mark.asyncio
+async def test_execute_browser_action_blocks_generic_container_selector():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+
+    result = await runtime._execute_browser_action(
+        {"tool": "input_text", "args": {"selector": "body", "text": "hello"}}
+    )
+
+    assert result == "error: action_blocked:generic_container_selector_blocked"
+
+
+@pytest.mark.asyncio
+async def test_execute_browser_action_fails_fast_on_ambiguous_selector():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime.page = MagicMock()
+    runtime.page.url = "https://example.com/dashboard"
+    locator = MagicMock()
+    locator.count = AsyncMock(return_value=2)
+    runtime.page.locator.return_value = locator
+
+    result = await runtime._execute_browser_action(
+        {"tool": "click", "args": {"selector": ".card-title"}}
+    )
+
+    assert result == "error: selector_ambiguous: .card-title (2 matches)"
+    metrics = runtime._locator_metrics.as_dict()
+    assert metrics["locator_failures"] == 1
+    assert metrics["locator_failure_by_reason"] == {"ambiguous": 1}
+
+
+@pytest.mark.asyncio
+async def test_decide_execute_action_includes_retry_feedback():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime.remember_case_feedback(
+        "CASE-1",
+        "error: action_blocked:browser_chrome_selector_blocked",
+    )
+    runtime._invoke_json = AsyncMock(return_value=None)
+
+    await runtime._decide_execute_action(
+        executable_case(),
+        {"url": "https://example.com/dashboard", "title": "Dashboard"},
+        1,
+    )
+
+    prompt = runtime._invoke_json.await_args.args[0]
+    assert "最近失败反馈" in prompt
+    assert "browser_chrome_selector_blocked" in prompt
+
+
+@pytest.mark.asyncio
+async def test_decision_prompts_use_shared_tool_contract():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+    runtime._invoke_json = AsyncMock(return_value=None)
+
+    await runtime._decide_explore_action(
+        ExplorationGoal(
+            id="GOAL-1",
+            goal="查看数据看板",
+            assertion_refs=["ASSERT-1"],
+            expected_evidence=["数据看板"],
+            stop_condition="看到标题",
+            priority="medium",
+        ),
+        {
+            "url": "https://example.com/dashboard",
+            "title": "Dashboard",
+            "headings": ["数据看板"],
+            "interactive_elements": [
+                {
+                    "id": "#1",
+                    "type": "button",
+                    "role": "button",
+                    "label": "查看详情",
+                    "value": "sensitive-value-must-not-leak",
+                    "enabled": True,
+                }
+            ],
+        },
+        1,
+    )
+    explore_prompt = runtime._invoke_json.await_args.args[0]
+
+    await runtime._decide_execute_action(
+        executable_case(),
+        {"url": "https://example.com/dashboard", "title": "Dashboard"},
+        1,
+    )
+    execute_prompt = runtime._invoke_json.await_args.args[0]
+
+    assert format_tool_prompt_line(EXPLORATION_ACTION_TOOLS) in explore_prompt
+    assert "当前页面语义" in explore_prompt
+    assert '"id": "#1"' in explore_prompt
+    assert "查看详情" in explore_prompt
+    assert "sensitive-value-must-not-leak" not in explore_prompt
+    assert "不得猜测不存在的 selector" in explore_prompt
+    assert format_tool_prompt_line(EXECUTION_ACTION_TOOLS) in execute_prompt
+    assert "input_text" not in explore_prompt
+    assert "mark_task_complete" not in execute_prompt
+
+
+@pytest.mark.asyncio
+async def test_execute_browser_action_blocks_unsupported_tool():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+
+    result = await runtime._execute_browser_action(
+        {"tool": "hover", "args": {"selector": "#1"}}
+    )
+
+    assert result == "error: action_blocked:unsupported_tool"
+
+
+@pytest.mark.asyncio
+async def test_execute_browser_action_blocks_select_without_selector():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+
+    result = await runtime._execute_browser_action(
+        {"tool": "select_option", "args": {"value": "all"}}
+    )
+
+    assert result == "error: action_blocked:missing_selector"
+
+
+@pytest.mark.asyncio
+async def test_execute_browser_action_handles_task_marker_tools():
+    runtime = Runtime({"task_id": "1", "target_url": "https://example.com"})
+
+    complete = await runtime._execute_browser_action(
+        {"tool": "mark_task_complete", "args": {"summary": "证据已满足"}}
+    )
+    failed = await runtime._execute_browser_action(
+        {"tool": "mark_task_failed", "args": {"reason": "证据不足"}}
+    )
+
+    assert complete == "completed: 证据已满足"
+    assert failed == "failed: 证据不足"
+
+
+@pytest.mark.asyncio
+async def test_runtime_session_timeout_remembers_case_feedback(monkeypatch):
+    monkeypatch.setenv("MAX_TEST_CASE_RETRIES", "0")
+    monkeypatch.setenv("MAX_CASE_ATTEMPT_SECONDS", "0.01")
+    session = RuntimeSession(
+        {"task_id": "1", "target_url": "https://example.com"}
+    )
+    session.runtime.remember_case_feedback = MagicMock()
+    session.runtime.clear_case_feedback = MagicMock()
+    session.runtime._record_step = AsyncMock()
+
+    async def never_finishes(_case):
+        await asyncio.sleep(1)
+
+    session.runtime._execute_single_case = never_finishes
+
+    with patch(
+        "core.runtime_session.upsert_case_result",
+        new_callable=AsyncMock,
+    ):
+        await session.execute("RUN-1", [executable_case()])
+
+    session.runtime.remember_case_feedback.assert_called_once_with(
+        "CASE-1",
+        "case_attempt_timeout: 0.01s",
+    )
+    session.runtime.clear_case_feedback.assert_called_once_with("CASE-1")

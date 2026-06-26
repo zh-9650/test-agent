@@ -1,6 +1,11 @@
 # AI Development Guide
 
-Last updated: 2026-06-08.
+Runtime consumes structured `CandidateTestCase.preconditions` and must not
+infer roles or precondition types from natural-language keywords. Each retry
+appends attempt-scoped `TaskStep` rows and updates the single run/case
+`CaseResult`.
+
+Last updated: 2026-06-16.
 
 This document is the implementation guide for agents that will build and
 verify the next-stage test-analysis pipeline for Smart Test Agent. It is meant
@@ -45,6 +50,7 @@ Document Understanding
   -> ExplorationGoal
   -> Live Exploration
   -> SystemMap / PageMap / ActionMap / FormMap / NavigationMap
+  -> CoverageBlueprint
   -> TestCondition
   -> TestDesignTechnique
   -> CoverageItem
@@ -138,6 +144,8 @@ Required substructures:
 Rules:
 
 - record visible pages, actions, fields, transitions, errors, and constraints;
+- keep meaningful page evidence from every observed live page, not only from
+  exploration goals that end in `found`;
 - do not turn exploration into hardcoded execution scripts;
 - keep the evidence concrete enough for test design.
 
@@ -184,9 +192,13 @@ Rules:
 
 - conditions are not cases;
 - each assertion may split into many conditions;
+- `e2e` belongs to `branch_type`, not `condition_type`; end-to-end coverage
+  must still use a valid condition category such as `functional`;
 - the oracle type must be explicit;
 - if the oracle is not knowable yet, the condition should remain open or
   require human review.
+- module, flow, dependency, and branch metadata comes from the coverage
+  blueprint and is inherited by coverage items and candidate cases.
 
 ### 3.6 TestDesignTechnique
 
@@ -229,6 +241,8 @@ Rules:
 
 - coverage items are obligations, not counts;
 - one condition may produce multiple coverage items;
+- `e2e` belongs to `branch_type`, not `coverage_dimension`; end-to-end
+  coverage must still use a valid dimension such as `normal`;
 - each item should explain the specific risk or branch it covers.
 
 ### 3.8 CandidateTestCase
@@ -254,6 +268,44 @@ Rules:
 - do not hardcode brittle UI step sequences unless the case genuinely depends
   on a known fixed path;
 - keep execution hints lightweight and discovery-friendly;
+- cases that require browser devtools, page-source inspection, unsupported
+  pointer gestures, direct HTTP-request tooling, broad reference-dataset
+  audits, or non-agent-satisfiable preconditions must remain in the package
+  but be deferred from automatic execution;
+- browser-console JavaScript, direct POST/PUT requests, illegal API-call
+  integrity checks, and write-operation API probes are not browser-UI cases;
+  defer them unless the active executor can issue those requests and inspect
+  their responses directly;
+- cases whose oracle depends on `九宫格` region-to-label mapping,
+  calibrated-score source comparison, or other unavailable upstream/reference
+  datasets must also be deferred until that oracle is available to the agent;
+- department plan scope checks, progress formulas based on hidden
+  completion/total counts, and empty/unique participation data-state scenarios
+  also require reference data or setup controls; keep them deferred from
+  browser-UI automation until that evidence exists;
+- progress-bar percentage formula checks and 0%/100% boundary states follow
+  the same rule when source completion and total-count evidence is not exposed
+  to the browser executor;
+- department-vs-global dataset comparisons and progress data-source isolation
+  checks are reference-dataset audits and should not be selected as browser-UI
+  automation;
+- zero-data dashboard states require data setup, selected-project scope checks
+  require reference data, and grid/chart rendering or `九宫格形式` checks need
+  visual review unless a stronger visual oracle is available;
+- displayed-count comparisons against underlying inventory data require a
+  reference dataset; unfinished/all-complete progress boundaries require
+  explicit data setup;
+- if a provider emits an `account_role` precondition without
+  `required_role`, recovery may only reuse an already-declared single
+  `required_roles` entry; otherwise the unresolved role requirement must be
+  downgraded to a non-agent-satisfiable review gate instead of inventing a
+  role from free text;
+- preserve exact business nouns from the upstream coverage item for labels,
+  cards, fields, and statuses; if recovery applies a known low-risk alias
+  normalization, it must move the text back toward the source vocabulary
+  rather than inventing a new naming scheme;
+- for dashboard formula cases, `明星人才卡片` and `核心人才卡片` are drifted
+  aliases and should normalize back to the combined `明星/核心人才` card;
 - the case must remain traceable to its upstream facts and assertions.
 
 ### 3.9 TraceabilityMatrix
@@ -343,6 +395,23 @@ Rules:
 
 - exploration happens before final planning;
 - exploration should fill evidence gaps from the documents;
+- convert observed controls and forms deterministically into `ActionMap` and
+  `FormMap`; do not require a second model call to rediscover page structure;
+- add a `NavigationMap` only after a successful grounded action is followed by
+  an observed canonical route change;
+- retain source-page and evidence references on page, action, form, and
+  navigation entries so the system map remains auditable;
+- canonical page identity ignores query strings and fragments and normalizes
+  numeric, UUID, and long hexadecimal record IDs;
+- exploration decisions receive real semantic element IDs and control
+  metadata, but no input values;
+- persist the partial `system_map` back to the task package immediately after
+  exploration so failed or partial runs remain diagnosable;
+- persist every `GoalResult` plus measured surface/evidence counts in
+  `TestAssetPackage.exploration_evidence`, and carry it through final design;
+- if strict goal verdicts are inconclusive but real page evidence was captured,
+  downstream design may still consume that evidence instead of treating the
+  exploration as empty;
 - exploration is not execution.
 
 ### 4.3 L2 Test Analysis And Design
@@ -366,6 +435,25 @@ Rules:
 - convert assertions into measurable conditions;
 - expand conditions into coverage obligations;
 - instantiate candidate cases from coverage obligations;
+- if a non-rejected, non-review-blocked assertion comes back without any
+  positive condition, deterministically backfill one positive `TestCondition`
+  before quality gates run;
+- if the coverage blueprint marks a business flow as core and the model emits
+  no `branch_type="e2e"` condition for that flow, deterministically backfill
+  one from the best matching positive flow condition before technique
+  selection;
+- for read-only or non-editable assertions, prefer measurable `ui_state`
+  oracles for that deterministic positive supplement;
+- for read-only/display-only assertions, scope the oracle to business write
+  operations. Navigation, filtering, role switching, and view switching are
+  non-write controls and should not be treated as violations by themselves;
+- preserve source terminology for domain nouns such as dashboard labels, card
+  names, field names, and statuses; when a known source-defined canonical set
+  exists, deterministic normalization may rewrite drifted condition wording
+  back to that canonical vocabulary before quality gates run;
+- if the model emits candidate-case `input_data` text-like fields as arrays,
+  numbers, or dicts, normalize them into strings during parsing instead of
+  failing the entire batch on schema shape alone;
 - keep all artifacts traceable.
 
 ### 4.4 L3 Autonomous Execution
@@ -385,6 +473,14 @@ Rules:
 - follow the existing `observe -> decide -> execute -> assert -> record`
   contract;
 - do not mutate candidate case semantics during execution;
+- prefer structured control-specific actions such as `select_option` for real
+  `<select>` widgets; if the model points at a concrete `<option>` with a
+  click, execution may rewrite that to the parent select control;
+- if current headings, read-only `visible_texts`, tables, URL, or stable DOM
+  evidence already suffice to verify the case, do not spend additional turns
+  on repeated `scroll` or `wait` actions;
+- formula-style assertions need numeric evidence, not only label presence,
+  before deterministic success;
 - use runtime hints only as guidance.
 
 ### 4.5 L4 Evidence And Oracle
@@ -420,6 +516,29 @@ Rules:
   RequirementAssertion;
 - terminal case success must be based on sufficient evidence, not a passing
   intermediate step assertion;
+- deterministic terminal matches must be retained in `CaseResult.evidence_refs`,
+  not only used transiently for the verdict;
+- locator/CDP observability must be retained in terminal case evidence:
+  attempts, success strategy, failure reasons, failure rate, and semantic
+  extraction source. Use this measured baseline before changing locator backend
+  defaults;
+- page semantics should retain compact visible read-only text evidence in
+  addition to headings and interactive controls, so card-heavy dashboards can
+  be evaluated without requiring every target string to be clickable;
+- page semantics should expose bounded summaries for child frames, open shadow
+  roots, and all tabs, plus structured metadata for complex form controls;
+- preserve file inputs in the Playwright fallback even when the native control
+  is visually hidden behind a custom upload button, because `set_input_files`
+  can still operate on that control;
+- deterministic formula checks should compare target-card numbers with their
+  source-label numbers when the formula is recognized; if the numbers are
+  missing, fall through to semantic judgment instead of passing on label text;
+- if a case explicitly depends on DOM attribute state such as
+  `contenteditable`, prefer a deterministic Playwright-side DOM inspection over
+  asking the LLM to invent browser-console steps;
+- terminal evaluation may conclude either pass or fail when current page
+  evidence is already sufficient; contradictory page evidence should produce a
+  direct failed outcome instead of waiting for the global case timeout;
 - physical module splitting can wait until Runtime execution and result
   persistence seams are stable.
 
@@ -457,7 +576,12 @@ The package should be persisted as a task-level analysis artifact.
 
 Recommended persistence shape:
 
-- task record stores a serialized `TestAssetPackage` reference or JSONB blob;
+- task record first stores facts, assertions, source anchors, and exploration
+  goals as a partial `TestAssetPackage`, then replaces it with the complete
+  package after design and quality gates;
+- after exploration, refresh the same task package with the latest partial
+  `system_map` before deciding whether exploration produced enough evidence to
+  continue;
 - facts, assertions, conditions, coverage items, and candidate cases are stored
   in structured JSONB subdocuments initially;
 - do not force premature normalization into many tables unless a query pattern
@@ -501,7 +625,28 @@ When building or refactoring this pipeline, implement in this order:
 
 Do not add new abstractions before the upstream structure is stable.
 
-## 8. What To Avoid
+## 8. Human-Oracle Evaluation
+
+Semantic quality is calibrated against versioned fixtures under
+`data/fixtures/oracles/`. Each oracle records source SHA-256 hashes,
+annotation provenance, affected metrics, required semantic term groups,
+forbidden claims, and plan-contract expectations.
+
+Evaluation rules:
+
+- compare normalized semantic terms, not exact generated wording or IDs;
+- use one-to-one expectation matching so one aggregated fact or assertion
+  cannot satisfy several atomic obligations;
+- treat critical misses and forbidden claims as failures;
+- evaluate live `SystemMapEvid` pages, actions, forms, and navigations
+  separately from document facts;
+- evaluate candidate-case intent, required branch types, traceability, and the
+  deterministic quality-gate result;
+- reject stale oracles when a source hash changes;
+- change an oracle only for a source change, annotation correction, or
+  evaluation-rule correction, never to accommodate the current model.
+
+## 9. What To Avoid
 
 - Do not hardcode UI click paths in the analysis layer.
 - Do not treat coverage-as-string-match as semantic coverage.
@@ -509,7 +654,7 @@ Do not add new abstractions before the upstream structure is stable.
 - Do not let exploration results overwrite document evidence.
 - Do not move straight to report generation without a traceability matrix.
 
-## 9. Verification Targets
+## 10. Verification Targets
 
 The new pipeline should be considered healthy only when the following are
 demonstrably true:

@@ -302,13 +302,39 @@ def test_asset_packager_derives_source_registry_for_legacy_call():
     assert package.source_registry[0].source_id == "PRD §1"
     assert package.source_registry[0].is_derived is True
     assert package.quality_gate_report is not None
-    # derived-only registry 应该失败，因为无法验证 groundedness
     assert not package.quality_gate_report.passed
-    assert any(f.code == "no_real_source_anchor" for f in package.quality_gate_report.findings)
+    assert any(
+        finding.code == "no_real_source_anchor"
+        for finding in package.quality_gate_report.findings
+    )
     assert package.runtime_hints["quality_gate_passed"] is False
-    # derived anchor 仍会标记 warning
-    warning = next(f for f in package.quality_gate_report.findings if f.code == "derived_legacy_source_anchor")
+    warning = next(
+        finding
+        for finding in package.quality_gate_report.findings
+        if finding.code == "derived_legacy_source_anchor"
+    )
     assert warning.severity == "warning"
+
+
+def test_build_source_registry_creates_real_inline_anchor():
+    from core.skills.asset_packager import build_source_registry
+
+    fact = RequirementFact(
+        id="FACT-1",
+        source_type="prd",
+        source_reference="PRD §1",
+        quote="The page displays Example Domain.",
+        subject="page",
+        action="display heading",
+        confidence=1.0,
+    )
+    content = f"prefix {fact.quote} suffix"
+    anchors = build_source_registry([fact], {"prd": content})
+    assert len(anchors) == 1
+    assert anchors[0].source_id == fact.source_reference
+    assert anchors[0].is_derived is False
+    assert anchors[0].start_offset == 7
+    assert anchors[0].end_offset == 7 + len(fact.quote)
 
 
 def test_asset_packager_attaches_quality_gate_report():
@@ -335,3 +361,53 @@ def test_asset_packager_attaches_quality_gate_report():
     assert package.quality_gate_report.passed
     assert package.runtime_hints["quality_gate_passed"] is True
     assert package.runtime_hints["quality_gate_error_count"] == 0
+
+
+def test_quality_gate_warns_when_case_is_not_auto_executable():
+    from core.interfaces import CandidateTestCase
+    from core.skills.quality_gates import run_quality_gates
+
+    package = AssetPackage(
+        candidate_cases=[CandidateTestCase.model_construct(
+            id="TC-1",
+            title="检查网络面板",
+            goal="打开开发者工具并检查 network panel",
+            trace_references=[],
+            schema_version="candidate_test_case.v1",
+        )],
+    )
+
+    report = run_quality_gates(package)
+
+    finding = next(f for f in report.findings if f.code == "case_not_auto_executable")
+    assert finding.severity == "warning"
+    assert report.passed is True
+
+
+def test_quality_gate_rejects_selected_case_that_is_not_auto_executable():
+    from core.interfaces import CandidateTestCase
+    from core.skills.quality_gates import run_quality_gates
+
+    package = AssetPackage(
+        candidate_cases=[CandidateTestCase.model_construct(
+            id="TC-1",
+            title="检查网络面板",
+            goal="打开开发者工具并检查 network panel",
+            trace_references=[],
+            schema_version="candidate_test_case.v1",
+        )],
+        runtime_hints={
+            "execution_selection": {
+                "selected_case_ids": ["TC-1"],
+            }
+        },
+    )
+
+    report = run_quality_gates(package)
+
+    finding = next(
+        f for f in report.findings
+        if f.code == "selected_case_not_auto_executable"
+    )
+    assert finding.severity == "error"
+    assert report.passed is False

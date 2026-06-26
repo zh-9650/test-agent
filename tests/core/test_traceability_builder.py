@@ -8,8 +8,8 @@ from __future__ import annotations
 import pytest
 
 from core.interfaces import (
-    RequirementFact, RequirementAssertion, TestCondition,
-    TestDesignTechnique, CoverageItem, CandidateTestCase,
+    RequirementFact, RequirementAssertion, TestCondition as ConditionModel,
+    TestDesignTechnique as TechniqueModel, CoverageItem, CandidateTestCase,
 )
 from core.skills.traceability_builder import build_traceability
 
@@ -29,16 +29,16 @@ def _make_assertion(aid: str, fact_ids: list[str]) -> RequirementAssertion:
     )
 
 
-def _make_condition(cid: str, assertion_ref: str) -> TestCondition:
-    return TestCondition(
+def _make_condition(cid: str, assertion_ref: str) -> ConditionModel:
+    return ConditionModel(
         id=cid, assertion_ref=assertion_ref,
         condition_type="functional", statement=f"cond {cid}",
         oracle=f"oracle {cid}", oracle_type="ui_state",
     )
 
 
-def _make_technique(tid: str, condition_id: str) -> TestDesignTechnique:
-    return TestDesignTechnique(
+def _make_technique(tid: str, condition_id: str) -> TechniqueModel:
+    return TechniqueModel(
         id=tid,
         condition_id=condition_id,
         primary_technique="equivalence_partitioning",

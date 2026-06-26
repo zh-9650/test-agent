@@ -1,135 +1,88 @@
-"""api/websocket.py — WebSocket handler for real-time test monitoring."""
+"""WebSocket transport for authoritative task events."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from database.connection import async_session
-from database.models import Task
-
 
 class ConnectionManager:
-    """Manages WebSocket connections per task."""
-
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_connections: dict[str, list[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket, task_id: str):
+    async def connect(self, websocket: WebSocket, task_id: str) -> None:
         await websocket.accept()
-        if task_id not in self.active_connections:
-            self.active_connections[task_id] = []
-        self.active_connections[task_id].append(websocket)
+        self.active_connections.setdefault(task_id, []).append(websocket)
 
-    def disconnect(self, websocket: WebSocket, task_id: str):
-        if task_id in self.active_connections:
-            self.active_connections[task_id] = [
-                ws for ws in self.active_connections[task_id] if ws != websocket
-            ]
-            if not self.active_connections[task_id]:
-                del self.active_connections[task_id]
+    def disconnect(self, websocket: WebSocket, task_id: str) -> None:
+        connections = self.active_connections.get(task_id, [])
+        self.active_connections[task_id] = [
+            current for current in connections if current != websocket
+        ]
+        if not self.active_connections[task_id]:
+            self.active_connections.pop(task_id, None)
 
-    async def send_message(self, task_id: str, message: dict[str, Any]):
-        """Send message to all connections for a task."""
-        if task_id in self.active_connections:
-            dead = []
-            for ws in self.active_connections[task_id]:
-                try:
-                    await ws.send_json(message)
-                except Exception:
-                    dead.append(ws)
-            for ws in dead:
-                self.active_connections[task_id].remove(ws)
+    async def send_message(self, task_id: str, message: dict[str, Any]) -> None:
+        dead: list[WebSocket] = []
+        for websocket in self.active_connections.get(task_id, []):
+            try:
+                await websocket.send_json(message)
+            except Exception:
+                dead.append(websocket)
+        for websocket in dead:
+            self.disconnect(websocket, task_id)
 
-    async def broadcast(self, message: dict[str, Any]):
-        """Send to all connected clients."""
-        for task_id in list(self.active_connections.keys()):
+    async def broadcast(self, message: dict[str, Any]) -> None:
+        for task_id in list(self.active_connections):
             await self.send_message(task_id, message)
 
 
-# Global connection manager
 manager = ConnectionManager()
 
+StopHandler = Callable[[int], Awaitable[None]]
+_stop_handler: StopHandler | None = None
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+
+def set_stop_handler(handler: StopHandler) -> None:
+    global _stop_handler
+    _stop_handler = handler
 
 
 def create_ws_message(
     msg_type: str,
-    test_case_id: str = "",
-    step_index: int = 0,
-    data: dict | None = None,
+    *,
+    task_id: int | None = None,
+    run_id: str = "",
+    phase: str | None = None,
+    candidate_case_id: str = "",
+    attempt_no: int | None = None,
+    step_index: int | None = None,
+    data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Create a standardized WebSocket message."""
     return {
         "type": msg_type,
-        "test_case_id": test_case_id,
+        "task_id": task_id,
+        "run_id": run_id,
+        "phase": phase,
+        "candidate_case_id": candidate_case_id,
+        "attempt_no": attempt_no,
         "step_index": step_index,
         "data": data or {},
-        "timestamp": _now_iso(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
-async def websocket_endpoint(websocket: WebSocket, task_id: str):
-    """WebSocket endpoint for real-time test monitoring.
-
-    Client connects to: ws://localhost:8000/ws/tasks/{task_id}
-    """
+async def websocket_endpoint(websocket: WebSocket, task_id: str) -> None:
     await manager.connect(websocket, task_id)
     try:
         while True:
-            # Keep connection alive, listen for client messages (e.g., stop)
             data = await websocket.receive_text()
-            if data == "stop":
-                await _handle_stop(websocket, task_id)
-                break
+            if data == "stop" and _stop_handler is not None:
+                await _stop_handler(int(task_id))
     except WebSocketDisconnect:
+        pass
+    finally:
         manager.disconnect(websocket, task_id)
-    except Exception:
-        manager.disconnect(websocket, task_id)
-
-
-async def _handle_stop(websocket: WebSocket, task_id: str) -> None:
-    """Handle a stop request from a WebSocket client.
-
-    Mirrors the REST endpoint POST /api/tasks/{task_id}/stop:
-    1. Update task status to 'cancelled' in the database.
-    2. Cancel the background asyncio task if it is still running.
-    3. Notify the client via a session_complete message.
-    """
-    task_db_id = int(task_id)
-
-    # 1. Update DB status to cancelled
-    async with async_session() as session:
-        task = await session.get(Task, task_db_id)
-        if not task:
-            await websocket.send_json(
-                create_ws_message("error", data={"error": f"Task {task_id} not found"})
-            )
-            return
-        if task.status != "running":
-            await websocket.send_json(
-                create_ws_message("error", data={"error": f"Task is not running (status: {task.status})"})
-            )
-            return
-        task.status = "cancelled"
-        await session.commit()
-
-    # 2. Cancel the background asyncio task
-    from api.app import _running_tasks
-
-    background_task = _running_tasks.pop(task_db_id, None)
-    if background_task and not background_task.done():
-        background_task.cancel()
-
-    # 3. Notify client
-    await websocket.send_json(
-        create_ws_message("session_complete", data={"action": "stopped"})
-    )
-    manager.disconnect(websocket, task_id)
-
-
-

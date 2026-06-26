@@ -15,6 +15,37 @@ class TechniqueResult(BaseModel):
     techniques: list[TestDesignTechnique] = Field(description="设计技术列表")
 
 
+_PRIMARY_BY_CONDITION = {
+    "functional": "equivalence_partitioning",
+    "validation": "equivalence_partitioning",
+    "boundary": "boundary_value_analysis",
+    "permission": "decision_table",
+    "state_transition": "state_transition",
+    "error_handling": "error_guessing",
+    "data_rule": "decision_table",
+    "risk_case": "risk_based",
+}
+
+
+def fallback_techniques(
+    conditions: list[TestCondition],
+) -> list[TestDesignTechnique]:
+    return [
+        TestDesignTechnique(
+            id=f"TECH-{condition.id}",
+            condition_id=condition.id,
+            primary_technique=_PRIMARY_BY_CONDITION[condition.condition_type],
+            supplementary_techniques=(
+                ["exploratory"] if condition.risk_level == "high" else []
+            ),
+            rationale=(
+                f"按条件类型 {condition.condition_type} 使用确定性设计映射"
+            ),
+        )
+        for condition in conditions
+    ]
+
+
 async def select_techniques(conditions: list[TestCondition]) -> list[TestDesignTechnique]:
     """N2.5 (New): 为每个条件选择测试设计技术。"""
     if not conditions:
@@ -57,6 +88,7 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
 {{
   "techniques": [
     {{
+      "id": "TECH-COND-001",
       "condition_id": str,
       "primary_technique": "equivalence_partitioning" | "boundary_value_analysis" | "decision_table" | "state_transition" | "pairwise" | "error_guessing" | "exploratory" | "risk_based",
       "supplementary_techniques": [str],
@@ -66,6 +98,7 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
 }}
 
 字段约束:
+- id 必须填写，建议格式 TECH-{{condition_id}}
 - condition_id 必须引用存在的条件 ID
 - supplementary_techniques 为空数组表示无补充
 </output_contract>
@@ -79,9 +112,15 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
 """
     result = await safe_structured_invoke(prompt, TechniqueResult, model_type="haiku")
     if result is None or not result.techniques:
-        print("[TechniqueSelector] LLM returned no usable techniques, using empty list")
-        get_diag_auto().dump("04_l2_technique", node="N25_technique_selector", output=[], status="empty_fallback", raw_content=get_last_raw())
-        return []
+        techniques = fallback_techniques(conditions)
+        get_diag_auto().dump(
+            "04_l2_technique",
+            node="N25_technique_selector",
+            output=techniques,
+            status="deterministic_fallback",
+            raw_content=get_last_raw(),
+        )
+        return techniques
     get_diag_auto().dump("04_l2_technique", node="N25_technique_selector",
                           output=result, status="ok",
                           techniques_count=len(result.techniques),

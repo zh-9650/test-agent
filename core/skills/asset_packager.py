@@ -5,12 +5,42 @@ L1 Pipeline Position:
   下游: 持久化 + 报告
   本节点职责: 组装最终的 TestAssetPackage 交付物（确定性逻辑，不调 LLM）
 """
+import hashlib
+
 from core.interfaces import (
     RequirementFact, RequirementAssertion, ExplorationGoal,
     SourceAnchor, SystemMapEvid, TestCondition, TestDesignTechnique,
     CoverageItem, CandidateTestCase, TraceabilityMatrix,
-    TestAssetPackage,
+    CoverageBlueprint, TestAssetPackage,
 )
+
+
+def build_source_registry(
+    facts: list[RequirementFact],
+    source_contents: dict[str, str],
+) -> list[SourceAnchor]:
+    """Build auditable anchors for inline or fetched task inputs."""
+    anchors: dict[str, SourceAnchor] = {}
+    for fact in facts:
+        if fact.source_type == "inferred" or not fact.source_reference:
+            continue
+        content = source_contents.get(fact.source_type, "")
+        if not content:
+            continue
+        quote = fact.quote or ""
+        start = content.find(quote) if quote else -1
+        anchors[fact.source_reference] = SourceAnchor(
+            source_id=fact.source_reference,
+            source_type=fact.source_type,
+            content_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            path_or_url=fact.source_reference,
+            start_offset=start if start >= 0 else None,
+            end_offset=start + len(quote) if start >= 0 else None,
+            quote=quote,
+            quote_hash=hashlib.sha256(quote.encode("utf-8")).hexdigest(),
+            is_derived=False,
+        )
+    return list(anchors.values())
 
 
 def _derive_source_registry_from_facts(facts: list[RequirementFact]) -> list[SourceAnchor]:
@@ -46,6 +76,7 @@ def assemble_package(
     source_registry: list[SourceAnchor] | None = None,
     exploration_goals: list[ExplorationGoal] | None = None,
     system_map: SystemMapEvid | None = None,
+    coverage_blueprint: CoverageBlueprint | None = None,
     test_conditions: list[TestCondition] | None = None,
     test_design_techniques: list[TestDesignTechnique] | None = None,
     coverage_items: list[CoverageItem] | None = None,
@@ -72,6 +103,7 @@ def assemble_package(
         source_registry=source_registry if source_registry is not None else _derive_source_registry_from_facts(facts),
         exploration_goals=exploration_goals or [],
         system_map=system_map,
+        coverage_blueprint=coverage_blueprint or CoverageBlueprint(),
         test_conditions=test_conditions or [],
         test_design_techniques=test_design_techniques or [],
         coverage_items=coverage_items or [],

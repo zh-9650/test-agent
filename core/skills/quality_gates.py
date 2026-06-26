@@ -3,6 +3,7 @@ from __future__ import annotations
 """deterministic quality gates for TestAssetPackage."""
 
 from core.interfaces import QualityGateFinding, QualityGateReport, TestAssetPackage
+from core.skills.auto_executability import assess_case_auto_executability
 
 
 def _is_blank(value: str | None) -> bool:
@@ -202,6 +203,19 @@ def run_quality_gates(package: TestAssetPackage) -> QualityGateReport:
                     artifact_type="candidate_test_case",
                     artifact_id=case.id,
                 )
+        assessment = assess_case_auto_executability(case)
+        if not assessment.auto_executable:
+            _add_finding(
+                findings,
+                code="case_not_auto_executable",
+                message=(
+                    f"候选用例 {case.id} 需要人工执行或能力补齐后再自动执行: "
+                    + ", ".join(assessment.reasons)
+                ),
+                artifact_type="candidate_test_case",
+                artifact_id=case.id,
+                severity="warning",
+            )
 
     # --- TraceabilityMatrix 引用检查 ---
     if package.traceability_matrix:
@@ -279,29 +293,148 @@ def run_quality_gates(package: TestAssetPackage) -> QualityGateReport:
                 artifact_id=case.id,
             )
 
-    # --- required_roles 验证 (W3 修复) ---
-    # 如果用例包含 account_role 类型的前置条件 (通过 StructuredPrecondition 表达)，
-    # 但 required_roles 为空，则该用例可能无法解析账号角色。
-    # 注意：当前 CandidateTestCase.preconditions 是 list[str]，尚未结构化。
-    # 此检查仅验证新的 required_roles 字段（如果该用例通过 adapter 已升级）。
+    # --- structured precondition / required role validation ---
     for case in package.candidate_cases:
         required_roles = getattr(case, "required_roles", [])
-        if not required_roles:
-            # 检查 preconditions 是否包含 account_role 关键词
-            precond_text = " ".join(case.preconditions or []).lower()
-            has_role_keyword = any(
-                kw in precond_text
-                for kw in ("登录", "login", "账号", "角色", "权限", "role", "admin")
+        account_preconditions = [
+            precondition
+            for precondition in case.preconditions
+            if precondition.type == "account_role"
+        ]
+        if account_preconditions and not required_roles:
+            _add_finding(
+                findings,
+                code="missing_required_roles",
+                message=f"候选用例 {case.id} 包含账号前置条件但未声明 required_roles。",
+                artifact_type="candidate_test_case",
+                artifact_id=case.id,
             )
-            if has_role_keyword:
+        for precondition in account_preconditions:
+            if not precondition.required_role:
                 _add_finding(
                     findings,
-                    code="missing_required_roles",
-                    message=f"候选用例 {case.id} 的前置条件涉及账号角色，但 required_roles 为空。",
+                    code="missing_precondition_role",
+                    message=f"候选用例 {case.id} 的账号前置条件缺少 required_role。",
                     artifact_type="candidate_test_case",
                     artifact_id=case.id,
-                    severity="warning",
                 )
+
+    condition_by_assertion: dict[str, list] = {}
+    for condition in package.test_conditions:
+        condition_by_assertion.setdefault(condition.assertion_ref, []).append(condition)
+    cases_by_coverage = {
+        reference
+        for case in package.candidate_cases
+        for reference in case.trace_references
+    }
+    design_started = bool(
+        package.test_conditions
+        or package.test_design_techniques
+        or package.coverage_items
+        or package.candidate_cases
+        or package.coverage_blueprint.modules
+    )
+    if design_started:
+        for assertion in package.assertions:
+            conditions = condition_by_assertion.get(assertion.id, [])
+            is_review_blocked = (
+                assertion.risk_level == "high"
+                and assertion.review_status == "auto_generated"
+                and assertion.assertion_type in {"security", "data_rule"}
+            )
+            if not is_review_blocked and assertion.review_status != "rejected" and not any(
+                condition.branch_type == "positive" for condition in conditions
+            ):
+                _add_finding(
+                    findings,
+                    code="missing_positive_condition",
+                    message=f"断言 {assertion.id} 缺少正向测试条件。",
+                    artifact_type="assertion",
+                    artifact_id=assertion.id,
+                )
+    for coverage in package.coverage_items:
+        if coverage.id not in cases_by_coverage:
+            _add_finding(
+                findings,
+                code="coverage_without_case",
+                message=f"覆盖项 {coverage.id} 没有候选用例。",
+                artifact_type="coverage_item",
+                artifact_id=coverage.id,
+            )
+    for flow in package.coverage_blueprint.business_flows:
+        if flow.is_core and not any(
+            case.branch_type == "e2e" and flow.id in case.business_flow_ids
+            for case in package.candidate_cases
+        ):
+            _add_finding(
+                findings,
+                code="core_flow_missing_e2e",
+                message=f"核心流程 {flow.id} 缺少 E2E 用例。",
+                artifact_type="business_flow",
+                artifact_id=flow.id,
+            )
+    for dependency in package.coverage_blueprint.dependencies:
+        if dependency.risk_tier not in {"P0", "P1"}:
+            continue
+        linked = [
+            case for case in package.candidate_cases
+            if dependency.id in case.dependency_ids
+        ]
+        if not any(case.branch_type == "positive" for case in linked):
+            _add_finding(
+                findings, code="critical_dependency_missing_forward",
+                message=f"关键依赖 {dependency.id} 缺少正向用例。",
+                artifact_type="module_dependency", artifact_id=dependency.id,
+            )
+        if not any(case.branch_type in {"negative", "exception", "recovery"} for case in linked):
+            _add_finding(
+                findings, code="critical_dependency_missing_reverse",
+                message=f"关键依赖 {dependency.id} 缺少反向或恢复用例。",
+                artifact_type="module_dependency", artifact_id=dependency.id,
+            )
+    for module in package.coverage_blueprint.modules:
+        count = sum(module.id in case.module_ids for case in package.candidate_cases)
+        if module.is_core and count < 12:
+            _add_finding(
+                findings, code="core_module_low_case_count",
+                message=f"核心模块 {module.id} 仅有 {count} 条候选用例，低于 12 条建议值。",
+                artifact_type="business_module", artifact_id=module.id,
+                severity="warning",
+            )
+    for gap in package.coverage_blueprint.gaps:
+        _add_finding(
+            findings, code="coverage_blueprint_gap", message=gap,
+            artifact_type="coverage_blueprint", artifact_id="", severity="warning",
+        )
+    selection = package.runtime_hints.get("execution_selection")
+    if selection:
+        missing = set(selection.get("selected_case_ids", [])) - case_ids
+        for case_id in sorted(missing):
+            _add_finding(
+                findings, code="selection_missing_case",
+                message=f"执行选择引用了不存在的用例 {case_id}。",
+                artifact_type="execution_selection", artifact_id=case_id,
+            )
+        for case_id in selection.get("selected_case_ids", []):
+            case = next(
+                (candidate for candidate in package.candidate_cases if candidate.id == case_id),
+                None,
+            )
+            if case is None:
+                continue
+            assessment = assess_case_auto_executability(case)
+            if assessment.auto_executable:
+                continue
+            _add_finding(
+                findings,
+                code="selected_case_not_auto_executable",
+                message=(
+                    f"执行选择错误地纳入了不可自动执行的用例 {case_id}: "
+                    + ", ".join(assessment.reasons)
+                ),
+                artifact_type="execution_selection",
+                artifact_id=case_id,
+            )
 
     return QualityGateReport(
         passed=not any(finding.severity == "error" for finding in findings),

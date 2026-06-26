@@ -1,0 +1,71 @@
+{
+    "nodes":  [
+                  {
+                      "id":  "document:docs/DEVELOPMENT.md",
+                      "name":  "DEVELOPMENT.md",
+                      "tags":  [
+                                   "docs",
+                                   "development"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "docs/DEVELOPMENT.md",
+                      "type":  "document",
+                      "summary":  "开发指南和验证流程"
+                  },
+                  {
+                      "id":  "document:docs/PRD.md",
+                      "name":  "PRD.md",
+                      "tags":  [
+                                   "docs",
+                                   "prd",
+                                   "requirements"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "docs/PRD.md",
+                      "type":  "document",
+                      "summary":  "产品需求文档"
+                  },
+                  {
+                      "id":  "document:docs/business_workflow.md",
+                      "name":  "business_workflow.md",
+                      "tags":  [
+                                   "docs",
+                                   "workflow"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "docs/business_workflow.md",
+                      "type":  "document",
+                      "summary":  "业务工作流程文档"
+                  },
+                  {
+                      "id":  "document:docs/master-roadmap.md",
+                      "name":  "master-roadmap.md",
+                      "tags":  [
+                                   "docs",
+                                   "roadmap",
+                                   "planning"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "docs/master-roadmap.md",
+                      "type":  "document",
+                      "summary":  "主路线图和优先级"
+                  },
+                  {
+                      "id":  "document:docs/prompt-engineering.md",
+                      "name":  "prompt-engineering.md",
+                      "tags":  [
+                                   "docs",
+                                   "prompts",
+                                   "contracts"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "docs/prompt-engineering.md",
+                      "type":  "document",
+                      "summary":  "提示工程契约规范"
+                  }
+              ],
+    "edges":  [
+
+              ],
+    "batchIndex":  11
+}

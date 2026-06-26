@@ -1,0 +1,19 @@
+{
+  "projectRoot": "C:\\Users\\17381\\Desktop\\test_agent",
+  "batchIndex": 1,
+  "batchFiles": [
+    {"path": "core/interfaces.py", "language": "python", "sizeLines": 548, "fileCategory": "code"},
+    {"path": "core/llm_client.py", "language": "python", "sizeLines": 485, "fileCategory": "code"},
+    {"path": "core/diag_logger.py", "language": "python", "sizeLines": 474, "fileCategory": "code"},
+    {"path": "core/change_detector.py", "language": "python", "sizeLines": 79, "fileCategory": "code"},
+    {"path": "core/report_builder.py", "language": "python", "sizeLines": 704, "fileCategory": "code"},
+    {"path": "core/skills/knowledge_extractor.py", "language": "python", "sizeLines": 141, "fileCategory": "code"},
+    {"path": "core/skills/goal_extractor.py", "language": "python", "sizeLines": 101, "fileCategory": "code"},
+    {"path": "core/skills/scenario_extractor.py", "language": "python", "sizeLines": 188, "fileCategory": "code"},
+    {"path": "core/skills/risk_analyzer.py", "language": "python", "sizeLines": 184, "fileCategory": "code"},
+    {"path": "core/skills/system_mapper.py", "language": "python", "sizeLines": 170, "fileCategory": "code"},
+    {"path": "core/skills/system_modeler.py", "language": "python", "sizeLines": 321, "fileCategory": "code"},
+    {"path": "core/skills/use_case_coverage.py", "language": "python", "sizeLines": 266, "fileCategory": "code"},
+    {"path": "core/skills/use_case_modeler.py", "language": "python", "sizeLines": 76, "fileCategory": "code"}
+  ]
+}

@@ -1,4 +1,10 @@
-import type { CreateTaskRequest, Task, TaskStep } from '../types';
+import type {
+  CaseResult,
+  CreateTaskRequest,
+  ExecutionRun,
+  Task,
+  TaskStep,
+} from '../types';
 
 const API_BASE = '/api';
 
@@ -24,11 +30,30 @@ export async function getTask(taskId: number): Promise<Task> {
   return res.json() as Promise<Task>;
 }
 
-export async function getTaskSteps(taskId: number, testCaseId?: string): Promise<{ steps: TaskStep[]; total: number }> {
-  const params = testCaseId ? `?test_case_id=${testCaseId}` : '';
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/steps${params}`);
+export async function getTaskSteps(
+  taskId: number,
+  runId: string,
+  testCaseId?: string,
+  attemptNo?: number,
+): Promise<{ steps: TaskStep[]; total: number }> {
+  const params = new URLSearchParams({ run_id: runId });
+  if (testCaseId) params.set('test_case_id', testCaseId);
+  if (attemptNo) params.set('attempt_no', String(attemptNo));
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/steps?${params}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json() as Promise<{ steps: TaskStep[]; total: number }>;
+}
+
+export async function listTaskRuns(taskId: number): Promise<{ runs: ExecutionRun[]; total: number }> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/runs`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ runs: ExecutionRun[]; total: number }>;
+}
+
+export async function getRunResults(taskId: number, runId: string): Promise<{ results: CaseResult[]; total: number }> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/runs/${runId}/results`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ results: CaseResult[]; total: number }>;
 }
 
 export function getReportUrl(taskId: number): string {
@@ -68,55 +93,12 @@ export async function stopTask(taskId: number): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
-export async function deleteTask(taskId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}`, { method: 'DELETE' });
+export async function resumeTask(taskId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/resume`, { method: 'POST' });
   if (!res.ok) throw new Error(await res.text());
 }
 
-export async function testLayer1(
-  prd: string, 
-  apiDoc: string, 
-  changelog: string,
-  onProgress?: (msg: string) => void
-): Promise<Record<string, unknown> | null> {
-  const res = await fetch(`${API_BASE}/test/layer1`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prd, api_doc: apiDoc, changelog }),
-  });
+export async function deleteTask(taskId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(await res.text());
-  
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error("No response body");
-  
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let finalResult = null;
-  
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const data = JSON.parse(line);
-        if (data.progress === 'error') {
-          throw new Error(data.error || 'Layer 1 pipeline failed');
-        } else if (data.progress && data.progress !== 'done') {
-          if (onProgress) onProgress(data.progress);
-        } else if (data.progress === 'done') {
-          finalResult = data;
-        }
-      } catch {
-        // ignore parse error
-      }
-    }
-  }
-
-  return finalResult;
 }

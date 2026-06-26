@@ -1,0 +1,656 @@
+{
+  "scriptCompleted": true,
+  "filesAnalyzed": 3,
+  "filesSkipped": [],
+  "results": [
+    {
+      "path": "core/dependency.py",
+      "language": "python",
+      "fileCategory": "code",
+      "totalLines": 129,
+      "nonEmptyLines": 100,
+      "functions": [
+        {
+          "name": "has_dependency",
+          "startLine": 39,
+          "endLine": 87,
+          "params": [
+            "call_a",
+            "call_b"
+          ]
+        },
+        {
+          "name": "split_independent_groups",
+          "startLine": 90,
+          "endLine": 121,
+          "params": [
+            "calls"
+          ]
+        },
+        {
+          "name": "is_parallelizable",
+          "startLine": 124,
+          "endLine": 129,
+          "params": [
+            "calls"
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "name": "has_dependency",
+          "line": 39,
+          "isDefault": false
+        },
+        {
+          "name": "split_independent_groups",
+          "line": 90,
+          "isDefault": false
+        },
+        {
+          "name": "is_parallelizable",
+          "line": 124,
+          "isDefault": false
+        }
+      ],
+      "callGraph": [
+        {
+          "caller": "has_dependency",
+          "callee": "call_a.get",
+          "lineNumber": 49
+        },
+        {
+          "caller": "has_dependency",
+          "callee": "call_b.get",
+          "lineNumber": 50
+        },
+        {
+          "caller": "has_dependency",
+          "callee": "call_a.get",
+          "lineNumber": 51
+        },
+        {
+          "caller": "has_dependency",
+          "callee": "call_b.get",
+          "lineNumber": 52
+        },
+        {
+          "caller": "has_dependency",
+          "callee": "args_a.get",
+          "lineNumber": 60
+        },
+        {
+          "caller": "has_dependency",
+          "callee": "args_b.get",
+          "lineNumber": 61
+        },
+        {
+          "caller": "has_dependency",
+          "callee": "name_a.startswith",
+          "lineNumber": 70
+        },
+        {
+          "caller": "has_dependency",
+          "callee": "name_b.startswith",
+          "lineNumber": 70
+        },
+        {
+          "caller": "split_independent_groups",
+          "callee": "all",
+          "lineNumber": 110
+        },
+        {
+          "caller": "split_independent_groups",
+          "callee": "has_dependency",
+          "lineNumber": 111
+        },
+        {
+          "caller": "split_independent_groups",
+          "callee": "current_wave.append",
+          "lineNumber": 115
+        },
+        {
+          "caller": "split_independent_groups",
+          "callee": "waves.append",
+          "lineNumber": 117
+        },
+        {
+          "caller": "split_independent_groups",
+          "callee": "waves.append",
+          "lineNumber": 120
+        },
+        {
+          "caller": "is_parallelizable",
+          "callee": "len",
+          "lineNumber": 129
+        },
+        {
+          "caller": "is_parallelizable",
+          "callee": "split_independent_groups",
+          "lineNumber": 129
+        }
+      ],
+      "metrics": {
+        "importCount": 0,
+        "exportCount": 3,
+        "functionCount": 3,
+        "classCount": 0
+      }
+    },
+    {
+      "path": "core/parallel_executor.py",
+      "language": "python",
+      "fileCategory": "code",
+      "totalLines": 107,
+      "nonEmptyLines": 91,
+      "functions": [
+        {
+          "name": "is_parallel_enabled",
+          "startLine": 24,
+          "endLine": 26,
+          "params": []
+        },
+        {
+          "name": "execute_parallel_calls",
+          "startLine": 29,
+          "endLine": 107,
+          "params": [
+            "calls",
+            "executor"
+          ]
+        }
+      ],
+      "exports": [
+        {
+          "name": "is_parallel_enabled",
+          "line": 24,
+          "isDefault": false
+        },
+        {
+          "name": "execute_parallel_calls",
+          "line": 29,
+          "isDefault": false
+        }
+      ],
+      "callGraph": [
+        {
+          "caller": "is_parallel_enabled",
+          "callee": "os.getenv",
+          "lineNumber": 26
+        },
+        {
+          "caller": "executor",
+          "callee": "tools_by_name.get",
+          "lineNumber": 55
+        },
+        {
+          "caller": "executor",
+          "callee": "tool.ainvoke",
+          "lineNumber": 62
+        },
+        {
+          "caller": "executor",
+          "callee": "call.get",
+          "lineNumber": 62
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "is_parallel_enabled",
+          "lineNumber": 65
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "executor",
+          "lineNumber": 69
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "results.append",
+          "lineNumber": 70
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "results.append",
+          "lineNumber": 72
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "call.get",
+          "lineNumber": 73
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "str",
+          "lineNumber": 75
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "split_independent_groups",
+          "lineNumber": 80
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "len",
+          "lineNumber": 83
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "executor",
+          "lineNumber": 86
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "all_results.append",
+          "lineNumber": 87
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "all_results.append",
+          "lineNumber": 89
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "wave[0].get",
+          "lineNumber": 90
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "str",
+          "lineNumber": 92
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "executor",
+          "lineNumber": 96
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "asyncio.gather",
+          "lineNumber": 97
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "zip",
+          "lineNumber": 98
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "isinstance",
+          "lineNumber": 99
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "all_results.append",
+          "lineNumber": 100
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "call.get",
+          "lineNumber": 101
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "str",
+          "lineNumber": 103
+        },
+        {
+          "caller": "execute_parallel_calls",
+          "callee": "all_results.append",
+          "lineNumber": 106
+        }
+      ],
+      "metrics": {
+        "importCount": 1,
+        "exportCount": 2,
+        "functionCount": 2,
+        "classCount": 0
+      }
+    },
+    {
+      "path": "tests/core/test_dependency.py",
+      "language": "python",
+      "fileCategory": "code",
+      "totalLines": 142,
+      "nonEmptyLines": 108,
+      "functions": [
+        {
+          "name": "test_no_args_no_dep",
+          "startLine": 5,
+          "endLine": 12,
+          "params": []
+        },
+        {
+          "name": "test_same_target_creates_dep",
+          "startLine": 15,
+          "endLine": 19,
+          "params": []
+        },
+        {
+          "name": "test_navigate_always_creates_dep",
+          "startLine": 22,
+          "endLine": 30,
+          "params": []
+        },
+        {
+          "name": "test_evaluate_js_always_creates_dep",
+          "startLine": 33,
+          "endLine": 37,
+          "params": []
+        },
+        {
+          "name": "test_mark_task_always_serial",
+          "startLine": 40,
+          "endLine": 44,
+          "params": []
+        },
+        {
+          "name": "test_read_only_independent",
+          "startLine": 47,
+          "endLine": 52,
+          "params": []
+        },
+        {
+          "name": "test_screenshot_with_state_change_serial",
+          "startLine": 55,
+          "endLine": 59,
+          "params": []
+        },
+        {
+          "name": "test_two_state_changing_serial",
+          "startLine": 62,
+          "endLine": 67,
+          "params": []
+        },
+        {
+          "name": "test_independent_different_targets_parallel",
+          "startLine": 70,
+          "endLine": 75,
+          "params": []
+        },
+        {
+          "name": "test_split_independent_groups_empty",
+          "startLine": 78,
+          "endLine": 79,
+          "params": []
+        },
+        {
+          "name": "test_split_single",
+          "startLine": 82,
+          "endLine": 85,
+          "params": []
+        },
+        {
+          "name": "test_split_two_independent",
+          "startLine": 88,
+          "endLine": 96,
+          "params": []
+        },
+        {
+          "name": "test_split_two_dependent",
+          "startLine": 99,
+          "endLine": 106,
+          "params": []
+        },
+        {
+          "name": "test_split_mixed",
+          "startLine": 109,
+          "endLine": 120,
+          "params": []
+        },
+        {
+          "name": "test_is_parallelizable_true",
+          "startLine": 123,
+          "endLine": 127,
+          "params": []
+        },
+        {
+          "name": "test_is_parallelizable_false",
+          "startLine": 130,
+          "endLine": 134,
+          "params": []
+        },
+        {
+          "name": "test_state_change_vs_read_only_independent",
+          "startLine": 137,
+          "endLine": 142,
+          "params": []
+        }
+      ],
+      "exports": [
+        {
+          "name": "test_no_args_no_dep",
+          "line": 5,
+          "isDefault": false
+        },
+        {
+          "name": "test_same_target_creates_dep",
+          "line": 15,
+          "isDefault": false
+        },
+        {
+          "name": "test_navigate_always_creates_dep",
+          "line": 22,
+          "isDefault": false
+        },
+        {
+          "name": "test_evaluate_js_always_creates_dep",
+          "line": 33,
+          "isDefault": false
+        },
+        {
+          "name": "test_mark_task_always_serial",
+          "line": 40,
+          "isDefault": false
+        },
+        {
+          "name": "test_read_only_independent",
+          "line": 47,
+          "isDefault": false
+        },
+        {
+          "name": "test_screenshot_with_state_change_serial",
+          "line": 55,
+          "isDefault": false
+        },
+        {
+          "name": "test_two_state_changing_serial",
+          "line": 62,
+          "isDefault": false
+        },
+        {
+          "name": "test_independent_different_targets_parallel",
+          "line": 70,
+          "isDefault": false
+        },
+        {
+          "name": "test_split_independent_groups_empty",
+          "line": 78,
+          "isDefault": false
+        },
+        {
+          "name": "test_split_single",
+          "line": 82,
+          "isDefault": false
+        },
+        {
+          "name": "test_split_two_independent",
+          "line": 88,
+          "isDefault": false
+        },
+        {
+          "name": "test_split_two_dependent",
+          "line": 99,
+          "isDefault": false
+        },
+        {
+          "name": "test_split_mixed",
+          "line": 109,
+          "isDefault": false
+        },
+        {
+          "name": "test_is_parallelizable_true",
+          "line": 123,
+          "isDefault": false
+        },
+        {
+          "name": "test_is_parallelizable_false",
+          "line": 130,
+          "isDefault": false
+        },
+        {
+          "name": "test_state_change_vs_read_only_independent",
+          "line": 137,
+          "isDefault": false
+        }
+      ],
+      "callGraph": [
+        {
+          "caller": "test_no_args_no_dep",
+          "callee": "has_dependency",
+          "lineNumber": 9
+        },
+        {
+          "caller": "test_same_target_creates_dep",
+          "callee": "has_dependency",
+          "lineNumber": 16
+        },
+        {
+          "caller": "test_navigate_always_creates_dep",
+          "callee": "has_dependency",
+          "lineNumber": 23
+        },
+        {
+          "caller": "test_navigate_always_creates_dep",
+          "callee": "has_dependency",
+          "lineNumber": 27
+        },
+        {
+          "caller": "test_evaluate_js_always_creates_dep",
+          "callee": "has_dependency",
+          "lineNumber": 34
+        },
+        {
+          "caller": "test_mark_task_always_serial",
+          "callee": "has_dependency",
+          "lineNumber": 41
+        },
+        {
+          "caller": "test_read_only_independent",
+          "callee": "has_dependency",
+          "lineNumber": 49
+        },
+        {
+          "caller": "test_screenshot_with_state_change_serial",
+          "callee": "has_dependency",
+          "lineNumber": 56
+        },
+        {
+          "caller": "test_two_state_changing_serial",
+          "callee": "has_dependency",
+          "lineNumber": 64
+        },
+        {
+          "caller": "test_independent_different_targets_parallel",
+          "callee": "has_dependency",
+          "lineNumber": 72
+        },
+        {
+          "caller": "test_split_independent_groups_empty",
+          "callee": "split_independent_groups",
+          "lineNumber": 79
+        },
+        {
+          "caller": "test_split_single",
+          "callee": "split_independent_groups",
+          "lineNumber": 83
+        },
+        {
+          "caller": "test_split_single",
+          "callee": "len",
+          "lineNumber": 84
+        },
+        {
+          "caller": "test_split_single",
+          "callee": "len",
+          "lineNumber": 85
+        },
+        {
+          "caller": "test_split_two_independent",
+          "callee": "split_independent_groups",
+          "lineNumber": 94
+        },
+        {
+          "caller": "test_split_two_independent",
+          "callee": "len",
+          "lineNumber": 95
+        },
+        {
+          "caller": "test_split_two_independent",
+          "callee": "len",
+          "lineNumber": 96
+        },
+        {
+          "caller": "test_split_two_dependent",
+          "callee": "split_independent_groups",
+          "lineNumber": 104
+        },
+        {
+          "caller": "test_split_two_dependent",
+          "callee": "len",
+          "lineNumber": 105
+        },
+        {
+          "caller": "test_split_two_dependent",
+          "callee": "all",
+          "lineNumber": 106
+        },
+        {
+          "caller": "test_split_two_dependent",
+          "callee": "len",
+          "lineNumber": 106
+        },
+        {
+          "caller": "test_split_mixed",
+          "callee": "split_independent_groups",
+          "lineNumber": 116
+        },
+        {
+          "caller": "test_split_mixed",
+          "callee": "len",
+          "lineNumber": 118
+        },
+        {
+          "caller": "test_split_mixed",
+          "callee": "len",
+          "lineNumber": 119
+        },
+        {
+          "caller": "test_split_mixed",
+          "callee": "len",
+          "lineNumber": 120
+        },
+        {
+          "caller": "test_is_parallelizable_true",
+          "callee": "is_parallelizable",
+          "lineNumber": 124
+        },
+        {
+          "caller": "test_is_parallelizable_false",
+          "callee": "is_parallelizable",
+          "lineNumber": 131
+        },
+        {
+          "caller": "test_state_change_vs_read_only_independent",
+          "callee": "has_dependency",
+          "lineNumber": 139
+        }
+      ],
+      "metrics": {
+        "importCount": 1,
+        "exportCount": 17,
+        "functionCount": 17,
+        "classCount": 0
+      }
+    }
+  ]
+}

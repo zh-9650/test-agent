@@ -1,4 +1,4 @@
-"""api/app.py — FastAPI application with REST endpoints.
+"""api/app.py 鈥?FastAPI application with REST endpoints.
 
 Defines the main FastAPI app instance, includes routers, and configures middleware.
 """
@@ -6,8 +6,8 @@ Defines the main FastAPI app instance, includes routers, and configures middlewa
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,7 +16,7 @@ if sys.platform == "win32":
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 import json
@@ -29,19 +29,45 @@ from api.schemas import (
     CreateTaskRequest,
     MessageResponse,
     StepListResponse,
-    StepResponse,
     TaskListResponse,
     TaskResponse,
+    ExecutionRunResponse,
+    ExecutionRunListResponse,
+    CaseResultListResponse,
     AgentMemoryItem,
     MemoryListResponse
 )
-from api.websocket import manager as websocket_manager, websocket_endpoint
+from api.websocket import (
+    create_ws_message,
+    manager as websocket_manager,
+    set_stop_handler,
+    websocket_endpoint,
+)
+from core.task_lifecycle import TaskLifecycleService
 from database.connection import async_session, init_database
-from database.models import Report, Task, TaskStep, AgentMemory
-from core.execution_logger import _task_id_map
+from database.models import (
+    AgentMemory,
+    CaseResultRecord,
+    ExecutionRunRecord,
+    Report,
+    Task,
+    TaskStep,
+)
 from api.utils import router as utils_router
 
-app = FastAPI(title="AI Native Testing Platform", version="1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Initialize persistent storage without destructive startup behavior."""
+    await init_database()
+    yield
+
+
+app = FastAPI(
+    title="AI Native Testing Platform",
+    version="1.0",
+    lifespan=lifespan,
+)
 
 app.include_router(utils_router)
 
@@ -57,21 +83,61 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files for screenshots — mounted at /static/screenshots
+# Static files for screenshots 鈥?mounted at /static/screenshots
 SCREENSHOTS_DIR = Path(__file__).resolve().parent.parent / "data" / "screenshots"
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="screenshots")
 
 
-@app.on_event("startup")
-async def startup() -> None:
-    """Initialize the database on application startup."""
-    await init_database()
+async def _latest_run_in_session(
+    session: AsyncSession,
+    task_id: int,
+) -> ExecutionRunRecord | None:
+    query = (
+        select(ExecutionRunRecord)
+        .where(ExecutionRunRecord.task_id == task_id)
+        .order_by(ExecutionRunRecord.started_at.desc())
+        .limit(1)
+    )
+    return (await session.execute(query)).scalar_one_or_none()
 
 
-# POST /api/tasks — Create task
+def _serialize_task(
+    task: Task,
+    latest_run: ExecutionRunRecord | None,
+) -> dict[str, Any]:
+    return {
+        "id": task.id,
+        "task_name": task.task_name,
+        "target_url": task.target_url,
+        "status": task.status,
+        "phase": task.phase,
+        "report_status": task.report_status,
+        "failure_reason": task.failure_reason,
+        "config": task.config,
+        "analysis_package": task.analysis_package,
+        "latest_run": (
+            {
+                "run_id": latest_run.run_id,
+                "status": latest_run.status,
+                "summary": latest_run.summary,
+                "started_at": latest_run.started_at.isoformat(),
+                "completed_at": (
+                    latest_run.completed_at.isoformat()
+                    if latest_run.completed_at else None
+                ),
+            }
+            if latest_run else None
+        ),
+        "started_at": task.started_at,
+        "completed_at": task.completed_at,
+        "created_at": task.created_at,
+    }
+
+
+# POST /api/tasks 鈥?Create task
 @app.post("/api/tasks", response_model=TaskResponse, status_code=201)
-async def create_task(request: CreateTaskRequest) -> Task:
+async def create_task(request: CreateTaskRequest) -> dict[str, Any]:
     """Create a new test task and start it in the background."""
     async with async_session() as session:
         task = Task(
@@ -83,18 +149,13 @@ async def create_task(request: CreateTaskRequest) -> Task:
         session.add(task)
         await session.commit()
         await session.refresh(task)
-        _task_id_map[str(task.id)] = task.id
-
-        # Start the test in background (can be disabled in tests)
         if _background_tasks_enabled:
-            background_task = asyncio.create_task(_run_test_session(task.id, task.target_url, task.config))
-            _running_tasks[task.id] = background_task
-            background_task.add_done_callback(lambda _task, task_id=task.id: _running_tasks.pop(task_id, None))
+            _start_task_session(task.id, task.target_url, task.config)
 
-        return task
+        return _serialize_task(task, None)
 
 
-# GET /api/tasks — List tasks
+# GET /api/tasks 鈥?List tasks
 @app.get("/api/tasks", response_model=TaskListResponse)
 async def list_tasks(
     skip: int = Query(0, ge=0),
@@ -109,45 +170,94 @@ async def list_tasks(
             select(Task).order_by(Task.created_at.desc()).offset(skip).limit(limit)
         )
         tasks = result.scalars().all()
-        return TaskListResponse(tasks=tasks, total=total)  # type: ignore[arg-type]
+        serialized = []
+        for task in tasks:
+            latest = await _latest_run_in_session(session, task.id)
+            serialized.append(_serialize_task(task, latest))
+        return TaskListResponse(tasks=serialized, total=total)  # type: ignore[arg-type]
 
 
-# GET /api/tasks/{task_id} — Task details
+# GET /api/tasks/{task_id} 鈥?Task details
 @app.get("/api/tasks/{task_id}", response_model=TaskResponse)
-async def get_task(task_id: int) -> Task:
+async def get_task(task_id: int) -> dict[str, Any]:
     """Get details for a single task by ID."""
     async with async_session() as session:
         task = await session.get(Task, task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        return task
+        latest = await _latest_run_in_session(session, task.id)
+        return _serialize_task(task, latest)
 
 
-# GET /api/tasks/{task_id}/steps — Task steps
+# GET /api/tasks/{task_id}/steps 鈥?Task steps
 @app.get("/api/tasks/{task_id}/steps", response_model=StepListResponse)
 async def get_task_steps(
     task_id: int,
+    run_id: str = Query(..., description="Execution run ID"),
     test_case_id: str = Query("", description="Filter by test case ID"),
+    attempt_no: int | None = Query(None, ge=1),
 ) -> StepListResponse:
     """Return steps for a given task, optionally filtered by test_case_id."""
     async with async_session() as session:
-        query = select(TaskStep).where(TaskStep.task_id == task_id)
+        query = select(TaskStep).where(
+            TaskStep.task_id == task_id,
+            TaskStep.run_id == run_id,
+        )
         if test_case_id:
             query = query.where(TaskStep.test_case_id == test_case_id)
-        query = query.order_by(TaskStep.step_index)
+        if attempt_no is not None:
+            query = query.where(TaskStep.attempt_no == attempt_no)
+        query = query.order_by(
+            TaskStep.test_case_id,
+            TaskStep.attempt_no,
+            TaskStep.step_index,
+        )
 
         result = await session.execute(query)
         steps = result.scalars().all()
 
-        total_result = await session.execute(
-            select(func.count(TaskStep.id)).where(TaskStep.task_id == task_id)
+        return StepListResponse(steps=steps, total=len(steps))  # type: ignore[arg-type]
+
+
+@app.get("/api/tasks/{task_id}/runs", response_model=ExecutionRunListResponse)
+async def list_task_runs(task_id: int) -> ExecutionRunListResponse:
+    async with async_session() as session:
+        if await session.get(Task, task_id) is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        query = (
+            select(ExecutionRunRecord)
+            .where(ExecutionRunRecord.task_id == task_id)
+            .order_by(ExecutionRunRecord.started_at.desc())
         )
-        total = total_result.scalar() or 0
+        runs = list((await session.execute(query)).scalars().all())
+        return ExecutionRunListResponse(runs=runs, total=len(runs))
 
-        return StepListResponse(steps=steps, total=total)  # type: ignore[arg-type]
+
+@app.get("/api/tasks/{task_id}/runs/{run_id}", response_model=ExecutionRunResponse)
+async def get_task_run(task_id: int, run_id: str) -> ExecutionRunRecord:
+    async with async_session() as session:
+        run = await session.get(ExecutionRunRecord, run_id)
+        if run is None or run.task_id != task_id:
+            raise HTTPException(status_code=404, detail="Execution run not found")
+        return run
 
 
-# GET /api/tasks/{task_id}/diag — List diag log files for a task
+@app.get("/api/tasks/{task_id}/runs/{run_id}/results", response_model=CaseResultListResponse)
+async def get_run_results(task_id: int, run_id: str) -> CaseResultListResponse:
+    async with async_session() as session:
+        run = await session.get(ExecutionRunRecord, run_id)
+        if run is None or run.task_id != task_id:
+            raise HTTPException(status_code=404, detail="Execution run not found")
+        query = (
+            select(CaseResultRecord)
+            .where(CaseResultRecord.run_id == run_id)
+            .order_by(CaseResultRecord.id)
+        )
+        results = list((await session.execute(query)).scalars().all())
+        return CaseResultListResponse(results=results, total=len(results))
+
+
+# GET /api/tasks/{task_id}/diag 鈥?List diag log files for a task
 @app.get("/api/tasks/{task_id}/diag")
 async def get_diag_list(task_id: int) -> dict:
     """Return diag log index for a task. Files are loaded lazily via /diag/{stage}."""
@@ -196,14 +306,14 @@ async def get_diag_list(task_id: int) -> dict:
     }
 
 
-# GET /api/tasks/{task_id}/diag/{stage} — Get a single diag log file
+# GET /api/tasks/{task_id}/diag/{stage} 鈥?Get a single diag log file
 @app.get("/api/tasks/{task_id}/diag/{stage}")
 async def get_diag_file(task_id: int, stage: str) -> dict:
     """Return a single diag stage JSON. stage is filename without .json extension."""
     import json
     from pathlib import Path
 
-    # 安全: stage 不允许路径分隔符
+    # 瀹夊叏: stage 涓嶅厑璁歌矾寰勫垎闅旂
     if "/" in stage or "\\" in stage or ".." in stage:
         raise HTTPException(status_code=400, detail="invalid stage name")
 
@@ -218,16 +328,20 @@ async def get_diag_file(task_id: int, stage: str) -> dict:
         raise HTTPException(status_code=500, detail=f"diag file '{stage}' unreadable: {e}")
 
 
-# GET /api/tasks/{task_id}/report — Get report
+# GET /api/tasks/{task_id}/report 鈥?Get report
 @app.get("/api/tasks/{task_id}/report")
-async def get_report(task_id: int, download: bool = Query(False)) -> Any:
+async def get_report(
+    task_id: int,
+    download: bool = Query(False),
+    run_id: str | None = Query(None),
+) -> Any:
     """Return the latest report for a task. Optionally download as file."""
     async with async_session() as session:
+        query = select(Report).where(Report.task_id == task_id)
+        if run_id:
+            query = query.where(Report.run_id == run_id)
         result = await session.execute(
-            select(Report)
-            .where(Report.task_id == task_id)
-            .order_by(Report.created_at.desc())
-            .limit(1)
+            query.order_by(Report.created_at.desc()).limit(1)
         )
         report = result.scalar_one_or_none()
         if not report:
@@ -244,7 +358,7 @@ async def get_report(task_id: int, download: bool = Query(False)) -> Any:
                 return HTMLResponse(content=f.read())
 
 
-# POST /api/tasks/{task_id}/stop — Stop task
+# POST /api/tasks/{task_id}/stop 鈥?Stop task
 @app.post("/api/tasks/{task_id}/stop", response_model=MessageResponse)
 async def stop_task(task_id: int) -> MessageResponse:
     """Stop a running task by updating its status to cancelled."""
@@ -258,15 +372,33 @@ async def stop_task(task_id: int) -> MessageResponse:
                 detail=f"Task is not running (status: {task.status})",
             )
 
-        task.status = "cancelled"
-        await session.commit()
         background_task = _running_tasks.pop(task_id, None)
         if background_task and not background_task.done():
             background_task.cancel()
+            try:
+                await background_task
+            except asyncio.CancelledError:
+                pass
+        from core.execution_store import fill_cancelled_results, latest_execution_run
+        latest = await latest_execution_run(task_id)
+        if latest is not None and latest.status == "running":
+            await fill_cancelled_results(latest.run_id)
+        task.status = "cancelled"
+        task.phase = None
+        task.failure_reason = "cancelled"
+        task.completed_at = datetime.now(timezone.utc)
+        await session.commit()
         return MessageResponse(message="Task stopped", task_id=str(task_id))
 
 
-# DELETE /api/tasks/{task_id} — Delete task
+async def _handle_ws_stop(task_id: int) -> None:
+    await stop_task(task_id)
+
+
+set_stop_handler(_handle_ws_stop)
+
+
+# DELETE /api/tasks/{task_id} 鈥?Delete task
 @app.delete("/api/tasks/{task_id}", response_model=MessageResponse)
 async def delete_task(task_id: int) -> MessageResponse:
     """Delete a task. Cannot delete a running task."""
@@ -281,19 +413,41 @@ async def delete_task(task_id: int) -> MessageResponse:
         await session.commit()
         return MessageResponse(message="Task deleted", task_id=str(task_id))
 
-class ResumeRequest(BaseModel):
-    message: str
-
 @app.post("/api/tasks/{task_id}/resume", response_model=MessageResponse)
-async def resume_task(task_id: int, req: ResumeRequest) -> MessageResponse:
-    from agents.ui.tools import _hitl_events, _hitl_responses
-    task_id_str = str(task_id)
-    if task_id_str not in _hitl_events:
-        raise HTTPException(status_code=400, detail="Task is not waiting for human intervention")
+async def resume_task(task_id: int) -> MessageResponse:
+    async with async_session() as session:
+        task = await session.get(Task, task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if task.status == "running":
+            raise HTTPException(status_code=400, detail="Task is already running")
+        latest = await _latest_run_in_session(session, task_id)
+        if latest is None:
+            raise HTTPException(status_code=400, detail="Task has no execution run")
+        query = select(CaseResultRecord).where(
+            CaseResultRecord.run_id == latest.run_id,
+            CaseResultRecord.terminal_status != "passed",
+        )
+        retry_ids = [
+            row.candidate_case_id
+            for row in (await session.execute(query)).scalars().all()
+        ]
+        if not retry_ids:
+            raise HTTPException(status_code=400, detail="No non-passed cases to resume")
+        task.status = "pending"
+        task.phase = None
+        task.failure_reason = None
+        task.completed_at = None
+        await session.commit()
 
-    _hitl_responses[task_id_str] = req.message
-    _hitl_events[task_id_str].set()
-    return MessageResponse(message="Task resumed")
+    _start_task_session(
+        task_id,
+        task.target_url,
+        task.config,
+        resumed_from_run_id=latest.run_id,
+        resume_case_ids=retry_ids,
+    )
+    return MessageResponse(message="Task resumed", task_id=str(task_id))
 
 class Layer2TestRequest(BaseModel):
     prd: str = ""
@@ -307,11 +461,10 @@ class Layer2TestRequest(BaseModel):
 async def test_layer2_endpoint(req: Layer2TestRequest):
     """Test the new L2 analysis pipeline with SSE streaming.
 
-    使用新的 RequirementFact → RequirementAssertion → TestCondition
-    → CoverageItem → CandidateTestCase → TestAssetPackage 管道。
-    """
+    浣跨敤鏂扮殑 RequirementFact 鈫?RequirementAssertion 鈫?TestCondition
+    鈫?CoverageItem 鈫?CandidateTestCase 鈫?TestAssetPackage 绠￠亾銆?    """
     if not any([req.prd, req.api_doc, req.changelog, req.prototype, req.architecture, req.rules]):
-        raise HTTPException(status_code=400, detail="至少提供一个文档")
+        raise HTTPException(status_code=400, detail="At least one document is required")
 
     req.prd = req.prd[:15000]
     req.api_doc = req.api_doc[:15000]
@@ -324,14 +477,14 @@ async def test_layer2_endpoint(req: Layer2TestRequest):
         try:
             from core.skills.l2_pipeline import run_l2_pipeline
 
-            yield json.dumps({"progress": "[N1] 正在提取原子化需求事实 (RequirementFact)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N1.5] 正在推导需求断言 (RequirementAssertion)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N2] 正在分析测试条件 (TestCondition)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N2.5] 正在选择设计技术 (TestDesignTechnique)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N3] 正在分析覆盖项 (CoverageItem)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N3.5] 正在生成候选用例 (CandidateTestCase)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N4] 正在构建追溯矩阵 (TraceabilityMatrix)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N4.5] 正在组装最终交付物 (TestAssetPackage)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N1] 姝ｅ湪鎻愬彇鍘熷瓙鍖栭渶姹備簨瀹?(RequirementFact)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N1.5] 姝ｅ湪鎺ㄥ闇€姹傛柇瑷€ (RequirementAssertion)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N2] 姝ｅ湪鍒嗘瀽娴嬭瘯鏉′欢 (TestCondition)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N2.5] 姝ｅ湪閫夋嫨璁捐鎶€鏈?(TestDesignTechnique)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N3] 姝ｅ湪鍒嗘瀽瑕嗙洊椤?(CoverageItem)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N3.5] 姝ｅ湪鐢熸垚鍊欓€夌敤渚?(CandidateTestCase)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N4] 姝ｅ湪鏋勫缓杩芥函鐭╅樀 (TraceabilityMatrix)..."}, ensure_ascii=False) + "\n"
+            yield json.dumps({"progress": "[N4.5] 姝ｅ湪缁勮鏈€缁堜氦浠樼墿 (TestAssetPackage)..."}, ensure_ascii=False) + "\n"
 
             package = await run_l2_pipeline(
                 prd_content=req.prd,
@@ -435,264 +588,57 @@ async def delete_memory(memory_id: int) -> MessageResponse:
 
 # --- Background task runner ---
 _running_tasks: dict[int, asyncio.Task] = {}
-_task_execution_lock = asyncio.Lock()
+_task_lifecycle_service = TaskLifecycleService()
 
 # Flag to disable background tasks in tests
 _background_tasks_enabled: bool = True
 
 
-from core.memory_utils import retrieve_memories, reflect_on_task
+def _make_lifecycle_event_sink(
+    task_db_id: int,
+) -> Any:
+    async def send_ws_event(
+        event_type: str,
+        current_run_id: str,
+        data: dict[str, Any],
+    ) -> None:
+        payload = dict(data)
+        await websocket_manager.send_message(
+            str(task_db_id),
+            create_ws_message(
+                event_type,
+                task_id=task_db_id,
+                run_id=current_run_id,
+                phase=payload.pop("phase", None),
+                candidate_case_id=payload.pop("candidate_case_id", ""),
+                attempt_no=payload.pop("attempt_no", None),
+                step_index=payload.pop("step_index", None),
+                data=payload,
+            ),
+        )
 
-async def _run_test_session(task_db_id: int, target_url: str, config: dict | None) -> None:
-    """Run the test session in the background using Runtime.
+    return send_ws_event
 
-    Executes the full test pipeline (plan → execute → report) via Runtime.run_stream()
-    and streams updates over WebSocket. Detects errors yielded by the runtime and
-    sets the task status accordingly.
-    """
-    # Wait for the global lock to prevent browser concurrency collision
-    async with _task_execution_lock:
-        # Update status to running only after acquiring the lock
-        _task_id_map[str(task_db_id)] = task_db_id
-        async with async_session() as session:
-            task = await session.get(Task, task_db_id)
-            if task:
-                task.status = "running"
-                task.started_at = datetime.now(timezone.utc)
-                await session.commit()
 
-        # Diag: 启动 + 入口 dump + 注入 task context
-        from core.diag_logger import get_diag, set_current_task
-        task_id_str = str(task_db_id)
-        set_current_task(task_id_str)
-        diag = get_diag(task_id_str)
-        diag.start()
-        diag.dump("00_entry", target_url=target_url, task_name=f"Test {target_url}",
-                  config_keys=list((config or {}).keys()),
-                  has_prd=bool((config or {}).get("prd")),
-                  has_swagger=bool((config or {}).get("api_doc") or (config or {}).get("swagger")),
-                  has_changelog=bool((config or {}).get("changelog")),
-                  has_focus=bool((config or {}).get("focus_areas")),
-                  accounts_count=len((config or {}).get("accounts", [])),
-                  rules_count=len((config or {}).get("rules", [])))
-
-        has_error = False
-        try:
-            from core.runtime import Runtime
-            from agents.ui.tools import _hitl_callbacks
-            from core.document_parser import parse_and_fetch_links
-
-            async def hitl_callback(reason: str):
-                await websocket_manager.send_message(str(task_db_id), {
-                    "type": "hitl_requested",
-                    "test_case_id": "",
-                    "step_index": 0,
-                    "data": {"reason": reason},
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-
-            _hitl_callbacks[str(task_db_id)] = hitl_callback
-
-            print("  [DEBUG SESSION] Starting retrieve_memories...", flush=True)
-            memory_context = await retrieve_memories(target_url)
-            print("  [DEBUG SESSION] Starting parse_and_fetch_links...", flush=True)
-            enriched_config = await parse_and_fetch_links(config or {})
-            print("  [DEBUG SESSION] parse_and_fetch_links done.", flush=True)
-
-            # =========================================================================
-            # L2 Phase 1 (探索前): 提取事实 → 推导断言 → review gate → 生成探索目标
-            # =========================================================================
-            print("  [DEBUG SESSION] Starting L2 Phase 1 (pre-exploration)...", flush=True)
-            from core.skills.l2_pipeline import generate_exploration_goals, run_l2_pipeline
-            from core.execution_logger import log_analysis_package
-
-            # rules: 前端传字符串，直接用；如果是 list 则 join
-            raw_rules = enriched_config.get("rules", "")
-            rules_str = "\n".join(raw_rules) if isinstance(raw_rules, list) else str(raw_rules or "")
-
-            goals, review_items, l2_facts, l2_assertions = await generate_exploration_goals(
-                prd_content=enriched_config.get("prd", ""),
-                api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
-                changelog_content=enriched_config.get("changelog", ""),
-                prototype_notes=enriched_config.get("prototype_url", ""),
-                architecture_notes=enriched_config.get("tech_doc", ""),
-                rules=rules_str,
-            )
-
-            if goals:
-                enriched_config["_goals"] = [g.model_dump() for g in goals]
-            if review_items:
-                enriched_config["_l2_manual_review_items"] = review_items
-
-            # 保存 Phase 1 结果供 Phase 2 复用，避免重复 LLM 调用
-            enriched_config["_l2_precomputed_facts"] = [f.model_dump() for f in l2_facts]
-            enriched_config["_l2_precomputed_assertions"] = [a.model_dump() for a in l2_assertions]
-            enriched_config["_l2_precomputed_goals"] = [g.model_dump() for g in goals]
-
-            print(f"  [DEBUG SESSION] L2 Phase 1 done: "
-                  f"{len(l2_facts)} facts, {len(l2_assertions)} assertions, "
-                  f"{len(goals)} goals, {len(review_items)} review items", flush=True)
-
-            if review_items:
-                print(f"  [L2 REVIEW GATE] {len(review_items)} 条高风险断言需要人工确认:", flush=True)
-                for item in review_items[:5]:
-                    print(f"    - {item[:120]}", flush=True)
-
-            from core.diag_logger import get_diag_auto
-            get_diag_auto().dump("99_task_config_evolution",
-                snapshot_at="after_l2_phase1",
-                config_keys=list(enriched_config.keys()),
-                l2_facts=len(l2_facts),
-                l2_assertions=len(l2_assertions),
-                l2_goals=len(goals),
-                l2_review_gate=len(review_items),
-            )
-
-            async with async_session() as session:
-                task = await session.get(Task, task_db_id)
-                if task:
-                    task.config = enriched_config
-                    await session.commit()
-
-            # =========================================================================
-            # Runtime: 探索 + 执行 (goals 已注入，planning_graph 会消费)
-            # =========================================================================
-            print("  [DEBUG SESSION] Initializing Runtime...", flush=True)
-            runtime = Runtime(task_config={"task_id": str(task_db_id), "target_url": target_url, "memory_context": memory_context, **enriched_config})
-            print("  [DEBUG SESSION] Runtime initialized. Running stream...", flush=True)
-
-            async for update in runtime.run_stream():
-                if isinstance(update, dict) and isinstance(update.get("data"), dict):
-                    if "error" in update["data"]:
-                        has_error = True
-                    if update.get("type") == "session_complete" and update["data"].get("phase") == "final":
-                        report_data = update["data"].get("report_data", {})
-                        test_cases = report_data.get("test_plan", [])
-                        executed_cases = [
-                            tc for tc in test_cases
-                            if tc.get("status") in ("passed", "failed", "skipped", "incomplete", "human_review_required")
-                        ]
-                        if len(executed_cases) < len(test_cases):
-                            has_error = True
-                await websocket_manager.send_message(str(task_db_id), update)
-
-            # =========================================================================
-            # L2 Phase 2 (探索后): 用真实 UI 证据跑完整分析管道
-            # =========================================================================
-            print("  [DEBUG SESSION] Starting L2 Phase 2 (post-exploration)...", flush=True)
-
-            # 从 runtime.task_config 读取探索证据（planning_graph 写入的）
-            system_map_evid = None
-            exploration_history = runtime.task_config.get("_exploration_history")
-            if exploration_history:
-                from core.interfaces import PageMap, ActionMap, FormMap, NavigationMap, SystemMapEvid
-                page_maps = []
-                action_maps = []
-                for page in exploration_history[-20:]:
-                    url = page.get("url", "")
-                    title = page.get("title", "")
-                    elements = page.get("interactive_elements", [])
-                    actions = [
-                        f"{el.get('role', 'elem')}: {el.get('name', '') or el.get('text', '')}"
-                        for el in elements[:15]
-                    ]
-                    page_maps.append(PageMap(
-                        name=title or url or "未知页面",
-                        url_pattern=url,
-                        title=title,
-                        elements=[e.get("name", "") or e.get("text", "") or "" for e in elements[:20]],
-                        discovered_actions=actions,
-                    ))
-                    for el in elements:
-                        action_text = el.get("name", "") or el.get("text", "") or ""
-                        if action_text:
-                            action_maps.append(ActionMap(
-                                action_name=action_text,
-                                target_page=title or url or "",
-                            ))
-
-                system_map_evid = SystemMapEvid(
-                    pages=page_maps,
-                    actions=action_maps,
-                    forms=[],
-                    navigations=[],
-                )
-
-            # 复用 Phase 1 预计算结果（使用 legacy adapter 兼容旧数据）
-            from core.interfaces import RequirementFact, RequirementAssertion
-            from core.skills.l2_pipeline import adapt_legacy_goals
-            precomputed_facts = [RequirementFact.model_validate(f) for f in enriched_config.get("_l2_precomputed_facts", [])]
-            precomputed_assertions = [RequirementAssertion.model_validate(a) for a in enriched_config.get("_l2_precomputed_assertions", [])]
-            precomputed_goals = adapt_legacy_goals(enriched_config.get("_l2_precomputed_goals", []))
-            precomputed_review_items = enriched_config.get("_l2_manual_review_items", [])
-
-            package = await run_l2_pipeline(
-                prd_content=enriched_config.get("prd", ""),
-                api_doc_content=enriched_config.get("api_doc", "") or enriched_config.get("swagger", ""),
-                changelog_content=enriched_config.get("changelog", ""),
-                prototype_notes=enriched_config.get("prototype_url", ""),
-                architecture_notes=enriched_config.get("tech_doc", ""),
-                rules=rules_str,
-                system_map=system_map_evid,
-                precomputed_facts=precomputed_facts or None,
-                precomputed_assertions=precomputed_assertions or None,
-                precomputed_goals=precomputed_goals or None,
-                precomputed_review_items=precomputed_review_items or None,
-            )
-
-            package_dict = package.model_dump()
-            enriched_config["_test_asset_package"] = package_dict
-            await log_analysis_package(str(runtime.task_config.get("task_id", task_db_id)), package_dict)
-
-            print(f"  [DEBUG SESSION] L2 Phase 2 done: "
-                  f"{len(package.facts)} facts, {len(package.assertions)} assertions, "
-                  f"{len(package.candidate_cases)} candidate cases, "
-                  f"{len(package.manual_review_items)} manual review items", flush=True)
-
-            get_diag_auto().dump("99_task_config_evolution",
-                snapshot_at="after_l2_phase2",
-                config_keys=list(enriched_config.keys()),
-                has_package="_test_asset_package" in enriched_config,
-                l2_facts=len(package.facts),
-                l2_assertions=len(package.assertions),
-                l2_candidates=len(package.candidate_cases),
-                l2_review_gate=len(package.manual_review_items),
-                has_system_map=system_map_evid is not None,
-            )
-
-            async with async_session() as session:
-                task = await session.get(Task, task_db_id)
-                if task:
-                    task.config = enriched_config
-                    await session.commit()
-        except asyncio.CancelledError:
-            has_error = False
-            raise
-        except Exception as e:
-            import logging
-            logging.exception(f"[_run_test_session] Caught exception in background task: {e}")
-            has_error = True
-        finally:
-            # ALWAYS update final status, even if unexpected exception
-            final_status = "failed" if has_error else "completed"
-            async with async_session() as session:
-                task = await session.get(Task, task_db_id)
-                if task:
-                    if task.status != "cancelled":
-                        task.status = final_status
-                    task.completed_at = datetime.now(timezone.utc)
-                    await session.commit()
-
-            # Trigger reflection post-task
-            await reflect_on_task(task_db_id)
-
-            # Cleanup HITL callbacks
-            from agents.ui.tools import _hitl_callbacks, _hitl_events, _hitl_responses
-            _hitl_callbacks.pop(str(task_db_id), None)
-            _hitl_events.pop(str(task_db_id), None)
-            _hitl_responses.pop(str(task_db_id), None)
-
-            # Diag: await finalize (关键 — 进程退出 / 异常时也必须等所有 pending 写完)
-            from core.diag_logger import get_diag
-            diag_final = get_diag(str(task_db_id))
-            await diag_final.finalize()
+def _start_task_session(
+    task_id: int,
+    target_url: str,
+    config: dict | None,
+    *,
+    resumed_from_run_id: str | None = None,
+    resume_case_ids: list[str] | None = None,
+) -> None:
+    background_task = asyncio.create_task(
+        _task_lifecycle_service.run_test_session(
+            task_id,
+            target_url,
+            config,
+            event_sink=_make_lifecycle_event_sink(task_id),
+            resumed_from_run_id=resumed_from_run_id,
+            resume_case_ids=resume_case_ids,
+        )
+    )
+    _running_tasks[task_id] = background_task
+    background_task.add_done_callback(
+        lambda _task, current_id=task_id: _running_tasks.pop(current_id, None)
+    )

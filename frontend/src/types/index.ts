@@ -1,21 +1,65 @@
+export interface RunSummary {
+  planned: number;
+  terminal: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  incomplete: number;
+  human_review_required: number;
+}
+
+export interface LatestRun {
+  run_id: string;
+  status: string;
+  summary: RunSummary;
+  started_at: string;
+  completed_at: string | null;
+}
+
 export interface Task {
   id: number;
   task_name: string;
   target_url: string;
   status: string;
+  phase: string | null;
+  report_status: string;
+  failure_reason: string | null;
   config: Record<string, unknown> | null;
-  test_plan: unknown[] | null;
-  total_tests: number;
-  passed_tests: number;
-  failed_tests: number;
+  analysis_package: AnalysisPackage | null;
+  latest_run: LatestRun | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
 }
 
+export interface ExecutionRun {
+  run_id: string;
+  task_id: number;
+  schema_version: string;
+  status: string;
+  candidate_case_ids: string[];
+  resumed_from_run_id: string | null;
+  summary: RunSummary;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface CaseResult {
+  candidate_case_id: string;
+  terminal_status: 'passed' | 'failed' | 'skipped' | 'incomplete' | 'human_review_required';
+  attempt_count: number;
+  summary: string;
+  evidence_refs: string[];
+  failure_reason: string | null;
+  started_at: string;
+  completed_at: string;
+}
+
 export interface TaskStep {
   id: number;
+  run_id: string;
   test_case_id: string;
+  attempt_no: number;
   step_index: number;
   action_type: string;
   action_target: string;
@@ -28,20 +72,74 @@ export interface TaskStep {
 }
 
 export type WSMessageType =
-  | 'page_update'
-  | 'ai_thinking'
-  | 'action_result'
-  | 'assertion_result'
-  | 'setup_progress'
-  | 'test_case_complete'
-  | 'session_complete';
+  | 'phase_started'
+  | 'phase_completed'
+  | 'case_started'
+  | 'case_attempt_started'
+  | 'case_step'
+  | 'case_completed'
+  | 'session_completed'
+  | 'session_failed'
+  | 'session_cancelled';
 
 export interface WSMessage {
   type: WSMessageType;
-  test_case_id: string;
-  step_index: number;
+  task_id: number;
+  run_id: string;
+  phase: string | null;
+  candidate_case_id: string;
+  attempt_no: number | null;
+  step_index: number | null;
   data: Record<string, unknown>;
   timestamp: string;
+}
+
+export interface AnalysisPackage {
+  facts: Array<{ id: string }>;
+  assertions: Array<{ id: string; risk_level: string }>;
+  manual_review_items: string[];
+  exploration_goals: unknown[];
+  system_map: {
+    pages: Array<{ title?: string; url_pattern?: string }>;
+    actions: Array<{ action_name?: string }>;
+    forms: Array<{ form_name?: string }>;
+    navigations: Array<Record<string, unknown>>;
+  } | null;
+  coverage_blueprint: {
+    modules: Array<{ id: string; name: string; is_core: boolean }>;
+    business_flows: Array<{ id: string; name: string; is_core: boolean }>;
+    dependencies: Array<{ id: string; risk_tier: string }>;
+    gaps: string[];
+  };
+  test_conditions: Array<{ id: string; branch_type: string }>;
+  coverage_items: Array<{ id: string; branch_type: string }>;
+  candidate_cases: Array<{
+    id: string;
+    title: string;
+    module_ids: string[];
+    business_flow_ids: string[];
+    dependency_ids: string[];
+    branch_type: string;
+    estimated_cost: string;
+  }>;
+  traceability_matrix: Record<string, unknown> | null;
+  quality_gate_report: {
+    passed: boolean;
+    findings: Array<{ code: string; severity: 'error' | 'warning'; message: string }>;
+  } | null;
+  runtime_hints: {
+    execution_selection?: {
+      profile: 'smoke' | 'balanced' | 'full';
+      target_count: number | null;
+      mandatory_count: number;
+      selected_count: number;
+      deferred_count: number;
+      selected_case_ids: string[];
+      deferred_case_ids: string[];
+      selection_reasons: Record<string, string[]>;
+      coverage_summary: Record<string, unknown>;
+    };
+  };
 }
 
 export interface CreateTaskRequest {
@@ -56,5 +154,7 @@ export interface CreateTaskRequest {
     tech_doc?: string;
     prototype_url?: string;
     changelog?: string;
+    execution_profile?: 'smoke' | 'balanced' | 'full';
+    execution_target?: number;
   };
 }

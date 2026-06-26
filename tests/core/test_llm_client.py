@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import patch
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from core.llm_client import get_llm_client, count_tokens
+from core.interfaces import RequirementFact
+from core.skills.assertion_deriver import AssertionDerivationResult
+from core.skills.fact_extractor import FactExtractionResult
+from core.skills.case_generator import CaseGenerationResult
+from core.skills.technique_selector import TechniqueResult
 
 
 class TestGetLlmClient:
@@ -151,3 +157,456 @@ def test_sanitize_messages_for_structured_output():
 
     assert isinstance(sanitized[3], HumanMessage)
     assert sanitized[3].content == "next step"
+
+
+@pytest.mark.asyncio
+async def test_safe_structured_invoke_recovers_native_tool_args_before_retry():
+    from core import llm_client
+
+    payload = {
+        "id": "FACT-001",
+        "source_type": "prd",
+        "source_reference": "section-1",
+        "quote": "Only administrators can access settings",
+        "subject": "administrators",
+        "action": "access",
+        "object": "settings",
+        "confidence": 1.0,
+        "status": "confirmed",
+    }
+    raw_message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "RequirementFact",
+                "args": payload,
+                "id": "call-1",
+                "type": "tool_call",
+            }
+        ],
+    )
+    structured_wrapper = AsyncMock()
+    structured_wrapper.ainvoke.return_value = {
+        "raw": raw_message,
+        "parsed": None,
+        "parsing_error": ValueError("provider parser rejected response"),
+    }
+    fake_llm = MagicMock()
+    fake_llm.with_structured_output.return_value = structured_wrapper
+    fake_llm.ainvoke = AsyncMock()
+
+    with patch.object(llm_client, "get_llm_client", return_value=fake_llm):
+        result = await llm_client.safe_structured_invoke(
+            "extract facts",
+            RequirementFact,
+        )
+
+    assert result is not None
+    assert result.subject == "administrators"
+    assert result.action == "access"
+    fake_llm.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safe_structured_invoke_recovers_native_text_before_retry():
+    from core import llm_client
+
+    payload = {
+        "id": "FACT-002",
+        "source_type": "prd",
+        "source_reference": "section-2",
+        "quote": "Administrator",
+        "subject": "Administrator",
+        "action": "login",
+        "object": "system",
+        "confidence": 1.0,
+        "status": "draft",
+    }
+    raw_message = AIMessage(content=json.dumps(payload))
+    structured_wrapper = AsyncMock()
+    structured_wrapper.ainvoke.return_value = {
+        "raw": raw_message,
+        "parsed": None,
+        "parsing_error": ValueError("provider parser rejected response"),
+    }
+    fake_llm = MagicMock()
+    fake_llm.with_structured_output.return_value = structured_wrapper
+    fake_llm.ainvoke = AsyncMock()
+
+    with patch.object(llm_client, "get_llm_client", return_value=fake_llm):
+        result = await llm_client.safe_structured_invoke(
+            "extract facts",
+            RequirementFact,
+        )
+
+    assert result is not None
+    assert result.subject == "Administrator"
+    assert result.action == "login"
+    fake_llm.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safe_structured_invoke_decodes_json_string_list_fields():
+    from core import llm_client
+
+    fact_payload = {
+        "id": "FACT-003",
+        "source_type": "prd",
+        "source_reference": "section-3",
+        "quote": "Weights must total 100%",
+        "subject": "Weights",
+        "action": "total",
+        "object": "100%",
+        "confidence": 1.0,
+        "status": "confirmed",
+    }
+    payload = {"facts": json.dumps([fact_payload])}
+    raw_message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "FactExtractionResult",
+                "args": payload,
+                "id": "call-1",
+                "type": "tool_call",
+            }
+        ],
+    )
+    structured_wrapper = AsyncMock()
+    structured_wrapper.ainvoke.return_value = {
+        "raw": raw_message,
+        "parsed": None,
+        "parsing_error": ValueError("list fields were JSON-encoded strings"),
+    }
+    fake_llm = MagicMock()
+    fake_llm.with_structured_output.return_value = structured_wrapper
+    fake_llm.ainvoke = AsyncMock()
+
+    with patch.object(llm_client, "get_llm_client", return_value=fake_llm):
+        result = await llm_client.safe_structured_invoke(
+            "extract facts",
+            FactExtractionResult,
+        )
+
+    assert result is not None
+    assert result.facts[0].subject == "Weights"
+    assert result.facts[0].action == "total"
+    fake_llm.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safe_structured_invoke_decodes_double_encoded_json_string_list_fields():
+    from core import llm_client
+
+    assertion_payload = {
+        "id": "ASSERT-001",
+        "fact_ids": ["FACT-001"],
+        "assertion_text": "系统应展示总分占比",
+        "assertion_type": "functional",
+        "risk_level": "medium",
+        "review_status": "auto_generated",
+        "source_references": ["section-3"],
+    }
+    payload = {"assertions": json.dumps(json.dumps([assertion_payload]))}
+    raw_message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "AssertionDerivationResult",
+                "args": payload,
+                "id": "call-1",
+                "type": "tool_call",
+            }
+        ],
+    )
+    structured_wrapper = AsyncMock()
+    structured_wrapper.ainvoke.return_value = {
+        "raw": raw_message,
+        "parsed": None,
+        "parsing_error": ValueError("list fields were double JSON-encoded strings"),
+    }
+    fake_llm = MagicMock()
+    fake_llm.with_structured_output.return_value = structured_wrapper
+    fake_llm.ainvoke = AsyncMock()
+
+    with patch.object(llm_client, "get_llm_client", return_value=fake_llm):
+        result = await llm_client.safe_structured_invoke(
+            "derive assertions",
+            AssertionDerivationResult,
+        )
+
+    assert result is not None
+    assert result.assertions[0].assertion_text == "系统应展示总分占比"
+    assert result.assertions[0].fact_ids == ["FACT-001"]
+    fake_llm.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safe_structured_invoke_wraps_top_level_list_for_single_list_field_schema():
+    from core import llm_client
+
+    fact_payload = {
+        "id": "FACT-005",
+        "source_type": "prd",
+        "source_reference": "section-5",
+        "quote": "Dashboard shows KPI cards",
+        "subject": "Dashboard",
+        "action": "shows",
+        "object": "KPI cards",
+        "confidence": 1.0,
+        "status": "confirmed",
+    }
+    raw_message = AIMessage(content=json.dumps([fact_payload]))
+    structured_wrapper = AsyncMock()
+    structured_wrapper.ainvoke.return_value = {
+        "raw": raw_message,
+        "parsed": None,
+        "parsing_error": ValueError("provider emitted a top-level list"),
+    }
+    fake_llm = MagicMock()
+    fake_llm.with_structured_output.return_value = structured_wrapper
+    fake_llm.ainvoke = AsyncMock()
+
+    with patch.object(llm_client, "get_llm_client", return_value=fake_llm):
+        result = await llm_client.safe_structured_invoke(
+            "extract facts",
+            FactExtractionResult,
+        )
+
+    assert result is not None
+    assert result.facts[0].subject == "Dashboard"
+    assert result.facts[0].object == "KPI cards"
+    fake_llm.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safe_structured_invoke_decodes_list_items_that_are_json_strings():
+    from core import llm_client
+
+    fact_payload = {
+        "id": "FACT-006",
+        "source_type": "prd",
+        "source_reference": "section-6",
+        "quote": "Dashboard shows warning badges",
+        "subject": "Dashboard",
+        "action": "shows",
+        "object": "warning badges",
+        "confidence": 1.0,
+        "status": "confirmed",
+    }
+    payload = {"facts": json.dumps([json.dumps(fact_payload)])}
+    raw_message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "FactExtractionResult",
+                "args": payload,
+                "id": "call-1",
+                "type": "tool_call",
+            }
+        ],
+    )
+    structured_wrapper = AsyncMock()
+    structured_wrapper.ainvoke.return_value = {
+        "raw": raw_message,
+        "parsed": None,
+        "parsing_error": ValueError("provider nested dict items as JSON strings"),
+    }
+    fake_llm = MagicMock()
+    fake_llm.with_structured_output.return_value = structured_wrapper
+    fake_llm.ainvoke = AsyncMock()
+
+    with patch.object(llm_client, "get_llm_client", return_value=fake_llm):
+        result = await llm_client.safe_structured_invoke(
+            "extract facts",
+            FactExtractionResult,
+        )
+
+    assert result is not None
+    assert result.facts[0].object == "warning badges"
+    fake_llm.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safe_structured_invoke_accepts_unescaped_control_chars():
+    from core import llm_client
+
+    raw_json = (
+        '{"id":"FACT-004","source_type":"prd","source_reference":"section-4",'
+        '"quote":"line one\\nline two","subject":"line","action":"one",'
+        '"object":"two","confidence":1.0,"status":"draft"}'
+    )
+    raw_message = AIMessage(content=raw_json)
+    structured_wrapper = AsyncMock()
+    structured_wrapper.ainvoke.return_value = {
+        "raw": raw_message,
+        "parsed": None,
+        "parsing_error": ValueError("invalid control character"),
+    }
+    fake_llm = MagicMock()
+    fake_llm.with_structured_output.return_value = structured_wrapper
+    fake_llm.ainvoke = AsyncMock()
+
+    with patch.object(llm_client, "get_llm_client", return_value=fake_llm):
+        result = await llm_client.safe_structured_invoke(
+            "extract facts",
+            RequirementFact,
+        )
+
+    assert result is not None
+    assert result.quote == "line one\nline two"
+    fake_llm.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safe_structured_invoke_salvages_partial_list_field_from_native_args():
+    from core import llm_client
+
+    fact_payload = {
+        "id": "FACT-007",
+        "source_type": "prd",
+        "source_reference": "section-7",
+        "quote": "Dashboard cards are read only",
+        "subject": "Dashboard cards",
+        "action": "remain",
+        "object": "read only",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": [],
+    }
+    payload = {
+        "facts": (
+            f"[{json.dumps(fact_payload)}, "
+            "{\"id\": \"FACT-008\", \"source_type\": "
+        ),
+    }
+    raw_message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "FactExtractionResult",
+                "args": payload,
+                "id": "call-1",
+                "type": "tool_call",
+            }
+        ],
+    )
+    structured_wrapper = AsyncMock()
+    structured_wrapper.ainvoke.return_value = {
+        "raw": raw_message,
+        "parsed": None,
+        "parsing_error": ValueError("provider emitted a truncated list string"),
+    }
+    fake_llm = MagicMock()
+    fake_llm.with_structured_output.return_value = structured_wrapper
+    fake_llm.ainvoke = AsyncMock()
+
+    with patch.object(llm_client, "get_llm_client", return_value=fake_llm):
+        result = await llm_client.safe_structured_invoke(
+            "extract facts",
+            FactExtractionResult,
+        )
+
+    assert result is not None
+    assert len(result.facts) == 1
+    assert result.facts[0].id == "FACT-007"
+    fake_llm.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safe_structured_invoke_salvages_partial_list_field_from_raw_fallback():
+    from core import llm_client
+
+    fact_payload = {
+        "id": "FACT-009",
+        "source_type": "prd",
+        "source_reference": "section-9",
+        "quote": "Read-only regions reject inline editing",
+        "subject": "Read-only regions",
+        "action": "reject",
+        "object": "inline editing",
+        "confidence": 1.0,
+        "status": "confirmed",
+        "conflict_references": [],
+    }
+    raw_message = AIMessage(content="")
+    malformed_raw = AIMessage(
+        content=(
+            '{"facts": ['
+            + json.dumps(fact_payload)
+            + ', {"id": "FACT-010", "source_type": broken}]}'
+        )
+    )
+    structured_wrapper = AsyncMock()
+    structured_wrapper.ainvoke.return_value = {
+        "raw": raw_message,
+        "parsed": None,
+        "parsing_error": ValueError("provider parser rejected response"),
+    }
+    fake_llm = MagicMock()
+    fake_llm.with_structured_output.return_value = structured_wrapper
+    fake_llm.ainvoke = AsyncMock(return_value=malformed_raw)
+
+    with patch.object(llm_client, "get_llm_client", return_value=fake_llm):
+        result = await llm_client.safe_structured_invoke(
+            "extract facts",
+            FactExtractionResult,
+        )
+
+    assert result is not None
+    assert len(result.facts) == 1
+    assert result.facts[0].id == "FACT-009"
+    fake_llm.ainvoke.assert_awaited_once()
+
+
+def test_coerce_adds_missing_technique_id():
+    from core.llm_client import _coerce_to_pydantic
+
+    result = _coerce_to_pydantic(
+        {
+            "techniques": [{
+                "condition_id": "COND-001",
+                "primary_technique": "equivalence_partitioning",
+                "supplementary_techniques": [],
+                "rationale": "覆盖正常与异常等价类",
+            }],
+        },
+        TechniqueResult,
+    )
+
+    assert result.techniques[0].id == "TECH-COND-001"
+
+
+def test_coerce_normalizes_case_value_and_required_roles():
+    from core.llm_client import _coerce_to_pydantic
+
+    result = _coerce_to_pydantic(
+        {
+            "cases": [{
+                "id": "TC-CAND-001",
+                "title": "部门领导查看数据",
+                "goal": "验证部门数据隔离",
+                "preconditions": [{
+                    "type": "account_role",
+                    "description": "使用部门领导账号",
+                    "required_role": "部门领导",
+                    "satisfiable_by_agent": True,
+                    "failure_policy": "skipped",
+                }],
+                "input_data": [{
+                    "name": "人数",
+                    "value": 0,
+                    "source": "generated",
+                    "sensitivity": "public",
+                }],
+                "expected_result": "仅展示本部门数据",
+                "priority": "high",
+                "trace_references": ["COV-001"],
+                "required_roles": [],
+            }],
+        },
+        CaseGenerationResult,
+    )
+
+    assert result.cases[0].input_data[0].value == "0"
+    assert result.cases[0].required_roles == ["部门领导"]

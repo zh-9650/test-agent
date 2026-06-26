@@ -87,6 +87,8 @@ logs/
 .codegraph/
 .codex/
 .playwright-mcp/
+.tmp/
+.pytest-runtime/
 
 # Diagnostic and ad-hoc output
 data/diag/

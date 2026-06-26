@@ -1,0 +1,3098 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "louvain",
+  "totalFiles": 137,
+  "totalBatches": 14,
+  "exportsByPath": {
+    ".understand-anything/.understandignore": [],
+    "agents/__init__.py": [],
+    "agents/base.py": [],
+    "agents/ui/__init__.py": [],
+    "agents/ui/execution_graph.py": [
+      "instrument_node",
+      "_fallback_assertion",
+      "_truncate_messages_by_token",
+      "should_continue",
+      "_fast_assert",
+      "should_skip_assert",
+      "should_continue_or_stop",
+      "observe_node",
+      "decide_node",
+      "execute_node",
+      "assert_node",
+      "record_node",
+      "build_execution_graph"
+    ],
+    "agents/ui/planning_graph.py": [
+      "should_continue_exploring",
+      "extract_goals_node",
+      "explore_observe_node",
+      "explore_decide_node",
+      "explore_execute_node",
+      "generate_system_map_node",
+      "extract_scenarios_node",
+      "generate_plan_node",
+      "build_planning_graph"
+    ],
+    "agents/ui/prompts.py": [
+      "get_execution_system_prompt",
+      "get_step_prompt",
+      "get_assertion_prompt",
+      "_format_page_info",
+      "get_exploration_system_prompt",
+      "get_plan_generation_prompt",
+      "parse_browser_use_decision"
+    ],
+    "agents/ui/setup_manager.py": [
+      "execute_setup"
+    ],
+    "agents/ui/tools.py": [
+      "set_current_step",
+      "get_current_step",
+      "set_current_task",
+      "get_current_task_id",
+      "cleanup_task_context",
+      "set_cdp_session",
+      "get_cdp_session_ctx",
+      "set_current_page",
+      "get_current_page",
+      "set_task_config",
+      "get_task_config",
+      "set_current_step_text",
+      "get_current_step_text",
+      "set_current_expected",
+      "get_current_expected",
+      "update_element_map",
+      "get_element_map",
+      "_get_dom_fingerprint",
+      "_wait_for_stable",
+      "_make_action_result",
+      "_normalize_target",
+      "_resolve_via_cdp",
+      "_get_live_element_metadata",
+      "_score_element_match",
+      "_resolve_element",
+      "_should_auto_inject_password",
+      "navigate",
+      "click",
+      "_get_element_info",
+      "_find_similar_elements",
+      "input_text",
+      "scroll",
+      "wait",
+      "_consume_screenshot_quota",
+      "_screenshot_quota_remaining",
+      "reset_screenshot_budget",
+      "screenshot_on_demand",
+      "parallel_tool_calls",
+      "request_human_intervention",
+      "press_key",
+      "hover",
+      "go_back",
+      "extract_text",
+      "search",
+      "select_dropdown",
+      "evaluate_js",
+      "_is_multi_target_expected",
+      "_expected_mentions_url",
+      "mark_task_complete",
+      "mark_task_failed",
+      "mark_task_skipped",
+      "find",
+      "get_dropdown_options",
+      "get_specific_elements",
+      "switch_tab",
+      "close_tab",
+      "refresh",
+      "get_page_links"
+    ],
+    "api/__init__.py": [],
+    "api/app.py": [
+      "startup",
+      "create_task",
+      "list_tasks",
+      "get_task",
+      "get_task_steps",
+      "get_diag_list",
+      "get_diag_file",
+      "get_report",
+      "stop_task",
+      "delete_task",
+      "ResumeRequest",
+      "resume_task",
+      "Layer1TestRequest",
+      "test_layer1_endpoint",
+      "list_memories",
+      "create_memory",
+      "update_memory",
+      "delete_memory",
+      "_run_test_session"
+    ],
+    "api/schemas.py": [
+      "CreateTaskRequest",
+      "AccountConfig",
+      "TaskResponse",
+      "TaskListResponse",
+      "StepResponse",
+      "StepListResponse",
+      "MessageResponse",
+      "AgentMemoryItem",
+      "MemoryListResponse"
+    ],
+    "api/utils.py": [
+      "FetchUrlRequest",
+      "FetchUrlResponse",
+      "ParseDocResponse",
+      "parse_doc",
+      "fetch_url"
+    ],
+    "api/websocket.py": [
+      "ConnectionManager",
+      "_now_iso",
+      "create_ws_message",
+      "websocket_endpoint",
+      "_handle_stop"
+    ],
+    "core/__init__.py": [],
+    "core/backend_node_map.py": [
+      "_prune_old",
+      "store",
+      "lookup",
+      "get_all",
+      "clear",
+      "clear_all",
+      "stats"
+    ],
+    "core/cdp_client.py": [
+      "_patch_session_if_needed",
+      "get_cdp_session",
+      "cleanup_cdp_session",
+      "get_full_ax_tree",
+      "get_node_attributes",
+      "get_node_box_model",
+      "resolve_node",
+      "release_object",
+      "_get_ax_property",
+      "_ax_role",
+      "_ax_name",
+      "_ax_value",
+      "_is_interactive",
+      "_is_structural",
+      "extract_elements_via_cdp",
+      "_ax_role_to_type",
+      "get_dom_fingerprint",
+      "cdp_click",
+      "cdp_input_text",
+      "_char_to_key_code",
+      "get_viewport_size",
+      "get_frame_tree",
+      "cdp_right_click",
+      "cdp_hover"
+    ],
+    "core/change_detector.py": [
+      "_describe_element",
+      "detect_changes"
+    ],
+    "core/context_manager.py": [
+      "_env_int",
+      "should_compact",
+      "_messages_to_text",
+      "_invoke_compact_llm",
+      "_truncate_physically",
+      "compact_history",
+      "build_compact_summary_message",
+      "compact_history_sync"
+    ],
+    "core/dependency.py": [
+      "has_dependency",
+      "split_independent_groups",
+      "is_parallelizable"
+    ],
+    "core/diag_logger.py": [
+      "_now_iso",
+      "_hash_obj",
+      "_truncate_str",
+      "_truncate_llm_content",
+      "Redactor",
+      "MetaInjector",
+      "DiagLogger",
+      "_NullLogger",
+      "is_enabled",
+      "set_current_task",
+      "get_current_task",
+      "get_diag",
+      "get_diag_auto",
+      "get_or_create_diag",
+      "slim_page_info"
+    ],
+    "core/document_parser.py": [
+      "fetch_url_content",
+      "parse_and_fetch_links"
+    ],
+    "core/execution_logger.py": [
+      "_get_db_id",
+      "log_node_event",
+      "get_node_events",
+      "clear_node_events",
+      "log_task_created",
+      "log_test_plan",
+      "log_step",
+      "log_test_result",
+      "get_task_steps",
+      "clear_test_case_steps"
+    ],
+    "core/interfaces.py": [
+      "KnowledgeItem",
+      "KnowledgeBase",
+      "UseCase",
+      "UseCaseModel",
+      "StateTransition",
+      "BusinessFlow",
+      "SystemModel",
+      "ExplorationGoal",
+      "TestCase",
+      "Setup",
+      "ActionResult",
+      "StepResult",
+      "AssertionResult",
+      "AgentDecision",
+      "ChangeReport",
+      "TestResult",
+      "TestState",
+      "get_llm_client",
+      "count_tokens",
+      "extract_page_semantics",
+      "take_screenshot",
+      "detect_changes",
+      "log_task_created",
+      "log_test_plan",
+      "log_step",
+      "log_test_result",
+      "get_task_steps",
+      "ReportBuilder",
+      "create_test_plan"
+    ],
+    "core/llm_client.py": [
+      "get_last_raw",
+      "_get_required_env",
+      "get_llm_client",
+      "_heuristic_count_tokens",
+      "count_tokens",
+      "extract_tool_calls_from_message",
+      "_loads_json_compat",
+      "_extract_json_blob",
+      "_unwrap_content",
+      "_unwrap_envelope",
+      "_decode_json_container_fields",
+      "_coerce_to_pydantic",
+      "sanitize_messages_for_structured_output",
+      "safe_structured_invoke"
+    ],
+    "core/memory_utils.py": [
+      "_sanitize_memory_value",
+      "retrieve_memories",
+      "reflect_on_task"
+    ],
+    "core/page_semantic.py": [
+      "track_page_requests",
+      "extract_page_semantics",
+      "take_screenshot",
+      "take_screenshot_compressed",
+      "_collect_interactive_elements",
+      "_get_element_role",
+      "_get_element_semantics",
+      "_get_bbox",
+      "_extract_input",
+      "_extract_button",
+      "_extract_link",
+      "_extract_select",
+      "_extract_checkbox",
+      "_extract_radio",
+      "_find_label",
+      "_extract_headings",
+      "_extract_forms",
+      "_extract_modals",
+      "_extract_nav_items",
+      "_extract_tables",
+      "_extract_error_messages",
+      "_detect_loading",
+      "_extract_pagination"
+    ],
+    "core/parallel_executor.py": [
+      "is_parallel_enabled",
+      "execute_parallel_calls"
+    ],
+    "core/report_builder.py": [
+      "ReportBuilder"
+    ],
+    "core/runtime.py": [
+      "_dump_node",
+      "_now_iso",
+      "_should_emit_early_warning",
+      "_stream_items",
+      "Runtime"
+    ],
+    "core/skills/__init__.py": [],
+    "core/skills/base.py": [
+      "BaseSkill"
+    ],
+    "core/skills/coverage_tracker.py": [
+      "CoverageTracker"
+    ],
+    "core/skills/goal_extractor.py": [
+      "ExplorationGoalList",
+      "extract_goals"
+    ],
+    "core/skills/knowledge_extractor.py": [
+      "extract_knowledge"
+    ],
+    "core/skills/registry.py": [
+      "SkillRegistry",
+      "init_registry"
+    ],
+    "core/skills/risk_analyzer.py": [
+      "RiskPoint",
+      "RiskAnalysisOutput",
+      "analyze_risks"
+    ],
+    "core/skills/scenario_extractor.py": [
+      "Scenario",
+      "ScenarioList",
+      "extract_scenarios"
+    ],
+    "core/skills/session_summary.py": [
+      "CaseSummary",
+      "generate_case_summary",
+      "_fallback_summary"
+    ],
+    "core/skills/system_mapper.py": [
+      "SystemMap",
+      "_summarize_history",
+      "generate_system_map",
+      "extract_system_map_structured"
+    ],
+    "core/skills/system_modeler.py": [
+      "_is_chinese_noun_phrase",
+      "_strip_node_suffix",
+      "_align_action",
+      "_normalize_system_model",
+      "_derive_minimal_system_model",
+      "_derive_flow_name",
+      "generate_system_model",
+      "_compute_normalize_diff"
+    ],
+    "core/skills/use_case_coverage.py": [
+      "_normalize_for_match",
+      "_compute_coverage",
+      "_compute_local_diff",
+      "_compute_unknown_actors",
+      "CoverageReport",
+      "CoverageResponse",
+      "check_use_case_coverage",
+      "_coerce_use_case_model"
+    ],
+    "core/skills/use_case_modeler.py": [
+      "generate_use_case_model"
+    ],
+    "database/__init__.py": [],
+    "database/connection.py": [
+      "create_async_engine_instance",
+      "create_sync_engine",
+      "get_async_engine",
+      "_parse_db_url",
+      "_create_database_if_not_exists",
+      "_run_create_all",
+      "init_database"
+    ],
+    "database/models.py": [
+      "Base",
+      "Task",
+      "TaskStep",
+      "Report",
+      "AgentMemory"
+    ],
+    "frontend/eslint.config.js": [],
+    "frontend/src/api/client.ts": [
+      "createTask",
+      "listTasks",
+      "getTask",
+      "getTaskSteps",
+      "getReportUrl",
+      "getDiagList",
+      "getDiagFile",
+      "stopTask",
+      "deleteTask",
+      "testLayer1"
+    ],
+    "frontend/src/App.tsx": [],
+    "frontend/src/components/DocumentUploader.tsx": [
+      "DocumentUploader"
+    ],
+    "frontend/src/hooks/useWebSocket.ts": [
+      "useWebSocket"
+    ],
+    "frontend/src/main.tsx": [],
+    "frontend/src/pages/MemoryManager.tsx": [
+      "MemoryManager"
+    ],
+    "frontend/src/pages/Monitor.tsx": [
+      "Monitor"
+    ],
+    "frontend/src/pages/Report.tsx": [
+      "Report"
+    ],
+    "frontend/src/pages/TaskCreate.tsx": [
+      "TaskCreate"
+    ],
+    "frontend/src/pages/TaskHistory.tsx": [
+      "TaskHistory"
+    ],
+    "frontend/src/types/index.ts": [],
+    "frontend/vite.config.ts": [],
+    "main.py": [
+      "main"
+    ],
+    "tests/__init__.py": [],
+    "tests/agents/__init__.py": [],
+    "tests/agents/ui/__init__.py": [],
+    "tests/agents/ui/test_action_result.py": [
+      "_auto_task",
+      "test_action_result_new_fields",
+      "test_action_result_is_terminal",
+      "test_action_result_backward_compat",
+      "_FakePage",
+      "test_make_action_result_status_success",
+      "test_make_action_result_status_timeout_inferred",
+      "test_make_action_result_status_not_found_inferred",
+      "test_make_action_result_status_failure_inferred",
+      "test_make_action_result_long_term_memory_auto",
+      "test_make_action_result_explicit_status_overrides",
+      "test_make_action_result_filled_value",
+      "page",
+      "test_navigate_returns_extracted_content",
+      "test_click_success_returns_extracted_content",
+      "test_click_failure_returns_candidates",
+      "test_input_text_success_returns_filled_value",
+      "test_mark_task_complete_has_extracted_content",
+      "test_mark_task_failed_has_error",
+      "test_find_similar_elements_by_text",
+      "test_find_similar_elements_empty_on_no_match"
+    ],
+    "tests/agents/ui/test_assert_integration.py": [
+      "make_state",
+      "test_status_failure_fast_fail",
+      "test_status_failure_no_error",
+      "test_status_timeout_fast_fail",
+      "test_status_not_found_fast_fail",
+      "test_error_without_status_still_fails",
+      "test_mark_task_failed_passes_through",
+      "test_status_success_does_not_fast_fail",
+      "test_long_term_memory_injected_into_reasoning",
+      "test_status_failure_passes_through_fast_assert",
+      "test_record_node_recovers_fast_assert_on_skip_path"
+    ],
+    "tests/agents/ui/test_execution_graph.py": [
+      "make_sample_state",
+      "test_build_execution_graph",
+      "test_should_continue_with_tool_call",
+      "test_should_continue_without_tool_call",
+      "test_should_stop_at_max_steps",
+      "test_should_stop_at_max_failures",
+      "test_should_continue_or_stop_normal",
+      "test_should_continue_or_stop_no_tool_call",
+      "test_observe_node_mock",
+      "test_decide_node_mock",
+      "test_execute_node_mock",
+      "test_execute_node_error_handling",
+      "test_assert_node_mock",
+      "test_assert_node_fail_result",
+      "test_assert_node_inconclusive_result",
+      "test_assert_node_treats_completion_rejected_as_soft_failure",
+      "test_assert_node_normal_completion_still_passes",
+      "test_record_node_builds_step_result",
+      "test_record_node_no_step_result_on_completion",
+      "test_record_node_short_messages_with_step_result"
+    ],
+    "tests/agents/ui/test_planning_graph.py": [
+      "make_planning_state",
+      "test_build_planning_graph",
+      "test_should_continue_exploring_under_limits",
+      "test_should_stop_at_max_pages",
+      "test_should_stop_at_max_time",
+      "test_should_stop_no_tool_call",
+      "test_generate_plan_node_mock",
+      "test_explore_observe_node_mock",
+      "test_explore_decide_node_mock",
+      "test_explore_execute_node_mock",
+      "test_setup_manager_creates_test_case",
+      "test_v162_exploration_prompt_v16_xml_structure",
+      "test_v162_exploration_prompt_tool_call_contract",
+      "test_v162_exploration_prompt_navigate_firewall_documented",
+      "test_v162_exploration_prompt_accounts_injection",
+      "test_v162_exploration_prompt_scenarios_injection",
+      "test_v162_exploration_prompt_safety_valves_in_context",
+      "test_v162_explore_decide_injects_system_model",
+      "test_v162_explore_decide_no_system_model_graceful",
+      "test_v162_explore_decide_uses_v16_xml_prompt",
+      "test_v162_explore_execute_returns_tool_message_on_tool_failure",
+      "test_v162_explore_execute_navigate_firewall_blocks_external_url",
+      "test_v162_explore_execute_navigate_allows_base_url",
+      "test_v162_should_continue_exploring_handles_no_tool_call_as_stop"
+    ],
+    "tests/agents/ui/test_resolve_via_cdp.py": [
+      "FakeCDP",
+      "test_resolve_via_cdp_success"
+    ],
+    "tests/agents/ui/test_screenshot_on_demand.py": [
+      "_clean",
+      "test_consume_quota_default_2",
+      "test_quota_remaining",
+      "test_quota_custom_budget",
+      "test_quota_isolated_per_task",
+      "test_no_task_id_no_quota",
+      "test_reset_screenshot_budget",
+      "test_screenshot_on_demand_returns_b64",
+      "test_screenshot_on_demand_quota_exhausted"
+    ],
+    "tests/agents/ui/test_tools.py": [
+      "_auto_set_task",
+      "page",
+      "test_navigate",
+      "test_click_button",
+      "test_click_by_id",
+      "test_input_text",
+      "test_input_text_by_id",
+      "test_scroll_down",
+      "test_scroll_up",
+      "test_wait",
+      "test_click_missing_element",
+      "test_input_missing_element",
+      "test_tools_by_name_dict",
+      "test_ui_tools_list",
+      "test_refresh",
+      "test_get_page_links",
+      "test_find_returns_matches",
+      "test_get_dropdown_options",
+      "test_refresh_and_get_specific_elements",
+      "test_mark_task_complete_success_single_target",
+      "test_mark_task_complete_rejects_short_reasoning",
+      "test_mark_task_complete_rejects_multi_target_missing_fields",
+      "test_mark_task_complete_accepts_multi_target_with_fields",
+      "test_mark_task_complete_evidence_url_mismatch_warns_not_rejects",
+      "test_element_re_anchoring_on_mismatch",
+      "test_aria_label_and_title_fallback_in_page_semantic",
+      "test_page_bottom_viewport_detection"
+    ],
+    "tests/api/__init__.py": [],
+    "tests/api/test_app.py": [
+      "setup_module",
+      "teardown_module",
+      "_get_client",
+      "test_create_task",
+      "test_create_task_registers_execution_logger_mapping",
+      "test_create_task_tracks_background_task",
+      "test_list_tasks",
+      "test_get_task",
+      "test_get_task_not_found",
+      "test_get_task_steps",
+      "test_stop_task_not_running",
+      "test_stop_task_cancels_running_background_task",
+      "test_delete_task",
+      "test_cors_headers"
+    ],
+    "tests/api/test_database.py": [
+      "setup_module",
+      "teardown_module",
+      "_get_session",
+      "test_task_model_instantiation",
+      "test_create_all_creates_tables",
+      "test_task_step_phase1_columns_exist",
+      "test_crud_create_task",
+      "test_crud_add_steps_and_query_by_task_id",
+      "test_foreign_key_relationships",
+      "test_task_plan_jsonb",
+      "test_timestamps_are_timezone_aware"
+    ],
+    "tests/api/test_websocket.py": [
+      "test_connection_manager_connect",
+      "test_connection_manager_disconnect",
+      "test_send_message",
+      "test_create_ws_message_format",
+      "test_broadcast",
+      "test_websocket_endpoint"
+    ],
+    "tests/benchmarks/__init__.py": [],
+    "tests/benchmarks/webvoyager_subset/__init__.py": [],
+    "tests/benchmarks/webvoyager_subset/runner.py": [
+      "load_tasks",
+      "check_success_keyword",
+      "judge_with_llm",
+      "run_single_task",
+      "run_benchmark",
+      "generate_report",
+      "main"
+    ],
+    "tests/benchmarks/webvoyager_subset/test_day4_integration.py": [
+      "main"
+    ],
+    "tests/benchmarks/webvoyager_subset/test_dry_run.py": [
+      "main"
+    ],
+    "tests/benchmarks/webvoyager_subset/test_lc_schema.py": [],
+    "tests/benchmarks/webvoyager_subset/test_lg_compat.py": [
+      "S",
+      "agent"
+    ],
+    "tests/benchmarks/webvoyager_subset/test_mimo_vision.py": [],
+    "tests/benchmarks/webvoyager_subset/test_mimo_vision2.py": [],
+    "tests/benchmarks/webvoyager_subset/test_mimo.py": [],
+    "tests/benchmarks/webvoyager_subset/test_smoke.py": [],
+    "tests/conftest.py": [
+      "event_loop"
+    ],
+    "tests/core/__init__.py": [],
+    "tests/core/test_backend_node_map.py": [
+      "_clean",
+      "test_store_and_lookup_basic",
+      "test_lookup_missing_task_returns_none",
+      "test_lookup_missing_element_returns_none",
+      "test_store_rejects_empty",
+      "test_store_updates_existing",
+      "test_pruning_by_age",
+      "test_pruning_keeps_fresh",
+      "test_clear_specific_task",
+      "test_stats",
+      "test_get_all_returns_snapshot",
+      "test_multiple_tasks_isolation",
+      "test_hard_cap_max_entries"
+    ],
+    "tests/core/test_cdp_resolve.py": [
+      "FakeCDP",
+      "test_resolve_node_returns_object_id",
+      "test_resolve_node_no_cdp_returns_none",
+      "test_resolve_node_zero_id_returns_none",
+      "test_resolve_node_cdp_error_returns_none",
+      "test_release_object_calls_runtime",
+      "test_release_object_no_cdp_noop",
+      "test_release_object_empty_id_noop",
+      "test_release_object_cdp_error_swallowed"
+    ],
+    "tests/core/test_change_detector.py": [
+      "_make_state",
+      "test_no_changes",
+      "test_url_changed",
+      "test_new_elements_appeared",
+      "test_elements_disappeared",
+      "test_js_errors_detected",
+      "test_network_errors_detected",
+      "test_error_messages_visible",
+      "test_modal_appeared",
+      "test_page_loading",
+      "test_missing_fields_graceful",
+      "test_empty_dicts"
+    ],
+    "tests/core/test_context_manager.py": [
+      "test_should_compact_disabled",
+      "test_should_compact_step_below_threshold",
+      "test_should_compact_step_above_but_tokens_below",
+      "test_should_compact_both_above",
+      "test_should_compact_empty_messages",
+      "test_messages_to_text_basic",
+      "test_messages_to_text_truncates_long_content",
+      "test_messages_to_text_includes_tool_call_id",
+      "test_truncate_physically_keeps_head_and_tail",
+      "test_truncate_physically_short_messages",
+      "test_compact_history_sync_basic",
+      "test_compact_history_sync_no_messages_to_remove",
+      "test_compact_history_with_summary",
+      "test_compact_history_llm_failure_fallback",
+      "test_compact_history_short_messages",
+      "test_build_compact_summary_message",
+      "test_compaction_disabled_uses_physical_truncate"
+    ],
+    "tests/core/test_dependency.py": [
+      "test_no_args_no_dep",
+      "test_same_target_creates_dep",
+      "test_navigate_always_creates_dep",
+      "test_evaluate_js_always_creates_dep",
+      "test_mark_task_always_serial",
+      "test_read_only_independent",
+      "test_screenshot_with_state_change_serial",
+      "test_two_state_changing_serial",
+      "test_independent_different_targets_parallel",
+      "test_split_independent_groups_empty",
+      "test_split_single",
+      "test_split_two_independent",
+      "test_split_two_dependent",
+      "test_split_mixed",
+      "test_is_parallelizable_true",
+      "test_is_parallelizable_false",
+      "test_state_change_vs_read_only_independent"
+    ],
+    "tests/core/test_diag_logger.py": [
+      "test_disabled_diag_logger_finalize_is_awaitable",
+      "test_truncate_llm_content_respects_utf8_byte_limit",
+      "test_diag_logger_flushes_atomically_and_redacts"
+    ],
+    "tests/core/test_l1_prompts.py": [
+      "fixture_name",
+      "fixture_inputs",
+      "_run_l1_mocked",
+      "test_l1_pipeline_schema_validity",
+      "test_n1_quote_fallback_for_adversarial",
+      "test_n15_actor_in_roles",
+      "test_n17_covered_union_missing_equals_all",
+      "test_n2_nodes_normalized",
+      "test_n2_transitions_action_matches_usecase",
+      "test_n3_goals_one_per_usecase",
+      "test_n17_unknown_actor_accounting",
+      "test_n17_unknown_actor_detects_hallucination",
+      "test_v161_strip_node_suffix_basic",
+      "test_v161_align_action_to_usecase",
+      "test_v161_normalize_system_model_end_to_end",
+      "test_v161_derive_minimal_system_model_never_empty",
+      "test_v161_chinese_noun_phrase_validator_tightened",
+      "test_v161_normalize_handles_empty_and_edge_cases",
+      "test_v161_action_alignment_with_substring_lcp_heuristic",
+      "test_l1_live_all_fixtures"
+    ],
+    "tests/core/test_l2_prompts.py": [
+      "sample_test_case",
+      "sample_task_config",
+      "test_execution_prompt_has_test_case_metadata",
+      "test_execution_prompt_does_not_leak_plaintext_password_when_session_summary_present",
+      "test_execution_prompt_has_session_summary_slot",
+      "test_execution_prompt_works_without_optional_fields",
+      "test_step_prompt_in_range",
+      "test_step_prompt_out_of_range",
+      "test_assertion_prompt_contains_expected_fields",
+      "test_assertion_prompt_handles_empty_change",
+      "test_assertion_prompt_already_judged_block_exists",
+      "test_assertion_prompt_does_not_echo_password",
+      "test_decide_node_injects_session_summary_into_system_message",
+      "test_execute_node_failure_increments_consecutive_failures",
+      "test_execute_node_success_does_not_increment",
+      "test_fallback_assertion_on_json_parse_failure",
+      "test_fallback_assertion_with_partial_json",
+      "test_record_node_truncates_messages_under_token_budget",
+      "test_record_node_no_trim_under_budget",
+      "test_evaluate_js_blocks_page_goto",
+      "test_evaluate_js_allows_safe_scripts",
+      "test_b1_execution_prompt_v16_xml_structure",
+      "test_b1_execution_prompt_includes_steps_numbered",
+      "test_b1_execution_prompt_includes_test_case_id_title_description",
+      "test_b1_execution_prompt_output_contract_requires_tool_call",
+      "test_b5_execution_prompt_strips_password",
+      "test_b5_execution_prompt_accounts_block_uses_xml",
+      "test_b1_execution_prompt_rules_numbered",
+      "test_b1_execution_prompt_examples_have_good_and_bad",
+      "test_b1_execution_prompt_c1_c2_c3_c4_optional_blocks",
+      "test_b3_step_prompt_v16_xml",
+      "test_b3_step_prompt_out_of_range_v16",
+      "test_b4_format_page_info_truncates_long_element_text",
+      "test_b4_format_page_info_caps_interactive_elements_count",
+      "test_b4_format_page_info_caps_error_messages",
+      "test_b4_format_page_info_respects_char_budget",
+      "test_b4_format_page_info_handles_empty",
+      "test_b2_assert_node_uses_safe_structured_invoke",
+      "test_b2_assert_node_fallback_when_safe_structured_invoke_returns_none",
+      "test_b2_assertion_prompt_xml_blocks_consistent",
+      "test_inter_node_no_duplicate_fail_when_upstream_already_judged",
+      "test_b4_format_page_info_used_in_decide_prompt",
+      "test_c1_prd_rules_block_injected",
+      "test_c2_focus_areas_block_injected_as_list",
+      "test_c2_focus_areas_string_normalized_to_list",
+      "test_c3_scenarios_block_injected",
+      "test_c4_risk_points_block_injected",
+      "test_c5_step_result_has_reasoning_chain_field",
+      "test_c5_record_node_captures_reasoning_chain",
+      "test_c5_report_builder_includes_reasoning_chain_html",
+      "test_d1_count_tokens_uses_tiktoken",
+      "test_d1_count_tokens_handles_multimodal",
+      "test_d1_count_tokens_handles_chinese",
+      "test_d1_decide_node_writes_token_count_to_state",
+      "test_d1_assert_node_writes_token_count_to_state",
+      "test_d1_step_result_has_token_count_and_duration_fields",
+      "test_d2_log_node_event_appends_to_buffer",
+      "test_d2_get_node_events_filter_by_task_id",
+      "test_d2_observe_node_emits_enter_and_exit_events",
+      "test_d3_report_builder_renders_token_chart_html",
+      "test_d3_report_builder_omits_token_chart_when_no_token_data",
+      "test_d4_should_emit_early_warning_helper",
+      "test_d4_record_node_writes_step_token_log",
+      "test_l2_live_practice_login",
+      "test_parse_browser_use_decision_chinese",
+      "test_parse_browser_use_decision_english",
+      "test_parse_browser_use_decision_partial",
+      "test_parse_browser_use_decision_empty",
+      "test_system_prompt_has_target_format_rule",
+      "test_system_prompt_has_extraction_completeness_rule",
+      "test_system_prompt_has_4_field_rule",
+      "test_system_prompt_has_examples_for_target_and_completeness"
+    ],
+    "tests/core/test_llm_client.py": [
+      "TestGetLlmClient",
+      "TestCountTokens",
+      "test_sanitize_messages_for_structured_output",
+      "test_safe_structured_invoke_recovers_native_tool_args_before_retry",
+      "test_safe_structured_invoke_recovers_native_text_before_retry",
+      "test_safe_structured_invoke_decodes_json_string_list_fields",
+      "test_safe_structured_invoke_accepts_unescaped_control_chars"
+    ],
+    "tests/core/test_logger_report.py": [
+      "setup_module",
+      "teardown_module",
+      "_cleanup_db",
+      "_reset_task_id_map",
+      "_cleanup_reports",
+      "test_log_task_created",
+      "test_log_test_plan",
+      "test_log_step",
+      "test_log_test_result_updates_counts",
+      "test_get_task_steps",
+      "test_get_task_steps_filtered",
+      "test_report_builder_add_result",
+      "test_report_builder_build_html",
+      "test_report_builder_save",
+      "test_report_builder_generate_summary"
+    ],
+    "tests/core/test_page_semantic.py": [
+      "page",
+      "test_extract_login_page",
+      "test_extract_data_table",
+      "test_numbered_ids",
+      "test_max_50_elements",
+      "test_error_messages_detected",
+      "test_success_messages_not_detected_as_errors",
+      "test_take_screenshot_returns_base64",
+      "test_empty_page",
+      "test_headings_extracted"
+    ],
+    "tests/core/test_parallel_executor.py": [
+      "make_call",
+      "test_default_serial",
+      "test_parallel_enabled",
+      "test_parallel_with_deps_splits_waves",
+      "test_executor_exception_caught_serial",
+      "test_empty_calls",
+      "test_unknown_tool_in_serial",
+      "test_parallel_unknown_tool_concurrent"
+    ],
+    "tests/core/test_phase15_prompts.py": [
+      "fixture_name",
+      "fixture_inputs",
+      "_is_scenario_id",
+      "_run_phase15_mocked",
+      "test_phase15_schema_validity",
+      "test_risk_analyzer_invariants",
+      "test_scenario_extractor_invariants",
+      "test_session_summary_invariants",
+      "test_session_summary_status_透传",
+      "test_phase15_live_all_fixtures"
+    ],
+    "tests/core/test_runtime_retry.py": [
+      "_make_test_case",
+      "_make_pass_step",
+      "_make_fail_step",
+      "_make_mock_graph",
+      "_async_gen_from_state",
+      "_make_mock_page",
+      "_make_runtime_instance",
+      "test_always_fail_goes_to_human_review",
+      "test_fail_then_pass",
+      "test_first_attempt_pass",
+      "test_failure_context_injected_in_retry",
+      "test_no_retry_when_max_retries_zero",
+      "test_capture_failure_context_has_a11y_tree"
+    ],
+    "tests/core/test_runtime.py": [
+      "mock_generate_case_summary",
+      "mock_browser_session",
+      "test_runtime_init",
+      "test_runtime_init_generates_uuid_if_missing",
+      "test_empty_test_plan",
+      "test_run_full_session_mock",
+      "test_execute_test_case_mock",
+      "test_execute_test_case_failed_status",
+      "test_execute_test_case_incomplete_status",
+      "test_determine_status_without_terminal_evidence_is_incomplete",
+      "test_determine_status_max_steps_overrides_earlier_pass",
+      "test_execute_test_case_failing_assertion",
+      "test_browser_crash_recovery",
+      "test_browser_lifecycle_mock",
+      "test_run_stream_yields_updates",
+      "test_run_stream_accepts_langgraph_update_dicts",
+      "test_execute_test_case_stream_accepts_langgraph_update_dicts",
+      "test_run_stream_error_handling",
+      "test_handle_browser_crash",
+      "test_now_iso",
+      "test_run_preserves_partial_results_on_error",
+      "test_execute_test_case_with_setup",
+      "test_data_directory_creation"
+    ],
+    "tests/core/test_system_mapper.py": [
+      "make_sample_history",
+      "test_v163_sampling_defaults_to_20_30",
+      "test_v163_sampling_env_overrides",
+      "test_v163_summarize_history_respects_max_pages",
+      "test_v163_summarize_history_respects_max_elements",
+      "test_v163_summarize_history_handles_empty",
+      "test_v163_summarize_history_token_safety",
+      "test_v163_prompt_v16_xml_structure",
+      "test_v163_prompt_output_contract_specifies_three_fields",
+      "test_v163_system_map_schema_valid",
+      "test_v163_extract_returns_empty_on_no_history",
+      "test_v163_extract_returns_empty_on_llm_failure",
+      "test_v163_extract_uses_safe_structured_invoke",
+      "test_v163_generate_system_map_returns_dict",
+      "test_v163_system_map_consumed_by_scenario_extractor",
+      "test_system_mapper_live"
+    ]
+  },
+  "batches": [
+    {
+      "batchIndex": 1,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": "core/change_detector.py",
+          "language": "python",
+          "sizeLines": 79
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/diag_logger.py",
+          "language": "python",
+          "sizeLines": 474
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/interfaces.py",
+          "language": "python",
+          "sizeLines": 548
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/llm_client.py",
+          "language": "python",
+          "sizeLines": 485
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/report_builder.py",
+          "language": "python",
+          "sizeLines": 704
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/goal_extractor.py",
+          "language": "python",
+          "sizeLines": 101
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/knowledge_extractor.py",
+          "language": "python",
+          "sizeLines": 141
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/risk_analyzer.py",
+          "language": "python",
+          "sizeLines": 184
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/scenario_extractor.py",
+          "language": "python",
+          "sizeLines": 188
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/session_summary.py",
+          "language": "python",
+          "sizeLines": 183
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/system_mapper.py",
+          "language": "python",
+          "sizeLines": 170
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/system_modeler.py",
+          "language": "python",
+          "sizeLines": 321
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/use_case_coverage.py",
+          "language": "python",
+          "sizeLines": 266
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/use_case_modeler.py",
+          "language": "python",
+          "sizeLines": 76
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/agents/ui/test_execution_graph.py",
+          "language": "python",
+          "sizeLines": 691
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/agents/ui/test_planning_graph.py",
+          "language": "python",
+          "sizeLines": 748
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_change_detector.py",
+          "language": "python",
+          "sizeLines": 147
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_diag_logger.py",
+          "language": "python",
+          "sizeLines": 54
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_l1_prompts.py",
+          "language": "python",
+          "sizeLines": 494
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_llm_client.py",
+          "language": "python",
+          "sizeLines": 328
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_logger_report.py",
+          "language": "python",
+          "sizeLines": 452
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_runtime.py",
+          "language": "python",
+          "sizeLines": 996
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_runtime_retry.py",
+          "language": "python",
+          "sizeLines": 347
+        }
+      ],
+      "batchImportData": {
+        "core/change_detector.py": [
+          "core/interfaces.py"
+        ],
+        "core/diag_logger.py": [],
+        "core/interfaces.py": [],
+        "core/llm_client.py": [],
+        "core/report_builder.py": [
+          "core/interfaces.py",
+          "core/llm_client.py"
+        ],
+        "core/skills/goal_extractor.py": [
+          "core/diag_logger.py",
+          "core/interfaces.py",
+          "core/llm_client.py"
+        ],
+        "core/skills/knowledge_extractor.py": [
+          "core/diag_logger.py",
+          "core/interfaces.py",
+          "core/llm_client.py"
+        ],
+        "core/skills/risk_analyzer.py": [
+          "core/llm_client.py"
+        ],
+        "core/skills/scenario_extractor.py": [
+          "core/llm_client.py"
+        ],
+        "core/skills/session_summary.py": [
+          "core/llm_client.py"
+        ],
+        "core/skills/system_mapper.py": [
+          "core/llm_client.py"
+        ],
+        "core/skills/system_modeler.py": [
+          "core/diag_logger.py",
+          "core/interfaces.py",
+          "core/llm_client.py"
+        ],
+        "core/skills/use_case_coverage.py": [
+          "core/diag_logger.py",
+          "core/interfaces.py",
+          "core/llm_client.py"
+        ],
+        "core/skills/use_case_modeler.py": [
+          "core/diag_logger.py",
+          "core/interfaces.py",
+          "core/llm_client.py"
+        ],
+        "tests/agents/ui/test_execution_graph.py": [
+          "core/interfaces.py"
+        ],
+        "tests/agents/ui/test_planning_graph.py": [
+          "core/interfaces.py"
+        ],
+        "tests/core/test_change_detector.py": [
+          "core/change_detector.py",
+          "core/interfaces.py"
+        ],
+        "tests/core/test_diag_logger.py": [
+          "core/diag_logger.py"
+        ],
+        "tests/core/test_l1_prompts.py": [
+          "core/skills/system_modeler.py"
+        ],
+        "tests/core/test_llm_client.py": [
+          "core/interfaces.py",
+          "core/llm_client.py"
+        ],
+        "tests/core/test_logger_report.py": [
+          "core/interfaces.py",
+          "database/models.py"
+        ],
+        "tests/core/test_runtime.py": [
+          "core/interfaces.py"
+        ],
+        "tests/core/test_runtime_retry.py": [
+          "core/interfaces.py"
+        ]
+      },
+      "neighborMap": {
+        "core/change_detector.py": [
+          {
+            "path": "agents/ui/execution_graph.py",
+            "batchIndex": 2,
+            "symbols": [
+              "instrument_node",
+              "_fallback_assertion",
+              "_truncate_messages_by_token",
+              "should_continue",
+              "_fast_assert",
+              "should_skip_assert",
+              "should_continue_or_stop",
+              "observe_node",
+              "decide_node",
+              "execute_node",
+              "assert_node",
+              "record_node",
+              "build_execution_graph"
+            ]
+          }
+        ],
+        "core/diag_logger.py": [
+          {
+            "path": "core/runtime.py",
+            "batchIndex": 2,
+            "symbols": [
+              "_dump_node",
+              "_now_iso",
+              "_should_emit_early_warning",
+              "_stream_items",
+              "Runtime"
+            ]
+          }
+        ],
+        "core/interfaces.py": [
+          {
+            "path": "agents/ui/execution_graph.py",
+            "batchIndex": 2,
+            "symbols": [
+              "instrument_node",
+              "_fallback_assertion",
+              "_truncate_messages_by_token",
+              "should_continue",
+              "_fast_assert",
+              "should_skip_assert",
+              "should_continue_or_stop",
+              "observe_node",
+              "decide_node",
+              "execute_node",
+              "assert_node",
+              "record_node",
+              "build_execution_graph"
+            ]
+          },
+          {
+            "path": "agents/ui/planning_graph.py",
+            "batchIndex": 2,
+            "symbols": [
+              "should_continue_exploring",
+              "extract_goals_node",
+              "explore_observe_node",
+              "explore_decide_node",
+              "explore_execute_node",
+              "generate_system_map_node",
+              "extract_scenarios_node",
+              "generate_plan_node",
+              "build_planning_graph"
+            ]
+          },
+          {
+            "path": "agents/ui/prompts.py",
+            "batchIndex": 2,
+            "symbols": [
+              "get_execution_system_prompt",
+              "get_step_prompt",
+              "get_assertion_prompt",
+              "_format_page_info",
+              "get_exploration_system_prompt",
+              "get_plan_generation_prompt",
+              "parse_browser_use_decision"
+            ]
+          },
+          {
+            "path": "agents/ui/setup_manager.py",
+            "batchIndex": 2,
+            "symbols": [
+              "execute_setup"
+            ]
+          },
+          {
+            "path": "agents/ui/tools.py",
+            "batchIndex": 2,
+            "symbols": [
+              "set_current_step",
+              "get_current_step",
+              "set_current_task",
+              "get_current_task_id",
+              "cleanup_task_context",
+              "set_cdp_session",
+              "get_cdp_session_ctx",
+              "set_current_page",
+              "get_current_page",
+              "set_task_config",
+              "get_task_config",
+              "set_current_step_text",
+              "get_current_step_text",
+              "set_current_expected",
+              "get_current_expected",
+              "update_element_map",
+              "get_element_map",
+              "_get_dom_fingerprint",
+              "_wait_for_stable",
+              "_make_action_result",
+              "_normalize_target",
+              "_resolve_via_cdp",
+              "_get_live_element_metadata",
+              "_score_element_match",
+              "_resolve_element",
+              "_should_auto_inject_password",
+              "navigate",
+              "click",
+              "_get_element_info",
+              "_find_similar_elements",
+              "input_text",
+              "scroll",
+              "wait",
+              "_consume_screenshot_quota",
+              "_screenshot_quota_remaining",
+              "reset_screenshot_budget",
+              "screenshot_on_demand",
+              "parallel_tool_calls",
+              "request_human_intervention",
+              "press_key",
+              "hover",
+              "go_back",
+              "extract_text",
+              "search",
+              "select_dropdown",
+              "evaluate_js",
+              "_is_multi_target_expected",
+              "_expected_mentions_url",
+              "mark_task_complete",
+              "mark_task_failed",
+              "mark_task_skipped",
+              "find",
+              "get_dropdown_options",
+              "get_specific_elements",
+              "switch_tab",
+              "close_tab",
+              "refresh",
+              "get_page_links"
+            ]
+          },
+          {
+            "path": "core/execution_logger.py",
+            "batchIndex": 3,
+            "symbols": [
+              "_get_db_id",
+              "log_node_event",
+              "get_node_events",
+              "clear_node_events",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "clear_test_case_steps"
+            ]
+          },
+          {
+            "path": "core/runtime.py",
+            "batchIndex": 2,
+            "symbols": [
+              "_dump_node",
+              "_now_iso",
+              "_should_emit_early_warning",
+              "_stream_items",
+              "Runtime"
+            ]
+          },
+          {
+            "path": "tests/agents/ui/test_action_result.py",
+            "batchIndex": 2,
+            "symbols": [
+              "_auto_task",
+              "test_action_result_new_fields",
+              "test_action_result_is_terminal",
+              "test_action_result_backward_compat",
+              "_FakePage",
+              "test_make_action_result_status_success",
+              "test_make_action_result_status_timeout_inferred",
+              "test_make_action_result_status_not_found_inferred",
+              "test_make_action_result_status_failure_inferred",
+              "test_make_action_result_long_term_memory_auto",
+              "test_make_action_result_explicit_status_overrides",
+              "test_make_action_result_filled_value",
+              "page",
+              "test_navigate_returns_extracted_content",
+              "test_click_success_returns_extracted_content",
+              "test_click_failure_returns_candidates",
+              "test_input_text_success_returns_filled_value",
+              "test_mark_task_complete_has_extracted_content",
+              "test_mark_task_failed_has_error",
+              "test_find_similar_elements_by_text",
+              "test_find_similar_elements_empty_on_no_match"
+            ]
+          }
+        ],
+        "core/llm_client.py": [
+          {
+            "path": "agents/ui/execution_graph.py",
+            "batchIndex": 2,
+            "symbols": [
+              "instrument_node",
+              "_fallback_assertion",
+              "_truncate_messages_by_token",
+              "should_continue",
+              "_fast_assert",
+              "should_skip_assert",
+              "should_continue_or_stop",
+              "observe_node",
+              "decide_node",
+              "execute_node",
+              "assert_node",
+              "record_node",
+              "build_execution_graph"
+            ]
+          },
+          {
+            "path": "agents/ui/planning_graph.py",
+            "batchIndex": 2,
+            "symbols": [
+              "should_continue_exploring",
+              "extract_goals_node",
+              "explore_observe_node",
+              "explore_decide_node",
+              "explore_execute_node",
+              "generate_system_map_node",
+              "extract_scenarios_node",
+              "generate_plan_node",
+              "build_planning_graph"
+            ]
+          },
+          {
+            "path": "core/context_manager.py",
+            "batchIndex": 5,
+            "symbols": [
+              "_env_int",
+              "should_compact",
+              "_messages_to_text",
+              "_invoke_compact_llm",
+              "_truncate_physically",
+              "compact_history",
+              "build_compact_summary_message",
+              "compact_history_sync"
+            ]
+          },
+          {
+            "path": "core/memory_utils.py",
+            "batchIndex": 3,
+            "symbols": [
+              "_sanitize_memory_value",
+              "retrieve_memories",
+              "reflect_on_task"
+            ]
+          }
+        ],
+        "core/report_builder.py": [
+          {
+            "path": "core/runtime.py",
+            "batchIndex": 2,
+            "symbols": [
+              "_dump_node",
+              "_now_iso",
+              "_should_emit_early_warning",
+              "_stream_items",
+              "Runtime"
+            ]
+          }
+        ],
+        "core/skills/session_summary.py": [
+          {
+            "path": "core/runtime.py",
+            "batchIndex": 2,
+            "symbols": [
+              "_dump_node",
+              "_now_iso",
+              "_should_emit_early_warning",
+              "_stream_items",
+              "Runtime"
+            ]
+          }
+        ],
+        "tests/core/test_logger_report.py": [
+          {
+            "path": "database/models.py",
+            "batchIndex": 3,
+            "symbols": [
+              "Base",
+              "Task",
+              "TaskStep",
+              "Report",
+              "AgentMemory"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "batchIndex": 2,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": "agents/ui/execution_graph.py",
+          "language": "python",
+          "sizeLines": 1461
+        },
+        {
+          "fileCategory": "code",
+          "path": "agents/ui/planning_graph.py",
+          "language": "python",
+          "sizeLines": 491
+        },
+        {
+          "fileCategory": "code",
+          "path": "agents/ui/prompts.py",
+          "language": "python",
+          "sizeLines": 910
+        },
+        {
+          "fileCategory": "code",
+          "path": "agents/ui/setup_manager.py",
+          "language": "python",
+          "sizeLines": 52
+        },
+        {
+          "fileCategory": "code",
+          "path": "agents/ui/tools.py",
+          "language": "python",
+          "sizeLines": 1991
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/backend_node_map.py",
+          "language": "python",
+          "sizeLines": 139
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/cdp_client.py",
+          "language": "python",
+          "sizeLines": 656
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/page_semantic.py",
+          "language": "python",
+          "sizeLines": 1052
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/runtime.py",
+          "language": "python",
+          "sizeLines": 1250
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/coverage_tracker.py",
+          "language": "python",
+          "sizeLines": 102
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/agents/ui/test_action_result.py",
+          "language": "python",
+          "sizeLines": 293
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/agents/ui/test_resolve_via_cdp.py",
+          "language": "python",
+          "sizeLines": 90
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/agents/ui/test_screenshot_on_demand.py",
+          "language": "python",
+          "sizeLines": 122
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/agents/ui/test_tools.py",
+          "language": "python",
+          "sizeLines": 474
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/test_day4_integration.py",
+          "language": "python",
+          "sizeLines": 50
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/test_lc_schema.py",
+          "language": "python",
+          "sizeLines": 29
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_cdp_resolve.py",
+          "language": "python",
+          "sizeLines": 86
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_page_semantic.py",
+          "language": "python",
+          "sizeLines": 225
+        }
+      ],
+      "batchImportData": {
+        "agents/ui/execution_graph.py": [
+          "agents/ui/prompts.py",
+          "agents/ui/tools.py",
+          "core/change_detector.py",
+          "core/execution_logger.py",
+          "core/interfaces.py",
+          "core/llm_client.py",
+          "core/page_semantic.py"
+        ],
+        "agents/ui/planning_graph.py": [
+          "agents/ui/prompts.py",
+          "agents/ui/tools.py",
+          "core/interfaces.py",
+          "core/llm_client.py",
+          "core/page_semantic.py"
+        ],
+        "agents/ui/prompts.py": [
+          "core/interfaces.py"
+        ],
+        "agents/ui/setup_manager.py": [
+          "agents/ui/execution_graph.py",
+          "core/interfaces.py"
+        ],
+        "agents/ui/tools.py": [
+          "core/cdp_client.py",
+          "core/interfaces.py"
+        ],
+        "core/backend_node_map.py": [],
+        "core/cdp_client.py": [],
+        "core/page_semantic.py": [],
+        "core/runtime.py": [
+          "agents/ui/execution_graph.py",
+          "agents/ui/planning_graph.py",
+          "agents/ui/setup_manager.py",
+          "agents/ui/tools.py",
+          "core/diag_logger.py",
+          "core/execution_logger.py",
+          "core/interfaces.py",
+          "core/report_builder.py",
+          "core/skills/coverage_tracker.py",
+          "core/skills/session_summary.py",
+          "database/connection.py",
+          "database/models.py"
+        ],
+        "core/skills/coverage_tracker.py": [],
+        "tests/agents/ui/test_action_result.py": [
+          "agents/ui/tools.py",
+          "core/interfaces.py"
+        ],
+        "tests/agents/ui/test_resolve_via_cdp.py": [
+          "agents/ui/tools.py"
+        ],
+        "tests/agents/ui/test_screenshot_on_demand.py": [
+          "agents/ui/tools.py"
+        ],
+        "tests/agents/ui/test_tools.py": [
+          "agents/ui/tools.py"
+        ],
+        "tests/benchmarks/webvoyager_subset/test_day4_integration.py": [
+          "core/backend_node_map.py",
+          "core/page_semantic.py"
+        ],
+        "tests/benchmarks/webvoyager_subset/test_lc_schema.py": [
+          "agents/ui/tools.py"
+        ],
+        "tests/core/test_cdp_resolve.py": [
+          "core/cdp_client.py"
+        ],
+        "tests/core/test_page_semantic.py": [
+          "core/page_semantic.py"
+        ]
+      },
+      "neighborMap": {
+        "agents/ui/execution_graph.py": [
+          {
+            "path": "core/change_detector.py",
+            "batchIndex": 1,
+            "symbols": [
+              "_describe_element",
+              "detect_changes"
+            ]
+          },
+          {
+            "path": "core/execution_logger.py",
+            "batchIndex": 3,
+            "symbols": [
+              "_get_db_id",
+              "log_node_event",
+              "get_node_events",
+              "clear_node_events",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "clear_test_case_steps"
+            ]
+          },
+          {
+            "path": "core/interfaces.py",
+            "batchIndex": 1,
+            "symbols": [
+              "KnowledgeItem",
+              "KnowledgeBase",
+              "UseCase",
+              "UseCaseModel",
+              "StateTransition",
+              "BusinessFlow",
+              "SystemModel",
+              "ExplorationGoal",
+              "TestCase",
+              "Setup",
+              "ActionResult",
+              "StepResult",
+              "AssertionResult",
+              "AgentDecision",
+              "ChangeReport",
+              "TestResult",
+              "TestState",
+              "get_llm_client",
+              "count_tokens",
+              "extract_page_semantics",
+              "take_screenshot",
+              "detect_changes",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "ReportBuilder",
+              "create_test_plan"
+            ]
+          },
+          {
+            "path": "core/llm_client.py",
+            "batchIndex": 1,
+            "symbols": [
+              "get_last_raw",
+              "_get_required_env",
+              "get_llm_client",
+              "_heuristic_count_tokens",
+              "count_tokens",
+              "extract_tool_calls_from_message",
+              "_loads_json_compat",
+              "_extract_json_blob",
+              "_unwrap_content",
+              "_unwrap_envelope",
+              "_decode_json_container_fields",
+              "_coerce_to_pydantic",
+              "sanitize_messages_for_structured_output",
+              "safe_structured_invoke"
+            ]
+          }
+        ],
+        "agents/ui/planning_graph.py": [
+          {
+            "path": "core/interfaces.py",
+            "batchIndex": 1,
+            "symbols": [
+              "KnowledgeItem",
+              "KnowledgeBase",
+              "UseCase",
+              "UseCaseModel",
+              "StateTransition",
+              "BusinessFlow",
+              "SystemModel",
+              "ExplorationGoal",
+              "TestCase",
+              "Setup",
+              "ActionResult",
+              "StepResult",
+              "AssertionResult",
+              "AgentDecision",
+              "ChangeReport",
+              "TestResult",
+              "TestState",
+              "get_llm_client",
+              "count_tokens",
+              "extract_page_semantics",
+              "take_screenshot",
+              "detect_changes",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "ReportBuilder",
+              "create_test_plan"
+            ]
+          },
+          {
+            "path": "core/llm_client.py",
+            "batchIndex": 1,
+            "symbols": [
+              "get_last_raw",
+              "_get_required_env",
+              "get_llm_client",
+              "_heuristic_count_tokens",
+              "count_tokens",
+              "extract_tool_calls_from_message",
+              "_loads_json_compat",
+              "_extract_json_blob",
+              "_unwrap_content",
+              "_unwrap_envelope",
+              "_decode_json_container_fields",
+              "_coerce_to_pydantic",
+              "sanitize_messages_for_structured_output",
+              "safe_structured_invoke"
+            ]
+          }
+        ],
+        "agents/ui/prompts.py": [
+          {
+            "path": "core/interfaces.py",
+            "batchIndex": 1,
+            "symbols": [
+              "KnowledgeItem",
+              "KnowledgeBase",
+              "UseCase",
+              "UseCaseModel",
+              "StateTransition",
+              "BusinessFlow",
+              "SystemModel",
+              "ExplorationGoal",
+              "TestCase",
+              "Setup",
+              "ActionResult",
+              "StepResult",
+              "AssertionResult",
+              "AgentDecision",
+              "ChangeReport",
+              "TestResult",
+              "TestState",
+              "get_llm_client",
+              "count_tokens",
+              "extract_page_semantics",
+              "take_screenshot",
+              "detect_changes",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "ReportBuilder",
+              "create_test_plan"
+            ]
+          }
+        ],
+        "agents/ui/setup_manager.py": [
+          {
+            "path": "core/interfaces.py",
+            "batchIndex": 1,
+            "symbols": [
+              "KnowledgeItem",
+              "KnowledgeBase",
+              "UseCase",
+              "UseCaseModel",
+              "StateTransition",
+              "BusinessFlow",
+              "SystemModel",
+              "ExplorationGoal",
+              "TestCase",
+              "Setup",
+              "ActionResult",
+              "StepResult",
+              "AssertionResult",
+              "AgentDecision",
+              "ChangeReport",
+              "TestResult",
+              "TestState",
+              "get_llm_client",
+              "count_tokens",
+              "extract_page_semantics",
+              "take_screenshot",
+              "detect_changes",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "ReportBuilder",
+              "create_test_plan"
+            ]
+          }
+        ],
+        "agents/ui/tools.py": [
+          {
+            "path": "core/interfaces.py",
+            "batchIndex": 1,
+            "symbols": [
+              "KnowledgeItem",
+              "KnowledgeBase",
+              "UseCase",
+              "UseCaseModel",
+              "StateTransition",
+              "BusinessFlow",
+              "SystemModel",
+              "ExplorationGoal",
+              "TestCase",
+              "Setup",
+              "ActionResult",
+              "StepResult",
+              "AssertionResult",
+              "AgentDecision",
+              "ChangeReport",
+              "TestResult",
+              "TestState",
+              "get_llm_client",
+              "count_tokens",
+              "extract_page_semantics",
+              "take_screenshot",
+              "detect_changes",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "ReportBuilder",
+              "create_test_plan"
+            ]
+          }
+        ],
+        "core/runtime.py": [
+          {
+            "path": "core/diag_logger.py",
+            "batchIndex": 1,
+            "symbols": [
+              "_now_iso",
+              "_hash_obj",
+              "_truncate_str",
+              "_truncate_llm_content",
+              "Redactor",
+              "MetaInjector",
+              "DiagLogger",
+              "_NullLogger",
+              "is_enabled",
+              "set_current_task",
+              "get_current_task",
+              "get_diag",
+              "get_diag_auto",
+              "get_or_create_diag",
+              "slim_page_info"
+            ]
+          },
+          {
+            "path": "core/execution_logger.py",
+            "batchIndex": 3,
+            "symbols": [
+              "_get_db_id",
+              "log_node_event",
+              "get_node_events",
+              "clear_node_events",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "clear_test_case_steps"
+            ]
+          },
+          {
+            "path": "core/interfaces.py",
+            "batchIndex": 1,
+            "symbols": [
+              "KnowledgeItem",
+              "KnowledgeBase",
+              "UseCase",
+              "UseCaseModel",
+              "StateTransition",
+              "BusinessFlow",
+              "SystemModel",
+              "ExplorationGoal",
+              "TestCase",
+              "Setup",
+              "ActionResult",
+              "StepResult",
+              "AssertionResult",
+              "AgentDecision",
+              "ChangeReport",
+              "TestResult",
+              "TestState",
+              "get_llm_client",
+              "count_tokens",
+              "extract_page_semantics",
+              "take_screenshot",
+              "detect_changes",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "ReportBuilder",
+              "create_test_plan"
+            ]
+          },
+          {
+            "path": "core/report_builder.py",
+            "batchIndex": 1,
+            "symbols": [
+              "ReportBuilder"
+            ]
+          },
+          {
+            "path": "core/skills/session_summary.py",
+            "batchIndex": 1,
+            "symbols": [
+              "CaseSummary",
+              "generate_case_summary",
+              "_fallback_summary"
+            ]
+          },
+          {
+            "path": "database/connection.py",
+            "batchIndex": 3,
+            "symbols": [
+              "create_async_engine_instance",
+              "create_sync_engine",
+              "get_async_engine",
+              "_parse_db_url",
+              "_create_database_if_not_exists",
+              "_run_create_all",
+              "init_database"
+            ]
+          },
+          {
+            "path": "database/models.py",
+            "batchIndex": 3,
+            "symbols": [
+              "Base",
+              "Task",
+              "TaskStep",
+              "Report",
+              "AgentMemory"
+            ]
+          }
+        ],
+        "tests/agents/ui/test_action_result.py": [
+          {
+            "path": "core/interfaces.py",
+            "batchIndex": 1,
+            "symbols": [
+              "KnowledgeItem",
+              "KnowledgeBase",
+              "UseCase",
+              "UseCaseModel",
+              "StateTransition",
+              "BusinessFlow",
+              "SystemModel",
+              "ExplorationGoal",
+              "TestCase",
+              "Setup",
+              "ActionResult",
+              "StepResult",
+              "AssertionResult",
+              "AgentDecision",
+              "ChangeReport",
+              "TestResult",
+              "TestState",
+              "get_llm_client",
+              "count_tokens",
+              "extract_page_semantics",
+              "take_screenshot",
+              "detect_changes",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "ReportBuilder",
+              "create_test_plan"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "batchIndex": 3,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": "api/__init__.py",
+          "language": "python",
+          "sizeLines": 4
+        },
+        {
+          "fileCategory": "code",
+          "path": "api/app.py",
+          "language": "python",
+          "sizeLines": 606
+        },
+        {
+          "fileCategory": "code",
+          "path": "api/schemas.py",
+          "language": "python",
+          "sizeLines": 110
+        },
+        {
+          "fileCategory": "code",
+          "path": "api/utils.py",
+          "language": "python",
+          "sizeLines": 49
+        },
+        {
+          "fileCategory": "code",
+          "path": "api/websocket.py",
+          "language": "python",
+          "sizeLines": 135
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/execution_logger.py",
+          "language": "python",
+          "sizeLines": 293
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/memory_utils.py",
+          "language": "python",
+          "sizeLines": 125
+        },
+        {
+          "fileCategory": "code",
+          "path": "database/__init__.py",
+          "language": "python",
+          "sizeLines": 22
+        },
+        {
+          "fileCategory": "code",
+          "path": "database/connection.py",
+          "language": "python",
+          "sizeLines": 170
+        },
+        {
+          "fileCategory": "code",
+          "path": "database/models.py",
+          "language": "python",
+          "sizeLines": 144
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/api/test_app.py",
+          "language": "python",
+          "sizeLines": 347
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/api/test_database.py",
+          "language": "python",
+          "sizeLines": 308
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/api/test_websocket.py",
+          "language": "python",
+          "sizeLines": 118
+        }
+      ],
+      "batchImportData": {
+        "api/__init__.py": [
+          "api/app.py"
+        ],
+        "api/app.py": [
+          "api/schemas.py",
+          "api/utils.py",
+          "api/websocket.py",
+          "core/execution_logger.py",
+          "core/memory_utils.py",
+          "database/connection.py",
+          "database/models.py"
+        ],
+        "api/schemas.py": [],
+        "api/utils.py": [],
+        "api/websocket.py": [
+          "database/connection.py",
+          "database/models.py"
+        ],
+        "core/execution_logger.py": [
+          "core/interfaces.py",
+          "database/connection.py",
+          "database/models.py"
+        ],
+        "core/memory_utils.py": [
+          "core/llm_client.py",
+          "database/connection.py",
+          "database/models.py"
+        ],
+        "database/__init__.py": [
+          "database/connection.py",
+          "database/models.py"
+        ],
+        "database/connection.py": [
+          "database/models.py"
+        ],
+        "database/models.py": [],
+        "tests/api/test_app.py": [
+          "api/app.py",
+          "database/connection.py",
+          "database/models.py"
+        ],
+        "tests/api/test_database.py": [
+          "database/models.py"
+        ],
+        "tests/api/test_websocket.py": [
+          "api/app.py",
+          "api/websocket.py"
+        ]
+      },
+      "neighborMap": {
+        "core/execution_logger.py": [
+          {
+            "path": "core/interfaces.py",
+            "batchIndex": 1,
+            "symbols": [
+              "KnowledgeItem",
+              "KnowledgeBase",
+              "UseCase",
+              "UseCaseModel",
+              "StateTransition",
+              "BusinessFlow",
+              "SystemModel",
+              "ExplorationGoal",
+              "TestCase",
+              "Setup",
+              "ActionResult",
+              "StepResult",
+              "AssertionResult",
+              "AgentDecision",
+              "ChangeReport",
+              "TestResult",
+              "TestState",
+              "get_llm_client",
+              "count_tokens",
+              "extract_page_semantics",
+              "take_screenshot",
+              "detect_changes",
+              "log_task_created",
+              "log_test_plan",
+              "log_step",
+              "log_test_result",
+              "get_task_steps",
+              "ReportBuilder",
+              "create_test_plan"
+            ]
+          },
+          {
+            "path": "agents/ui/execution_graph.py",
+            "batchIndex": 2,
+            "symbols": [
+              "instrument_node",
+              "_fallback_assertion",
+              "_truncate_messages_by_token",
+              "should_continue",
+              "_fast_assert",
+              "should_skip_assert",
+              "should_continue_or_stop",
+              "observe_node",
+              "decide_node",
+              "execute_node",
+              "assert_node",
+              "record_node",
+              "build_execution_graph"
+            ]
+          },
+          {
+            "path": "core/runtime.py",
+            "batchIndex": 2,
+            "symbols": [
+              "_dump_node",
+              "_now_iso",
+              "_should_emit_early_warning",
+              "_stream_items",
+              "Runtime"
+            ]
+          }
+        ],
+        "core/memory_utils.py": [
+          {
+            "path": "core/llm_client.py",
+            "batchIndex": 1,
+            "symbols": [
+              "get_last_raw",
+              "_get_required_env",
+              "get_llm_client",
+              "_heuristic_count_tokens",
+              "count_tokens",
+              "extract_tool_calls_from_message",
+              "_loads_json_compat",
+              "_extract_json_blob",
+              "_unwrap_content",
+              "_unwrap_envelope",
+              "_decode_json_container_fields",
+              "_coerce_to_pydantic",
+              "sanitize_messages_for_structured_output",
+              "safe_structured_invoke"
+            ]
+          }
+        ],
+        "database/connection.py": [
+          {
+            "path": "core/runtime.py",
+            "batchIndex": 2,
+            "symbols": [
+              "_dump_node",
+              "_now_iso",
+              "_should_emit_early_warning",
+              "_stream_items",
+              "Runtime"
+            ]
+          }
+        ],
+        "database/models.py": [
+          {
+            "path": "core/runtime.py",
+            "batchIndex": 2,
+            "symbols": [
+              "_dump_node",
+              "_now_iso",
+              "_should_emit_early_warning",
+              "_stream_items",
+              "Runtime"
+            ]
+          },
+          {
+            "path": "tests/core/test_logger_report.py",
+            "batchIndex": 1,
+            "symbols": [
+              "setup_module",
+              "teardown_module",
+              "_cleanup_db",
+              "_reset_task_id_map",
+              "_cleanup_reports",
+              "test_log_task_created",
+              "test_log_test_plan",
+              "test_log_step",
+              "test_log_test_result_updates_counts",
+              "test_get_task_steps",
+              "test_get_task_steps_filtered",
+              "test_report_builder_add_result",
+              "test_report_builder_build_html",
+              "test_report_builder_save",
+              "test_report_builder_generate_summary"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "batchIndex": 4,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/App.tsx",
+          "language": "typescript",
+          "sizeLines": 27
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/api/client.ts",
+          "language": "typescript",
+          "sizeLines": 122
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/components/DocumentUploader.tsx",
+          "language": "typescript",
+          "sizeLines": 160
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/hooks/useWebSocket.ts",
+          "language": "typescript",
+          "sizeLines": 43
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/main.tsx",
+          "language": "typescript",
+          "sizeLines": 10
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/pages/MemoryManager.tsx",
+          "language": "typescript",
+          "sizeLines": 203
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/pages/Monitor.tsx",
+          "language": "typescript",
+          "sizeLines": 334
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/pages/Report.tsx",
+          "language": "typescript",
+          "sizeLines": 509
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/pages/TaskCreate.tsx",
+          "language": "typescript",
+          "sizeLines": 301
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/pages/TaskHistory.tsx",
+          "language": "typescript",
+          "sizeLines": 175
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/src/types/index.ts",
+          "language": "typescript",
+          "sizeLines": 60
+        }
+      ],
+      "batchImportData": {
+        "frontend/src/App.tsx": [
+          "frontend/src/pages/MemoryManager.tsx",
+          "frontend/src/pages/Monitor.tsx",
+          "frontend/src/pages/Report.tsx",
+          "frontend/src/pages/TaskCreate.tsx",
+          "frontend/src/pages/TaskHistory.tsx"
+        ],
+        "frontend/src/api/client.ts": [
+          "frontend/src/types/index.ts"
+        ],
+        "frontend/src/components/DocumentUploader.tsx": [],
+        "frontend/src/hooks/useWebSocket.ts": [
+          "frontend/src/types/index.ts"
+        ],
+        "frontend/src/main.tsx": [
+          "frontend/src/App.tsx",
+          "frontend/src/index.css"
+        ],
+        "frontend/src/pages/MemoryManager.tsx": [],
+        "frontend/src/pages/Monitor.tsx": [
+          "frontend/src/api/client.ts",
+          "frontend/src/hooks/useWebSocket.ts",
+          "frontend/src/types/index.ts"
+        ],
+        "frontend/src/pages/Report.tsx": [
+          "frontend/src/api/client.ts",
+          "frontend/src/types/index.ts"
+        ],
+        "frontend/src/pages/TaskCreate.tsx": [
+          "frontend/src/api/client.ts",
+          "frontend/src/components/DocumentUploader.tsx",
+          "frontend/src/types/index.ts"
+        ],
+        "frontend/src/pages/TaskHistory.tsx": [
+          "frontend/src/api/client.ts",
+          "frontend/src/types/index.ts"
+        ],
+        "frontend/src/types/index.ts": []
+      },
+      "neighborMap": {
+        "frontend/src/main.tsx": [
+          {
+            "path": "frontend/src/index.css",
+            "batchIndex": 13,
+            "symbols": []
+          }
+        ]
+      }
+    },
+    {
+      "batchIndex": 5,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": "core/context_manager.py",
+          "language": "python",
+          "sizeLines": 251
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/__init__.py",
+          "language": "python",
+          "sizeLines": 0
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_backend_node_map.py",
+          "language": "python",
+          "sizeLines": 115
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_context_manager.py",
+          "language": "python",
+          "sizeLines": 206
+        }
+      ],
+      "batchImportData": {
+        "core/context_manager.py": [
+          "core/llm_client.py"
+        ],
+        "tests/core/__init__.py": [],
+        "tests/core/test_backend_node_map.py": [
+          "tests/core/__init__.py"
+        ],
+        "tests/core/test_context_manager.py": [
+          "core/context_manager.py",
+          "tests/core/__init__.py"
+        ]
+      },
+      "neighborMap": {
+        "core/context_manager.py": [
+          {
+            "path": "core/llm_client.py",
+            "batchIndex": 1,
+            "symbols": [
+              "get_last_raw",
+              "_get_required_env",
+              "get_llm_client",
+              "_heuristic_count_tokens",
+              "count_tokens",
+              "extract_tool_calls_from_message",
+              "_loads_json_compat",
+              "_extract_json_blob",
+              "_unwrap_content",
+              "_unwrap_envelope",
+              "_decode_json_container_fields",
+              "_coerce_to_pydantic",
+              "sanitize_messages_for_structured_output",
+              "safe_structured_invoke"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "batchIndex": 6,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": "core/dependency.py",
+          "language": "python",
+          "sizeLines": 129
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/parallel_executor.py",
+          "language": "python",
+          "sizeLines": 107
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_dependency.py",
+          "language": "python",
+          "sizeLines": 142
+        }
+      ],
+      "batchImportData": {
+        "core/dependency.py": [],
+        "core/parallel_executor.py": [
+          "core/dependency.py"
+        ],
+        "tests/core/test_dependency.py": [
+          "core/dependency.py"
+        ]
+      },
+      "neighborMap": {}
+    },
+    {
+      "batchIndex": 7,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": "core/skills/__init__.py",
+          "language": "python",
+          "sizeLines": 4
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/base.py",
+          "language": "python",
+          "sizeLines": 28
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/skills/registry.py",
+          "language": "python",
+          "sizeLines": 31
+        }
+      ],
+      "batchImportData": {
+        "core/skills/__init__.py": [
+          "core/skills/base.py",
+          "core/skills/registry.py"
+        ],
+        "core/skills/base.py": [],
+        "core/skills/registry.py": [
+          "core/skills/base.py"
+        ]
+      },
+      "neighborMap": {}
+    },
+    {
+      "batchIndex": 8,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/runner.py",
+          "language": "python",
+          "sizeLines": 554
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/test_dry_run.py",
+          "language": "python",
+          "sizeLines": 29
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/test_smoke.py",
+          "language": "python",
+          "sizeLines": 32
+        }
+      ],
+      "batchImportData": {
+        "tests/benchmarks/webvoyager_subset/runner.py": [],
+        "tests/benchmarks/webvoyager_subset/test_dry_run.py": [
+          "tests/benchmarks/webvoyager_subset/runner.py"
+        ],
+        "tests/benchmarks/webvoyager_subset/test_smoke.py": [
+          "tests/benchmarks/webvoyager_subset/runner.py"
+        ]
+      },
+      "neighborMap": {}
+    },
+    {
+      "batchIndex": 9,
+      "files": [
+        {
+          "fileCategory": "docs",
+          "path": "AGENTS.md",
+          "language": "markdown",
+          "sizeLines": 41
+        },
+        {
+          "fileCategory": "docs",
+          "path": "CLAUDE.md",
+          "language": "markdown",
+          "sizeLines": 13
+        },
+        {
+          "fileCategory": "docs",
+          "path": "CONTEXT.md",
+          "language": "markdown",
+          "sizeLines": 122
+        },
+        {
+          "fileCategory": "docs",
+          "path": "README.md",
+          "language": "markdown",
+          "sizeLines": 34
+        },
+        {
+          "fileCategory": "config",
+          "path": "opencode.json",
+          "language": "json",
+          "sizeLines": 11
+        },
+        {
+          "fileCategory": "docs",
+          "path": "requirements.txt",
+          "language": "txt",
+          "sizeLines": 23
+        }
+      ],
+      "batchImportData": {
+        "AGENTS.md": [],
+        "CLAUDE.md": [],
+        "CONTEXT.md": [],
+        "README.md": [],
+        "opencode.json": [],
+        "requirements.txt": []
+      },
+      "neighborMap": {}
+    },
+    {
+      "batchIndex": 10,
+      "files": [
+        {
+          "fileCategory": "docs",
+          "path": "data/fixtures/README.md",
+          "language": "markdown",
+          "sizeLines": 31
+        },
+        {
+          "fileCategory": "docs",
+          "path": "data/fixtures/changelog_aitalk.md",
+          "language": "markdown",
+          "sizeLines": 27
+        },
+        {
+          "fileCategory": "docs",
+          "path": "data/fixtures/changelog_automation_exercise.md",
+          "language": "markdown",
+          "sizeLines": 47
+        },
+        {
+          "fileCategory": "docs",
+          "path": "data/fixtures/prd_adversarial.md",
+          "language": "markdown",
+          "sizeLines": 27
+        },
+        {
+          "fileCategory": "docs",
+          "path": "data/fixtures/prd_aitalk.md",
+          "language": "markdown",
+          "sizeLines": 75
+        },
+        {
+          "fileCategory": "docs",
+          "path": "data/fixtures/prd_automation_exercise.md",
+          "language": "markdown",
+          "sizeLines": 122
+        },
+        {
+          "fileCategory": "docs",
+          "path": "data/fixtures/prd_minimal.md",
+          "language": "markdown",
+          "sizeLines": 5
+        },
+        {
+          "fileCategory": "docs",
+          "path": "data/fixtures/prd_purchase.md",
+          "language": "markdown",
+          "sizeLines": 9
+        },
+        {
+          "fileCategory": "config",
+          "path": "data/fixtures/swagger_aitalk.yaml",
+          "language": "yaml",
+          "sizeLines": 186
+        },
+        {
+          "fileCategory": "config",
+          "path": "data/fixtures/swagger_automation_exercise.yaml",
+          "language": "yaml",
+          "sizeLines": 184
+        },
+        {
+          "fileCategory": "docs",
+          "path": "data/fixtures/swagger_purchase.txt",
+          "language": "txt",
+          "sizeLines": 4
+        }
+      ],
+      "batchImportData": {
+        "data/fixtures/README.md": [],
+        "data/fixtures/changelog_aitalk.md": [],
+        "data/fixtures/changelog_automation_exercise.md": [],
+        "data/fixtures/prd_adversarial.md": [],
+        "data/fixtures/prd_aitalk.md": [],
+        "data/fixtures/prd_automation_exercise.md": [],
+        "data/fixtures/prd_minimal.md": [],
+        "data/fixtures/prd_purchase.md": [],
+        "data/fixtures/swagger_aitalk.yaml": [],
+        "data/fixtures/swagger_automation_exercise.yaml": [],
+        "data/fixtures/swagger_purchase.txt": []
+      },
+      "neighborMap": {}
+    },
+    {
+      "batchIndex": 11,
+      "files": [
+        {
+          "fileCategory": "docs",
+          "path": "docs/DEVELOPMENT.md",
+          "language": "markdown",
+          "sizeLines": 182
+        },
+        {
+          "fileCategory": "docs",
+          "path": "docs/PRD.md",
+          "language": "markdown",
+          "sizeLines": 147
+        },
+        {
+          "fileCategory": "docs",
+          "path": "docs/business_workflow.md",
+          "language": "markdown",
+          "sizeLines": 87
+        },
+        {
+          "fileCategory": "docs",
+          "path": "docs/master-roadmap.md",
+          "language": "markdown",
+          "sizeLines": 73
+        },
+        {
+          "fileCategory": "docs",
+          "path": "docs/prompt-engineering.md",
+          "language": "markdown",
+          "sizeLines": 182
+        }
+      ],
+      "batchImportData": {
+        "docs/DEVELOPMENT.md": [],
+        "docs/PRD.md": [],
+        "docs/business_workflow.md": [],
+        "docs/master-roadmap.md": [],
+        "docs/prompt-engineering.md": []
+      },
+      "neighborMap": {}
+    },
+    {
+      "batchIndex": 12,
+      "files": [
+        {
+          "fileCategory": "docs",
+          "path": "frontend/README.md",
+          "language": "markdown",
+          "sizeLines": 26
+        },
+        {
+          "fileCategory": "markup",
+          "path": "frontend/index.html",
+          "language": "html",
+          "sizeLines": 13
+        },
+        {
+          "fileCategory": "config",
+          "path": "frontend/package.json",
+          "language": "json",
+          "sizeLines": 31
+        },
+        {
+          "fileCategory": "config",
+          "path": "frontend/tsconfig.app.json",
+          "language": "json",
+          "sizeLines": 25
+        },
+        {
+          "fileCategory": "config",
+          "path": "frontend/tsconfig.json",
+          "language": "json",
+          "sizeLines": 7
+        },
+        {
+          "fileCategory": "config",
+          "path": "frontend/tsconfig.node.json",
+          "language": "json",
+          "sizeLines": 24
+        }
+      ],
+      "batchImportData": {
+        "frontend/README.md": [],
+        "frontend/index.html": [],
+        "frontend/package.json": [],
+        "frontend/tsconfig.app.json": [],
+        "frontend/tsconfig.json": [],
+        "frontend/tsconfig.node.json": []
+      },
+      "neighborMap": {}
+    },
+    {
+      "batchIndex": 13,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": ".understand-anything/.understandignore",
+          "language": "unknown",
+          "sizeLines": 26
+        },
+        {
+          "fileCategory": "config",
+          "path": ".understand-anything/config.json",
+          "language": "json",
+          "sizeLines": 3
+        },
+        {
+          "fileCategory": "config",
+          "path": ".understand-anything/domain-graph.json",
+          "language": "json",
+          "sizeLines": 1661
+        },
+        {
+          "fileCategory": "code",
+          "path": "agents/__init__.py",
+          "language": "python",
+          "sizeLines": 0
+        },
+        {
+          "fileCategory": "code",
+          "path": "agents/base.py",
+          "language": "python",
+          "sizeLines": 4
+        },
+        {
+          "fileCategory": "code",
+          "path": "agents/ui/__init__.py",
+          "language": "python",
+          "sizeLines": 0
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/__init__.py",
+          "language": "python",
+          "sizeLines": 0
+        },
+        {
+          "fileCategory": "code",
+          "path": "core/document_parser.py",
+          "language": "python",
+          "sizeLines": 64
+        },
+        {
+          "fileCategory": "docs",
+          "path": "docs/benchmark/2026-06-05-browser-use-alignment.md",
+          "language": "markdown",
+          "sizeLines": 47
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/eslint.config.js",
+          "language": "javascript",
+          "sizeLines": 22
+        },
+        {
+          "fileCategory": "markup",
+          "path": "frontend/src/App.css",
+          "language": "css",
+          "sizeLines": 184
+        },
+        {
+          "fileCategory": "markup",
+          "path": "frontend/src/index.css",
+          "language": "css",
+          "sizeLines": 61
+        },
+        {
+          "fileCategory": "code",
+          "path": "frontend/vite.config.ts",
+          "language": "typescript",
+          "sizeLines": 23
+        },
+        {
+          "fileCategory": "code",
+          "path": "main.py",
+          "language": "python",
+          "sizeLines": 77
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/__init__.py",
+          "language": "python",
+          "sizeLines": 0
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/agents/__init__.py",
+          "language": "python",
+          "sizeLines": 0
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/agents/ui/__init__.py",
+          "language": "python",
+          "sizeLines": 0
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/agents/ui/test_assert_integration.py",
+          "language": "python",
+          "sizeLines": 252
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/api/__init__.py",
+          "language": "python",
+          "sizeLines": 0
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/__init__.py",
+          "language": "python",
+          "sizeLines": 3
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/__init__.py",
+          "language": "python",
+          "sizeLines": 0
+        },
+        {
+          "fileCategory": "config",
+          "path": "tests/benchmarks/webvoyager_subset/tasks.json",
+          "language": "json",
+          "sizeLines": 96
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/test_lg_compat.py",
+          "language": "python",
+          "sizeLines": 51
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/test_mimo_vision.py",
+          "language": "python",
+          "sizeLines": 56
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/test_mimo_vision2.py",
+          "language": "python",
+          "sizeLines": 48
+        }
+      ],
+      "batchImportData": {
+        ".understand-anything/.understandignore": [],
+        ".understand-anything/config.json": [],
+        ".understand-anything/domain-graph.json": [],
+        "agents/__init__.py": [],
+        "agents/base.py": [],
+        "agents/ui/__init__.py": [],
+        "core/__init__.py": [],
+        "core/document_parser.py": [],
+        "docs/benchmark/2026-06-05-browser-use-alignment.md": [],
+        "frontend/eslint.config.js": [],
+        "frontend/src/App.css": [],
+        "frontend/src/index.css": [],
+        "frontend/vite.config.ts": [],
+        "main.py": [],
+        "tests/__init__.py": [],
+        "tests/agents/__init__.py": [],
+        "tests/agents/ui/__init__.py": [],
+        "tests/agents/ui/test_assert_integration.py": [],
+        "tests/api/__init__.py": [],
+        "tests/benchmarks/__init__.py": [],
+        "tests/benchmarks/webvoyager_subset/__init__.py": [],
+        "tests/benchmarks/webvoyager_subset/tasks.json": [],
+        "tests/benchmarks/webvoyager_subset/test_lg_compat.py": [],
+        "tests/benchmarks/webvoyager_subset/test_mimo_vision.py": [],
+        "tests/benchmarks/webvoyager_subset/test_mimo_vision2.py": []
+      },
+      "neighborMap": {
+        "frontend/src/index.css": [
+          {
+            "path": "frontend/src/main.tsx",
+            "batchIndex": 4,
+            "symbols": []
+          }
+        ]
+      }
+    },
+    {
+      "batchIndex": 14,
+      "files": [
+        {
+          "fileCategory": "code",
+          "path": "tests/benchmarks/webvoyager_subset/test_mimo.py",
+          "language": "python",
+          "sizeLines": 96
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/conftest.py",
+          "language": "python",
+          "sizeLines": 22
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_l2_prompts.py",
+          "language": "python",
+          "sizeLines": 1572
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_parallel_executor.py",
+          "language": "python",
+          "sizeLines": 111
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_phase15_prompts.py",
+          "language": "python",
+          "sizeLines": 288
+        },
+        {
+          "fileCategory": "code",
+          "path": "tests/core/test_system_mapper.py",
+          "language": "python",
+          "sizeLines": 280
+        }
+      ],
+      "batchImportData": {
+        "tests/benchmarks/webvoyager_subset/test_mimo.py": [],
+        "tests/conftest.py": [],
+        "tests/core/test_l2_prompts.py": [],
+        "tests/core/test_parallel_executor.py": [],
+        "tests/core/test_phase15_prompts.py": [],
+        "tests/core/test_system_mapper.py": []
+      },
+      "neighborMap": {}
+    }
+  ]
+}

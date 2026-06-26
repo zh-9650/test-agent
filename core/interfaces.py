@@ -14,21 +14,17 @@ core/interfaces.py — AI Native Testing Platform 接口定义
 
 from __future__ import annotations
 
-import operator
-from typing import Annotated, Any, Optional
+from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AnyMessage
-from langchain_core.tools import tool
-from langgraph.graph import MessagesState
-from langgraph.graph.message import add_messages
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 from typing import Literal
 
 # =============================================================================
-# Pydantic Models — ExplorationGoal (供 planning_graph 消费)
+# Pydantic Models — ExplorationGoal (供 RuntimeSession.explore 消费)
 # =============================================================================
 
 class ExplorationGoal(BaseModel):
@@ -106,14 +102,17 @@ class PageMap(BaseModel):
     title: str = Field(default="", description="页面标题")
     elements: list[str] = Field(default_factory=list, description="页面元素摘要")
     discovered_actions: list[str] = Field(default_factory=list, description="该页面发现的可执行动作")
+    evidence_refs: list[str] = Field(default_factory=list, description="页面观察证据引用")
 
 
 class ActionMap(BaseModel):
     """系统地图 — 动作维度"""
     action_name: str = Field(description="动作名称")
     trigger: str = Field(default="", description="触发方式")
+    source_page: str = Field(default="", description="动作所在页面")
     target_page: str = Field(default="", description="目标页面")
     preconditions: list[str] = Field(default_factory=list, description="前置条件")
+    evidence_refs: list[str] = Field(default_factory=list, description="动作观察证据引用")
 
 
 class FormMap(BaseModel):
@@ -122,6 +121,7 @@ class FormMap(BaseModel):
     page: str = Field(default="", description="所在页面")
     fields: list[str] = Field(default_factory=list, description="字段列表")
     submit_action: str = Field(default="", description="提交动作名称")
+    evidence_refs: list[str] = Field(default_factory=list, description="表单观察证据引用")
 
 
 class NavigationMap(BaseModel):
@@ -130,6 +130,7 @@ class NavigationMap(BaseModel):
     target: str = Field(description="目标页面")
     via: str = Field(default="", description="导航方式（点击/跳转/菜单）")
     action: str = Field(default="", description="触发动作")
+    evidence_refs: list[str] = Field(default_factory=list, description="导航前后证据引用")
 
 
 class SystemMapEvid(BaseModel):
@@ -143,6 +144,41 @@ class SystemMapEvid(BaseModel):
     actions: list[ActionMap] = Field(default_factory=list)
     forms: list[FormMap] = Field(default_factory=list)
     navigations: list[NavigationMap] = Field(default_factory=list)
+
+
+class BusinessModule(BaseModel):
+    id: str
+    name: str
+    assertion_ids: list[str] = Field(default_factory=list)
+    page_refs: list[str] = Field(default_factory=list)
+    risk_tier: Literal["high", "medium", "low"] = "medium"
+    is_core: bool = False
+
+
+class BusinessFlow(BaseModel):
+    id: str
+    name: str
+    module_ids: list[str] = Field(default_factory=list)
+    assertion_ids: list[str] = Field(default_factory=list)
+    expected_outcome: str = ""
+    is_core: bool = False
+
+
+class ModuleDependency(BaseModel):
+    id: str
+    source_module_id: str
+    target_module_id: str
+    assertion_ids: list[str] = Field(default_factory=list)
+    dependency_type: Literal["forward", "reverse", "recovery", "data", "state", "permission"] = "forward"
+    risk_tier: Literal["P0", "P1", "P2", "P3"] = "P2"
+    source_basis: list[str] = Field(default_factory=list)
+
+
+class CoverageBlueprint(BaseModel):
+    modules: list[BusinessModule] = Field(default_factory=list)
+    business_flows: list[BusinessFlow] = Field(default_factory=list)
+    dependencies: list[ModuleDependency] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
 
 
 class TestCondition(BaseModel):
@@ -161,6 +197,10 @@ class TestCondition(BaseModel):
     risk_level: Literal["high", "medium", "low"] = Field(default="medium", description="风险等级")
     measurability: Literal["measurable", "partially_measurable", "human_review"] = Field(default="measurable", description="可测量性")
     source_references: list[str] = Field(default_factory=list, description="来源引用")
+    module_ids: list[str] = Field(default_factory=list)
+    business_flow_ids: list[str] = Field(default_factory=list)
+    dependency_ids: list[str] = Field(default_factory=list)
+    branch_type: Literal["positive", "negative", "boundary", "permission", "state", "exception", "recovery", "e2e"] = "positive"
 
 
 class TestDesignTechnique(BaseModel):
@@ -186,6 +226,24 @@ class CoverageItem(BaseModel):
     coverage_dimension: Literal["normal", "boundary", "negative", "permission", "state", "exception", "recovery", "compatibility", "security"] = Field(description="覆盖维度")
     goal: str = Field(description="覆盖目标描述")
     risk_level: Literal["high", "medium", "low"] = Field(default="medium", description="风险等级")
+    variant_key: str = "default"
+    source_references: list[str] = Field(default_factory=list)
+    module_ids: list[str] = Field(default_factory=list)
+    business_flow_ids: list[str] = Field(default_factory=list)
+    dependency_ids: list[str] = Field(default_factory=list)
+    branch_type: Literal["positive", "negative", "boundary", "permission", "state", "exception", "recovery", "e2e"] = "positive"
+
+
+class TestInputDatum(BaseModel):
+    """Candidate-case input without embedding real secrets."""
+
+    name: str
+    value: str | None = None
+    placeholder: str | None = None
+    source: str = ""
+    sensitivity: Literal["public", "internal", "secret"] = "public"
+    generation_strategy: str = ""
+    boundary_category: str = ""
 
 
 class CandidateTestCase(BaseModel):
@@ -201,16 +259,35 @@ class CandidateTestCase(BaseModel):
     title: str = Field(description="用例标题")
     goal: str = Field(description="测试目标")
     description: str = Field(default="", description="用例描述")
-    preconditions: list[str] = Field(default_factory=list, description="前置条件")
-    input_data: dict[str, str] = Field(default_factory=dict, description="输入数据")
+    preconditions: list["StructuredPrecondition"] = Field(default_factory=list)
+    input_data: list[TestInputDatum] = Field(default_factory=list)
     expected_result: str = Field(default="", description="预期结果")
     priority: Literal["high", "medium", "low"] = Field(default="medium", description="优先级")
     category: str = Field(default="functional", description="类别")
     trace_references: list[str] = Field(min_length=1, description="可追溯引用（覆盖项 ID 列表，至少 1 条）")
     execution_hint: str = Field(default="", description="执行提示（轻量级、发现友好的建议）")
     required_roles: list[str] = Field(default_factory=list, description="所需账号角色列表")
+    module_ids: list[str] = Field(default_factory=list)
+    business_flow_ids: list[str] = Field(default_factory=list)
+    dependency_ids: list[str] = Field(default_factory=list)
+    branch_type: Literal["positive", "negative", "boundary", "permission", "state", "exception", "recovery", "e2e"] = "positive"
+    estimated_cost: Literal["low", "medium", "high"] = "medium"
 
-
+    @model_validator(mode="after")
+    def validate_role_contract(self) -> "CandidateTestCase":
+        roles = {
+            precondition.required_role
+            for precondition in self.preconditions
+            if precondition.type == "account_role"
+            and precondition.required_role
+        }
+        missing = roles.difference(self.required_roles)
+        if missing:
+            raise ValueError(
+                "required_roles must include account precondition roles: "
+                + ", ".join(sorted(missing))
+            )
+        return self
 class TraceabilityRow(BaseModel):
     """追溯矩阵的每一行。"""
     fact_id: str = Field(description="事实 ID")
@@ -247,6 +324,18 @@ class QualityGateReport(BaseModel):
     findings: list[QualityGateFinding] = Field(default_factory=list)
 
 
+class ExecutionSelection(BaseModel):
+    profile: Literal["smoke", "balanced", "full"]
+    target_count: int | None = None
+    mandatory_count: int = 0
+    selected_count: int = 0
+    deferred_count: int = 0
+    selected_case_ids: list[str] = Field(default_factory=list)
+    deferred_case_ids: list[str] = Field(default_factory=list)
+    selection_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    coverage_summary: dict[str, Any] = Field(default_factory=dict)
+
+
 class TestAssetPackage(BaseModel):
     """L1/L1.5/L2 的最终交付对象。
 
@@ -258,6 +347,7 @@ class TestAssetPackage(BaseModel):
     exploration_goals: list[ExplorationGoal] = Field(default_factory=list)
     exploration_evidence: dict[str, Any] = Field(default_factory=dict)
     system_map: SystemMapEvid | None = Field(default=None)
+    coverage_blueprint: CoverageBlueprint = Field(default_factory=CoverageBlueprint)
     test_conditions: list[TestCondition] = Field(default_factory=list)
     test_design_techniques: list[TestDesignTechnique] = Field(default_factory=list)
     coverage_items: list[CoverageItem] = Field(default_factory=list)
@@ -306,6 +396,14 @@ class StructuredPrecondition(BaseModel):
         default="incomplete",
         description="无法满足时的失败策略"
     )
+
+    @model_validator(mode="after")
+    def validate_required_role(self) -> "StructuredPrecondition":
+        if self.type == "account_role" and not self.required_role:
+            raise ValueError(
+                "account_role precondition requires required_role"
+            )
+        return self
 
 
 class RuntimeExecutableCase(BaseModel):
@@ -360,6 +458,7 @@ class ExecutionRun(BaseModel):
     started_at: str = Field(default="", description="开始时间 ISO 格式")
     completed_at: str | None = Field(default=None, description="完成时间 ISO 格式")
     candidate_case_ids: list[str] = Field(default_factory=list, description="候选 case ID 列表")
+    resumed_from_run_id: str | None = Field(default=None, description="恢复来源 run ID")
     summary: dict[str, Any] = Field(default_factory=dict, description="运行摘要")
 
 
@@ -385,37 +484,6 @@ class CaseResult(BaseModel):
 # =============================================================================
 # Pydantic Models — 所有模块共享的数据类型
 # =============================================================================
-
-
-class TestCase(BaseModel):
-    """测试用例。规划阶段的输出单位，执行阶段的输入单位。
-
-    由规划子图通过 create_test_plan tool 生成。
-    steps 是自然语言步骤，给执行阶段 LLM 看的任务说明书。
-    """
-
-    id: str = Field(description="用例ID，如 TC-001")
-    title: str = Field(description="用例标题")
-    description: str = Field(default="", description="用例详细描述")
-    preconditions: list[str] = Field(
-        default_factory=list,
-        description="前置条件引用列表，如 ['login_as_admin']，对应 setups 的 key",
-    )
-    steps: list[str] = Field(description="自然语言步骤列表")
-    expected: str = Field(description="预期结果描述")
-    priority: str = Field(default="medium", description="优先级: high / medium / low")
-    category: str = Field(default="functional", description="类别: functional / security / boundary")
-
-
-class Setup(BaseModel):
-    """前置条件/Setup。规划阶段识别的共享前置操作。
-
-    执行阶段用 observe→decide→execute 循环执行 setup，
-    就像执行一个迷你测试用例。不写死任何 login 函数。
-    """
-
-    id: str = Field(description="Setup ID，如 login_as_admin")
-    description: str = Field(description="Setup 描述，给 LLM 看的任务说明")
 
 
 class ActionResult(BaseModel):
@@ -467,75 +535,6 @@ class ActionResult(BaseModel):
         return self.action.startswith("mark_task_")
 
 
-class StepResult(BaseModel):
-    """单步执行结果。每一步（observe→decide→execute→assert）产生一个 StepResult。"""
-
-    step_index: int = Field(description="步骤序号，从 0 开始")
-    action_type: str = Field(default="", description="操作类型: click / input_text / navigate / scroll / wait")
-    action_target: str = Field(default="", description="操作目标描述")
-    action_args: dict[str, Any] = Field(default_factory=dict, description="操作参数")
-    result: str = Field(default="", description="操作执行结果描述")
-    screenshot_path: str = Field(default="", description="截图相对路径")
-    change_report: Optional[ChangeReport] = Field(default=None, description="变化报告")
-    assertion: Optional[AssertionResult] = Field(default=None, description="断言结果")
-    thought: str = Field(default="", description="AI 思考过程（AIMessage.content）")
-    reasoning_chain: list[str] = Field(default_factory=list, description="V2.0 C5: 跨步 AI 思考链 (decide + assert reasoning), 用于 ReportBuilder L2 卡片折叠展示")
-    token_count: int = Field(default=0, description="V2.0 D1: 本步 decide_node 调用消耗的 token 数 (tiktoken 估算)")
-    duration_ms: int = Field(default=0, description="V2.0 D2: 本步总耗时 (ms), observe→decide→execute→assert 累计")
-
-
-class AssertionResult(BaseModel):
-    """断言结果。LLM 语义判断的输出。"""
-
-    status: str = Field(description="pass / fail / inconclusive")
-    reasoning: str = Field(default="", description="判断理由 (LLM 必填, 但 B3.1 fast_assert / record 兜底时允许空)")
-    # BUG-02 fix (2026-06-04 audit): default="" 防止 LLM 漏传 reasoning 触发 Pydantic ValidationError
-    # 之前: reasoning 必填 → 漏传 → ValidationError → 走兜底分支 → 第二次 LLM 调用 (浪费)
-
-
-ToolName = Literal[
-    "navigate",
-    "click",
-    "input_text",
-    "search",
-    "scroll",
-    "wait",
-    "press_key",
-    "hover",
-    "request_human_intervention",
-    "go_back",
-    "extract_text",
-    "select_dropdown",
-    "evaluate_js",
-    "mark_task_complete",
-    "mark_task_failed",
-    "mark_task_skipped",
-    "screenshot_on_demand",
-    "parallel_tool_calls",
-    "find",
-    "get_dropdown_options",
-    "get_specific_elements",
-    "switch_tab",
-    "close_tab",
-    "refresh",
-    "get_page_links",
-]
-
-
-class AgentDecision(BaseModel):
-    """LLM 决策结果。单步 decide 节点的结构化输出。
-
-    action 字段使用 Literal 枚举约束, 防止 LLM 拼错工具名 (Click/clicker 等),
-    一旦写错会在 pydantic 校验阶段就被 safe_structured_invoke 的 fallback 兜住。
-    """
-
-    evaluation: str = Field(description="对上一步操作和目标的评价/复盘 (Evaluation)")
-    memory: str = Field(description="长期或短期记忆，记录当前任务进度和需要记住的状态 (Memory)")
-    next_goal: str = Field(description="下一步的目标是什么 (Next Goal)")
-    action: ToolName = Field(description="要调用的工具名称, 必须是 ToolName 中列出的工具之一")
-    action_input: dict[str, Any] = Field(default_factory=dict, description="传给工具的参数，以键值对表示")
-
-
 class ChangeReport(BaseModel):
     """变化报告。Change Detector 的输出——只报告事实，不做对错判断。
 
@@ -552,109 +551,6 @@ class ChangeReport(BaseModel):
     error_messages_visible: list[str] = Field(default_factory=list, description="页面上可见的错误/提示信息")
     modal_appeared: bool = Field(default=False)
     page_loading: bool = Field(default=False)
-
-
-class TestResult(BaseModel):
-    """单个测试用例的执行结果。包含该用例所有步骤的 StepResult。"""
-
-    test_case_id: str = Field(description="对应的 TestCase.id")
-    status: str = Field(
-        description="passed / failed / skipped / incomplete / human_review_required"
-    )
-    steps: list[StepResult] = Field(default_factory=list)
-    summary: str = Field(default="", description="执行摘要")
-    duration_seconds: float = Field(default=0.0)
-    setup_results: list[StepResult] = Field(default_factory=list, description="前置条件执行步骤")
-    retry_count: int = Field(
-        default=0,
-        description="2026-06-04 retry policy: 0=首次成功, 1-2=重试次数, 3=用尽 (human_review_required)"
-    )
-    failure_context: list[dict[str, Any]] = Field(
-        default_factory=list,
-        description="2026-06-04 retry policy: 每次失败尝试的 context (screenshot/a11y/assertion), "
-        "保留用于后续人工 review 或 AI 修复"
-    )
-
-
-# =============================================================================
-# LangGraph State — 执行图的状态 schema
-# =============================================================================
-
-
-class TestState(MessagesState):
-    """LangGraph 执行图的完整状态。
-
-    设计原则（来自 CONTEXT.md）：
-    - test_plan、results、setups 是结构化数据，不进 LLM 上下文窗口
-    - messages 只包含当前用例的对话，用例结束后清空
-    - page_info 和 screenshot 每步刷新
-    - state_before/state_after 用于 Change Detector
-    """
-
-    # 规划阶段输出（结构化数据，不占上下文窗口）
-    test_plan: list[TestCase]
-    setups: dict[str, Setup]
-
-    # 执行追踪
-    current_index: int  # 当前执行到第几个用例
-    current_step: int  # 当前用例内的步骤序号
-    # 累积结果：使用 operator.add reducer，节点只返回新增的 [TestResult]，框架自动追加
-    results: Annotated[list[TestResult], operator.add]
-    consecutive_failures: int  # 连续失败计数
-
-    # 页面信息（每步刷新）
-    page_info: dict[str, Any]  # Page Semantic Layer 输出
-    screenshot: str  # base64 编码的截图
-
-    # 变化检测（execute 前快照 → execute 后快照）
-    state_before: dict[str, Any]
-    state_after: dict[str, Any]
-    screenshot_after: str  # 执行操作后的 base64 截图
-
-    # 步骤收集（record_node 每步追加，operator.add reducer 自动累加）
-    _collected_steps: Annotated[list[StepResult], operator.add]
-
-    # 每步临时数据（被下一步覆盖，不进 reducer）
-    _last_tool_result: str  # execute_node 设置的工具执行结果文本
-    _last_tool_calls: list[dict[str, Any]]  # V2.0-A (2026-06-02): execute_node 传给 assert_node 的工具调用列表 (供 Rule 0.5 mark_task_complete 使用)
-    _last_change_report: Optional[ChangeReport]  # assert_node 设置的变化报告
-    _last_assertion: Optional[AssertionResult]  # assert_node 设置的断言结果
-    _last_evaluation: str  # LLM 对上一步操作和目标的评价/复盘
-    _last_memory: str  # LLM 对任务进度和需要记住的状态的记忆
-    _last_next_goal: str  # LLM 对下一步的目标
-
-    # Phase 2.0A Sprint 2: 标准化动作执行结果 (execute_node 写入, assert_node 读取)
-    _last_action_result: Optional[ActionResult]  # 上一步工具的结构化执行结果
-    _last_action_result_text: str  # 上一步工具的可读文本 (用于 ToolMessage)
-
-    # Phase 2.0A Sprint 5: Failure Memory 失败动作记忆
-    recent_failures: list[dict[str, Any]] = Field(default_factory=list, description="滑动队列, 最大 3 条, 按 deque 淘汰")
-
-    # B3.2: Locator 失败率统计
-    _locator_stats: dict[str, int] = Field(default_factory=lambda: {"total": 0, "failed": 0}, description="locator 解析统计")
-
-    # Phase 2.0A Sprint 6: Loop Detection 动作历史
-    action_history: list[dict[str, Any]] = Field(default_factory=list, description="最近 6 步动作一级分类记录")
-    need_replan: bool = Field(default=False, description="Loop Detection 触发后标记, decide_node 据此注入 [SYSTEM INTERRUPT]")
-
-    # browser-use 对齐 (2026-06-05): agent_history 结构化历史
-    # 仿 browser-use <agent_history><step_N>{Evaluation, Memory, Next Goal, Action Results}</step_N>
-    # 每步由 decide_node 追加, 渲染时序列化为 XML 块
-    agent_history: list[dict[str, Any]] = Field(
-        default_factory=list,
-        description="结构化历史: [{step, evaluation, memory, next_goal, action, action_result, page_state_summary}, ...]"
-    )
-
-    # V2.0 D 可观测性 (2026-06-02)
-    _last_token_count: int  # D1: 上一次 LLM 调用 (decide/assert) 的 token 数
-    _last_node_name: str  # D2: 上一次执行的节点名 (runtime 据此发 node_event WebSocket)
-    _last_node_duration_ms: int  # D2: 上一次节点耗时
-    _early_warning_sent: bool  # D4: 当前 case 早警告是否已发 (限频 1/case)
-    _step_token_log: Annotated[list[dict[str, Any]], operator.add]  # D3: 每步 token+duration, ReportBuilder 折线用
-
-    # 任务元数据
-    task_id: str
-    task_config: dict[str, Any]  # 测试规则、账号信息、关注领域等
 
 
 # =============================================================================
@@ -745,102 +641,3 @@ def detect_changes(state_before: dict[str, Any], state_after: dict[str, Any]) ->
         ChangeReport 实例
     """
     ...
-
-
-# --- Execution Logger (core/execution_logger.py) ---
-
-
-async def log_task_created(task_id: str, task_name: str, target_url: str, config: dict) -> None:
-    """记录任务创建到数据库。"""
-    ...
-
-
-async def log_test_plan(task_id: str, test_plan: list[TestCase]) -> None:
-    """记录生成的测试计划到数据库。"""
-    ...
-
-
-async def log_step(task_id: str, test_case_id: str, step: StepResult) -> None:
-    """记录单个步骤到数据库（task_step 表）。"""
-    ...
-
-
-async def log_test_result(task_id: str, result: TestResult) -> None:
-    """记录测试用例结果，更新 task 表的 passed_tests/failed_tests 计数。"""
-    ...
-
-
-async def get_task_steps(task_id: str, test_case_id: str = "") -> list[dict[str, Any]]:
-    """查询任务步骤记录。不传 test_case_id 则返回所有步骤。"""
-    ...
-
-
-# --- Report Builder (core/report_builder.py) ---
-
-
-class ReportBuilder:
-    """报告生成器骨架。各 Agent 各自填充内容。"""
-
-    def __init__(self, task_id: str) -> None:
-        ...
-
-    def add_result(self, result: TestResult) -> None:
-        """添加一个测试用例的结果。"""
-        ...
-
-    def build_html(self, ai_summary: str = "") -> str:
-        """生成 HTML 报告内容。
-
-        Args:
-            ai_summary: LLM 生成的测试总结文本，嵌入到报告头部。
-        """
-        ...
-
-    def save(self, output_path: str, ai_summary: str = "") -> str:
-        """保存报告到文件系统，返回相对路径。
-
-        Args:
-            output_path: 报告输出路径。
-            ai_summary: LLM 生成的测试总结文本。
-        """
-        ...
-
-    async def generate_summary(self, results: list[TestResult]) -> str:
-        """用 LLM 生成测试总结（使用轻量模型 deepseek-v4-flash）。"""
-        ...
-
-
-# --- Planning Tool (agents/ui/planning_graph.py 中注册) ---
-# 放在这里是为了类型定义的集中管理。
-# graph-dev 在 planning_graph.py 中 import 此函数并注册到 bind_tools()。
-
-
-@tool
-def create_test_plan(
-    test_cases: list[dict[str, Any]],
-    setups: list[dict[str, Any]],
-) -> str:
-    """创建结构化测试计划。规划阶段 LLM 通过调用此 tool 输出测试计划。
-
-    每个 test_case 必须包含:
-    - id: str (如 "TC-001")
-    - title: str
-    - description: str
-    - preconditions: list[str] (引用 setup 的 id)
-    - steps: list[str] (自然语言步骤)
-    - expected: str (预期结果)
-    - priority: str ("high" / "medium" / "low")
-    - category: str ("functional" / "security" / "boundary")
-
-    每个 setup 必须包含:
-    - id: str (如 "login_as_admin")
-    - description: str
-
-    Args:
-        test_cases: 测试用例列表
-        setups: 前置条件列表
-
-    Returns:
-        "已创建测试计划，共 N 个用例"
-    """
-    return f"已创建测试计划，共 {len(test_cases)} 个用例"

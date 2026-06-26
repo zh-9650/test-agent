@@ -1,0 +1,230 @@
+{
+    "nodes":  [
+                  {
+                      "id":  "file:core/dependency.py",
+                      "name":  "dependency.py",
+                      "tags":  [
+                                   "dependency",
+                                   "core",
+                                   "util"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "core/dependency.py",
+                      "type":  "file",
+                      "summary":  "依赖关系检测工具，判断两个工具调用是否存在依赖"
+                  },
+                  {
+                      "id":  "function:core/dependency.py:has_dependency",
+                      "name":  "has_dependency",
+                      "tags":  [
+                                   "dependency",
+                                   "detection"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "core/dependency.py",
+                      "type":  "function",
+                      "summary":  "判断两个工具调用是否存在依赖，基于 target/state/read-only 规则"
+                  },
+                  {
+                      "id":  "function:core/dependency.py:split_independent_groups",
+                      "name":  "split_independent_groups",
+                      "tags":  [
+                                   "scheduling",
+                                   "parallel"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "core/dependency.py",
+                      "type":  "function",
+                      "summary":  "将调用列表拆分为独立的执行波次(wave)，同一wave内可并行"
+                  },
+                  {
+                      "id":  "function:core/dependency.py:is_parallelizable",
+                      "name":  "is_parallelizable",
+                      "tags":  [
+                                   "parallel",
+                                   "check"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "core/dependency.py",
+                      "type":  "function",
+                      "summary":  "检查一组调用是否可以并行执行"
+                  },
+                  {
+                      "id":  "file:core/parallel_executor.py",
+                      "name":  "parallel_executor.py",
+                      "tags":  [
+                                   "parallel",
+                                   "executor",
+                                   "core"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "core/parallel_executor.py",
+                      "type":  "file",
+                      "summary":  "并行执行器，按依赖分析结果将调用分组并行执行"
+                  },
+                  {
+                      "id":  "function:core/parallel_executor.py:is_parallel_enabled",
+                      "name":  "is_parallel_enabled",
+                      "tags":  [
+                                   "parallel",
+                                   "config"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "core/parallel_executor.py",
+                      "type":  "function",
+                      "summary":  "检查环境变量是否启用了并行执行"
+                  },
+                  {
+                      "id":  "function:core/parallel_executor.py:execute_parallel_calls",
+                      "name":  "execute_parallel_calls",
+                      "tags":  [
+                                   "parallel",
+                                   "async"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "core/parallel_executor.py",
+                      "type":  "function",
+                      "summary":  "按依赖分析结果将调用分组，使用 asyncio.gather 并行执行"
+                  },
+                  {
+                      "id":  "file:tests/core/test_dependency.py",
+                      "name":  "test_dependency.py",
+                      "tags":  [
+                                   "test",
+                                   "dependency"
+                               ],
+                      "complexity":  "moderate",
+                      "filePath":  "tests/core/test_dependency.py",
+                      "type":  "file",
+                      "summary":  "依赖检测工具的测试套件"
+                  },
+                  {
+                      "id":  "function:tests/core/test_dependency.py:test_no_args_no_dep",
+                      "name":  "test_no_args_no_dep",
+                      "tags":  [
+                                   "test"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "tests/core/test_dependency.py",
+                      "type":  "function",
+                      "summary":  "测试无参数无依赖场景"
+                  },
+                  {
+                      "id":  "function:tests/core/test_dependency.py:test_same_target_creates_dep",
+                      "name":  "test_same_target_creates_dep",
+                      "tags":  [
+                                   "test"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "tests/core/test_dependency.py",
+                      "type":  "function",
+                      "summary":  "测试相同 target 产生依赖"
+                  },
+                  {
+                      "id":  "function:tests/core/test_dependency.py:test_navigate_always_creates_dep",
+                      "name":  "test_navigate_always_creates_dep",
+                      "tags":  [
+                                   "test"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "tests/core/test_dependency.py",
+                      "type":  "function",
+                      "summary":  "测试 navigate 始终串行"
+                  },
+                  {
+                      "id":  "function:tests/core/test_dependency.py:test_split_independent_groups",
+                      "name":  "test_split_independent_groups",
+                      "tags":  [
+                                   "test"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "tests/core/test_dependency.py",
+                      "type":  "function",
+                      "summary":  "测试 wave 拆分逻辑"
+                  },
+                  {
+                      "id":  "function:tests/core/test_dependency.py:test_is_parallelizable",
+                      "name":  "test_is_parallelizable",
+                      "tags":  [
+                                   "test"
+                               ],
+                      "complexity":  "simple",
+                      "filePath":  "tests/core/test_dependency.py",
+                      "type":  "function",
+                      "summary":  "测试并行性判断"
+                  }
+              ],
+    "edges":  [
+                  {
+                      "target":  "file:core/dependency.py",
+                      "direction":  "directed",
+                      "source":  "file:core/parallel_executor.py",
+                      "type":  "imports",
+                      "weight":  0.7
+                  },
+                  {
+                      "target":  "function:core/dependency.py:split_independent_groups",
+                      "direction":  "directed",
+                      "source":  "function:core/parallel_executor.py:execute_parallel_calls",
+                      "type":  "calls",
+                      "weight":  0.8
+                  },
+                  {
+                      "target":  "function:core/dependency.py:is_parallelizable",
+                      "direction":  "directed",
+                      "source":  "function:core/parallel_executor.py:execute_parallel_calls",
+                      "type":  "calls",
+                      "weight":  0.8
+                  },
+                  {
+                      "target":  "function:core/parallel_executor.py:is_parallel_enabled",
+                      "direction":  "directed",
+                      "source":  "function:core/parallel_executor.py:execute_parallel_calls",
+                      "type":  "calls",
+                      "weight":  0.8
+                  },
+                  {
+                      "target":  "file:core/dependency.py",
+                      "direction":  "directed",
+                      "source":  "file:tests/core/test_dependency.py",
+                      "type":  "tested_by",
+                      "weight":  0.5
+                  },
+                  {
+                      "target":  "function:core/dependency.py:has_dependency",
+                      "direction":  "directed",
+                      "source":  "function:tests/core/test_dependency.py:test_no_args_no_dep",
+                      "type":  "calls",
+                      "weight":  0.8
+                  },
+                  {
+                      "target":  "function:core/dependency.py:has_dependency",
+                      "direction":  "directed",
+                      "source":  "function:tests/core/test_dependency.py:test_same_target_creates_dep",
+                      "type":  "calls",
+                      "weight":  0.8
+                  },
+                  {
+                      "target":  "function:core/dependency.py:has_dependency",
+                      "direction":  "directed",
+                      "source":  "function:tests/core/test_dependency.py:test_navigate_always_creates_dep",
+                      "type":  "calls",
+                      "weight":  0.8
+                  },
+                  {
+                      "target":  "function:core/dependency.py:split_independent_groups",
+                      "direction":  "directed",
+                      "source":  "function:tests/core/test_dependency.py:test_split_independent_groups",
+                      "type":  "calls",
+                      "weight":  0.8
+                  },
+                  {
+                      "target":  "function:core/dependency.py:is_parallelizable",
+                      "direction":  "directed",
+                      "source":  "function:tests/core/test_dependency.py:test_is_parallelizable",
+                      "type":  "calls",
+                      "weight":  0.8
+                  }
+              ],
+    "batchIndex":  6
+}

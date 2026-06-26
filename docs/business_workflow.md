@@ -1,5 +1,17 @@
 # Business Workflow
 
+The authoritative task phases are `analyzing`, `exploring`, `designing`,
+`executing`, and `reporting`. A run has one terminal `CaseResult` per planned
+candidate case. Product assertion failures remain case failures while the task
+may complete; analysis, exploration, design, and execution-system failures fail
+the task.
+
+Cancellation preserves completed cases, marks the active missing case
+`incomplete`, marks later cases `skipped`, and only then marks the run and task
+cancelled. Resume creates a new run for previous non-passed cases. Reports read
+`ExecutionRun + CaseResult + TaskStep + TestAssetPackage`; report failure never
+rewrites execution results.
+
 This document describes the intended task lifecycle at a business level. For
 implementation details and known deviations, see `CONTEXT.md`.
 
@@ -31,20 +43,36 @@ Layer 1 runs as the primary pipeline:
    from downstream design and flagged as `manual_review_items`.
 
 The resulting facts, assertions, and goals are the primary inputs to all
-downstream stages.
+downstream stages. This partial analysis package is persisted before live
+exploration so a failed exploration remains diagnosable.
 
 ## 4. Live Exploration & System Evidence
 
-The planning graph:
+`RuntimeSession.explore()`:
 
 1. consumes exploration goals from the analysis pipeline;
 2. observes the live target application;
-3. chooses and executes exploration actions;
+3. chooses grounded actions from a bounded, value-redacted semantic snapshot
+   containing real element IDs, then executes them;
 4. stops at configured page/time limits;
 5. builds a `SystemMap` with `PageMap`, `ActionMap`, `FormMap`, and
    `NavigationMap` evidence from the observed UI.
 
-Exploration output is stored as `SystemMapEvid` and passed to test design.
+Observed controls and forms are promoted deterministically into structured map
+entries. Navigation edges are added only when a successful grounded action is
+followed by a canonical route change. Page, action, form, and navigation
+entries retain compact evidence references and source-page context.
+
+Exploration must retain page evidence from every meaningful observed page, even
+when a strict goal remains `insufficient` or `not_found`; the system must not
+drop usable live UI evidence just because no goal reached `found`.
+
+Exploration output is written back into the task `analysis_package` as
+`SystemMapEvid` before the exploration gate decides whether the task can
+continue. Goal verdicts and measured surface/evidence counts are retained in
+`TestAssetPackage.exploration_evidence` through final design. The task should
+fail exploration only when there are no goal results or no usable live page
+evidence at all.
 
 ## 5. Test Design & Packaging
 
@@ -52,15 +80,17 @@ After exploration, the pipeline continues deterministically:
 
 1. `TestCondition` — what to verify in what scenario, leveraging both
    document assertions and live `SystemMapEvid` when available;
-2. `TestDesignTechnique` — equivalence partitioning, boundary value analysis,
+2. `CoverageBlueprint` — grounded modules, core flows, dependencies, and
+   unresolved gaps;
+3. `TestDesignTechnique` — equivalence partitioning, boundary value analysis,
    error guessing, etc.;
-3. `CoverageItem` — coverage obligations across normal, boundary, negative,
+4. `CoverageItem` — coverage obligations across normal, boundary, negative,
    exception, and risk dimensions;
-4. `CandidateTestCase` — lightweight, traceable test assets (not brittle UI
+5. `CandidateTestCase` — lightweight, traceable test assets (not brittle UI
    click scripts);
-5. `TraceabilityMatrix` — links every fact → assertion → condition → technique
+6. `TraceabilityMatrix` — links every fact → assertion → condition → technique
    → coverage item → candidate case;
-6. `TestAssetPackage` — the final deliverable, persisted to the database
+7. `TestAssetPackage` — the final deliverable, persisted to the database
    `analysis_package` JSONB column.
 
 High-risk `auto_generated` assertions are surfaced in `manual_review_items`
@@ -73,6 +103,14 @@ business goal, expected result, preconditions, data hints, and trace references;
 it must not contain fixed UI click steps. Runtime may adapt it into an internal
 runtime view, but that adapter must be lossless and must not generate a second
 source of test intent.
+
+The package retains every grounded candidate case. Before first execution a
+deterministic selector records selected and deferred IDs plus reasons, and
+only the auto-executable subset may enter the first `ExecutionRun`. Cases that
+depend on devtools, source view, unsupported pointer gestures, or non-agent
+preconditions remain deferred assets instead of being forced into automatic
+execution. Resume does not reconsider deferred assets; it retries only
+non-passed cases from the previous run.
 
 For compatibility with plan checks: CandidateTestCase is the target authority.
 
@@ -100,6 +138,16 @@ For each candidate case, Runtime:
 8. persists step evidence with run and attempt identity;
 9. records exactly one terminal result for the candidate case.
 
+Stable URL, page-title, heading, modal, and error evidence is evaluated
+deterministically before semantic terminal judgment. Semantic element IDs are
+resolved by unique role/text first and XPath only as a fallback. When a case
+explicitly requires DOM editability checks such as `contenteditable`, Runtime
+may perform a direct deterministic DOM inspection on the live page instead of
+asking the LLM to improvise browser-console actions.
+For real select controls, Runtime may use a structured `select_option` action;
+if the model mistakenly targets a concrete `<option>` with a click, Runtime may
+rewrite that action to the parent `<select>` before consuming more retry budget.
+
 Failed attempts may be retried with captured context, but retries must preserve
 previous attempt evidence. Retry must not delete prior steps.
 
@@ -113,11 +161,10 @@ Every planned case must produce exactly one terminal result:
 - incomplete;
 - human review required.
 
-Task status, persisted counters, WebSocket completion data, and report totals
+Task status, persisted summaries, WebSocket completion data, and report totals
 must all be derived from the same result set.
 
-This contract is not fully satisfied by the current implementation and is the
-active P0 roadmap item.
+This is the maintained production contract.
 
 ## 8. Reporting And Memory
 

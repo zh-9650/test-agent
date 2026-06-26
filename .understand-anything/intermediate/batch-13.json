@@ -1,0 +1,546 @@
+{
+  "batchIndex": 13,
+  "nodes": [
+    {
+      "id": "config:.understand-anything/.understandignore",
+      "type": "config",
+      "name": ".understandignore",
+      "filePath": ".understand-anything/.understandignore",
+      "summary": "忽略规则配置，定义代码分析时应排除的文件/目录模式",
+      "tags": ["config", "ignore", "understand-anything"],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:.understand-anything/config.json",
+      "type": "config",
+      "name": "config.json",
+      "filePath": ".understand-anything/config.json",
+      "summary": "Understand-Anything 插件配置，指定输出语言为中文",
+      "tags": ["config", "understand-anything", "output-language"],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:.understand-anything/domain-graph.json",
+      "type": "config",
+      "name": "domain-graph.json",
+      "filePath": ".understand-anything/domain-graph.json",
+      "summary": "领域知识图谱，存储已提取的领域模型、实体关系与业务流",
+      "tags": ["config", "domain-graph", "knowledge-graph"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:agents/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "agents/__init__.py",
+      "summary": "agents 包初始化模块，空文件",
+      "tags": ["python", "package", "init"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:agents/base.py",
+      "type": "file",
+      "name": "base.py",
+      "filePath": "agents/base.py",
+      "summary": "AgentBase 基类占位，定义所有 Agent 共享的生命周期，Phase 1 仅含 UIAgent",
+      "tags": ["python", "base-class", "agent"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:agents/ui/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "agents/ui/__init__.py",
+      "summary": "agents/ui 子包初始化模块，空文件",
+      "tags": ["python", "package", "init"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:core/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "core/__init__.py",
+      "summary": "core 包初始化模块，空文件",
+      "tags": ["python", "package", "init"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:core/document_parser.py",
+      "type": "file",
+      "name": "document_parser.py",
+      "filePath": "core/document_parser.py",
+      "summary": "文档解析工具，通过 Playwright 抓取 URL 文本内容，替换配置中的 URL 为实际内容",
+      "tags": ["python", "parser", "playwright", "url-fetching"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:core/document_parser.py:fetch_url_content",
+      "type": "function",
+      "name": "fetch_url_content",
+      "filePath": "core/document_parser.py",
+      "summary": "使用 Playwright 无头浏览器抓取 URL 的文本内容，返回格式化文本块",
+      "tags": ["async-function", "url-fetching", "playwright"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:core/document_parser.py:parse_and_fetch_links",
+      "type": "function",
+      "name": "parse_and_fetch_links",
+      "filePath": "core/document_parser.py",
+      "summary": "扫描配置字段（prd/api_doc/changelog）中的 URL 并替换为抓取内容，最多每字段处理 3 个 URL",
+      "tags": ["async-function", "config-processing", "url-fetching"],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:docs/benchmark/2026-06-05-browser-use-alignment.md",
+      "type": "document",
+      "name": "2026-06-05-browser-use-alignment.md",
+      "filePath": "docs/benchmark/2026-06-05-browser-use-alignment.md",
+      "summary": "Browser-use 对齐基准测试文档，记录浏览器行为对齐方案",
+      "tags": ["document", "benchmark", "browser-use"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:frontend/eslint.config.js",
+      "type": "file",
+      "name": "eslint.config.js",
+      "filePath": "frontend/eslint.config.js",
+      "summary": "前端 ESLint 扁平化配置，集成 TypeScript、React Hooks 和 React Refresh 规则",
+      "tags": ["javascript", "eslint", "config", "frontend"],
+      "complexity": "simple"
+    },
+    {
+      "id": "markup:frontend/src/App.css",
+      "type": "markup",
+      "name": "App.css",
+      "filePath": "frontend/src/App.css",
+      "summary": "前端 App 组件样式表，定义布局、颜色和组件样式",
+      "tags": ["css", "style", "frontend"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "markup:frontend/src/index.css",
+      "type": "markup",
+      "name": "index.css",
+      "filePath": "frontend/src/index.css",
+      "summary": "前端全局样式表，设置基础样式、字体和 CSS 变量",
+      "tags": ["css", "style", "frontend", "global"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:frontend/vite.config.ts",
+      "type": "file",
+      "name": "vite.config.ts",
+      "filePath": "frontend/vite.config.ts",
+      "summary": "Vite 构建配置，配置 React 插件和开发服务器代理（API/静态/WebSocket 代理到后端 8002 端口）",
+      "tags": ["typescript", "vite", "config", "frontend"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:main.py",
+      "type": "file",
+      "name": "main.py",
+      "filePath": "main.py",
+      "summary": "AI Native Testing Platform 统一入口，同时启动后端（uvicorn）和前端开发服务器，自动处理 SIGINT/SIGTERM 优雅关闭",
+      "tags": ["python", "entry-point", "cli"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:main.py:main",
+      "type": "function",
+      "name": "main",
+      "filePath": "main.py",
+      "summary": "启动后端 uvicorn 服务器，可选启动前端 npm dev server，注册信号处理函数实现优雅关闭",
+      "tags": ["function", "entry-point", "startup"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:main.py:shutdown",
+      "type": "function",
+      "name": "shutdown",
+      "filePath": "main.py",
+      "summary": "SIGINT/SIGTERM 信号处理器，优雅终止所有子进程",
+      "tags": ["function", "signal-handler", "cleanup"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "tests/__init__.py",
+      "summary": "tests 包初始化模块，空文件",
+      "tags": ["python", "package", "init"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/agents/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "tests/agents/__init__.py",
+      "summary": "tests/agents 包初始化模块，空文件",
+      "tags": ["python", "package", "init"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/agents/ui/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "tests/agents/ui/__init__.py",
+      "summary": "tests/agents/ui 包初始化模块，空文件",
+      "tags": ["python", "package", "init"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "file",
+      "name": "test_assert_integration.py",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "Day 6 断言集成测试，验证 ActionResult 与 assert_node 的 Layer 0.6 状态快速失败、long_term_memory 注入、BUG-01 回归",
+      "tags": ["python", "test", "assertion", "execution-graph"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:make_state",
+      "type": "function",
+      "name": "make_state",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "构造最小 assert_node state，注入 action_result/tool_calls 等测试依赖",
+      "tags": ["test-helper", "state-builder"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_status_failure_fast_fail",
+      "type": "function",
+      "name": "test_status_failure_fast_fail",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "验证 status=failure + error 时快速失败，error 优先且 long_term_memory 注入到 reasoning",
+      "tags": ["async-test", "assertion", "fast-fail"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_status_failure_no_error",
+      "type": "function",
+      "name": "test_status_failure_no_error",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "验证 status=failure 但 error 为空时走 status-based 路径",
+      "tags": ["async-test", "assertion", "fast-fail"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_status_timeout_fast_fail",
+      "type": "function",
+      "name": "test_status_timeout_fast_fail",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "验证 status=timeout 时快速失败",
+      "tags": ["async-test", "assertion", "timeout"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_status_not_found_fast_fail",
+      "type": "function",
+      "name": "test_status_not_found_fast_fail",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "验证 status=not_found 时快速失败",
+      "tags": ["async-test", "assertion", "not-found"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_error_without_status_still_fails",
+      "type": "function",
+      "name": "test_error_without_status_still_fails",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "验证仅有 error（无 status=failure）时仍走 fail 路径",
+      "tags": ["async-test", "assertion", "error-path"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_mark_task_failed_passes_through",
+      "type": "function",
+      "name": "test_mark_task_failed_passes_through",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "验证 mark_task_failed 仍走 marker 路径，不被 Layer 0.6 拦截",
+      "tags": ["async-test", "assertion", "marker-path"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_status_success_does_not_fast_fail",
+      "type": "function",
+      "name": "test_status_success_does_not_fast_fail",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "验证 status=success 时不走 Layer 0.6 拦截，正常走 Layer 1/2 路径",
+      "tags": ["async-test", "assertion", "success-path"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_long_term_memory_injected_into_reasoning",
+      "type": "function",
+      "name": "test_long_term_memory_injected_into_reasoning",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "验证 long_term_memory 字段注入到断言推理中",
+      "tags": ["async-test", "assertion", "long-term-memory"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_status_failure_passes_through_fast_assert",
+      "type": "function",
+      "name": "test_status_failure_passes_through_fast_assert",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "Phase 2.0D: status-based failure 走 _fast_assert 路径，consecutive_failures 由 record_node 维护",
+      "tags": ["async-test", "assertion", "fast-assert"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/agents/ui/test_assert_integration.py:test_record_node_recovers_fast_assert_on_skip_path",
+      "type": "function",
+      "name": "test_record_node_recovers_fast_assert_on_skip_path",
+      "filePath": "tests/agents/ui/test_assert_integration.py",
+      "summary": "BUG-01 回归: skip_assert 路径下 record_node 必须从 _last_action_result 兜底恢复 _fast_assert",
+      "tags": ["async-test", "assertion", "bug-regression", "record-node"],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:tests/api/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "tests/api/__init__.py",
+      "summary": "tests/api 包初始化模块，空文件",
+      "tags": ["python", "package", "init"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/benchmarks/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "tests/benchmarks/__init__.py",
+      "summary": "WebVoyager subset 基准测试包描述，Phase 2.0D 基线，10 个代表性任务",
+      "tags": ["python", "package", "benchmark"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/benchmarks/webvoyager_subset/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "tests/benchmarks/webvoyager_subset/__init__.py",
+      "summary": "webvoyager_subset 子包初始化模块，空文件",
+      "tags": ["python", "package", "init"],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:tests/benchmarks/webvoyager_subset/tasks.json",
+      "type": "config",
+      "name": "tasks.json",
+      "filePath": "tests/benchmarks/webvoyager_subset/tasks.json",
+      "summary": "WebVoyager 公开基准测试 10 题配置，包含任务 ID、站点 URL、指令和成功标准",
+      "tags": ["config", "benchmark", "webvoyager", "tasks"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/benchmarks/webvoyager_subset/test_lg_compat.py",
+      "type": "file",
+      "name": "test_lg_compat.py",
+      "filePath": "tests/benchmarks/webvoyager_subset/test_lg_compat.py",
+      "summary": "验证 MiMo AIMessage 能被 LangGraph add_messages reducer 接受的兼容性测试",
+      "tags": ["python", "test", "langgraph", "compatibility"],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:tests/benchmarks/webvoyager_subset/test_lg_compat.py:S",
+      "type": "class",
+      "name": "S",
+      "filePath": "tests/benchmarks/webvoyager_subset/test_lg_compat.py",
+      "summary": "继承 MessagesState 的状态类，用于 LangGraph 兼容性测试",
+      "tags": ["class", "langgraph", "state"],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:tests/benchmarks/webvoyager_subset/test_lg_compat.py:agent",
+      "type": "function",
+      "name": "agent",
+      "filePath": "tests/benchmarks/webvoyager_subset/test_lg_compat.py",
+      "summary": "LangGraph 节点函数，调用 Anthropic LLM 并返回消息列表",
+      "tags": ["function", "langgraph", "llm"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/benchmarks/webvoyager_subset/test_mimo_vision.py",
+      "type": "file",
+      "name": "test_mimo_vision.py",
+      "filePath": "tests/benchmarks/webvoyager_subset/test_mimo_vision.py",
+      "summary": "验证 MiMo v2.5 多模态能力（image_url 格式），截取 Hacker News 截图并询问内容",
+      "tags": ["python", "test", "multimodal", "vision", "miMo"],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/benchmarks/webvoyager_subset/test_mimo_vision2.py",
+      "type": "file",
+      "name": "test_mimo_vision2.py",
+      "filePath": "tests/benchmarks/webvoyager_subset/test_mimo_vision2.py",
+      "summary": "用 Anthropic 原生 image 格式测试 MiMo v2.5 多模态，验证 base64 图片输入",
+      "tags": ["python", "test", "multimodal", "vision", "anthropic-native"],
+      "complexity": "simple"
+    }
+  ],
+  "edges": [
+    {
+      "source": "function:core/document_parser.py:fetch_url_content",
+      "target": "file:core/document_parser.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:core/document_parser.py:parse_and_fetch_links",
+      "target": "file:core/document_parser.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:main.py:main",
+      "target": "file:main.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:main.py:shutdown",
+      "target": "file:main.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:make_state",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_status_failure_fast_fail",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_status_failure_no_error",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_status_timeout_fast_fail",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_status_not_found_fast_fail",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_error_without_status_still_fails",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_mark_task_failed_passes_through",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_status_success_does_not_fast_fail",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_long_term_memory_injected_into_reasoning",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_status_failure_passes_through_fast_assert",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/agents/ui/test_assert_integration.py:test_record_node_recovers_fast_assert_on_skip_path",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "class:tests/benchmarks/webvoyager_subset/test_lg_compat.py:S",
+      "target": "file:tests/benchmarks/webvoyager_subset/test_lg_compat.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "function:tests/benchmarks/webvoyager_subset/test_lg_compat.py:agent",
+      "target": "file:tests/benchmarks/webvoyager_subset/test_lg_compat.py",
+      "type": "belongs-to",
+      "direction": "directed",
+      "weight": 1.0
+    },
+    {
+      "source": "file:tests/agents/ui/test_assert_integration.py",
+      "target": "file:core/interfaces.py",
+      "type": "imports",
+      "direction": "directed",
+      "weight": 0.7
+    },
+    {
+      "source": "file:tests/agents/ui/test_assert_integration.py",
+      "target": "file:agents/ui/execution_graph.py",
+      "type": "imports",
+      "direction": "directed",
+      "weight": 0.7
+    },
+    {
+      "source": "file:tests/agents/ui/test_assert_integration.py",
+      "target": "file:tests/agents/ui/test_assert_integration.py",
+      "type": "contains",
+      "direction": "undirected",
+      "weight": 1.0
+    },
+    {
+      "source": "file:core/document_parser.py",
+      "target": "file:core/document_parser.py",
+      "type": "contains",
+      "direction": "undirected",
+      "weight": 1.0
+    },
+    {
+      "source": "file:main.py",
+      "target": "file:main.py",
+      "type": "contains",
+      "direction": "undirected",
+      "weight": 1.0
+    },
+    {
+      "source": "function:core/document_parser.py:parse_and_fetch_links",
+      "target": "function:core/document_parser.py:fetch_url_content",
+      "type": "calls",
+      "direction": "directed",
+      "weight": 0.8
+    }
+  ]
+}

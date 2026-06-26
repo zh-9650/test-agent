@@ -14,12 +14,15 @@ Review Gate:
   不会进入条件分析，而是作为 manual_review_items 标记，等待人工确认后才能继续下游流程。
 """
 import hashlib
+import re
+from urllib.parse import urlparse
 
+from core.focus_scope import expand_focus_terms
 from core.interfaces import (
     RequirementFact, RequirementAssertion, ExplorationGoal, SourceAnchor,
     SystemMapEvid, TestCondition, TestDesignTechnique,
     CoverageItem, CandidateTestCase, TraceabilityMatrix,
-    TestAssetPackage,
+    CoverageBlueprint, TestAssetPackage,
 )
 
 
@@ -74,6 +77,94 @@ def _dedupe_manual_review_items(items: list[str]) -> list[str]:
 def _normalize_goal_assertion_text(text: str) -> str:
     """规范化断言文本，用于稳定的语义 ID 计算。"""
     return " ".join(text.split()).casefold()
+
+
+_FOCUS_ALIAS_MAP: dict[str, set[str]] = {
+    "dashboard": {"dashboard", "数据看板", "看板"},
+    "reports": {"reports", "report", "能力趋势", "能力趋势洞察", "趋势洞察"},
+    "calibration": {"calibration", "数据校准", "校准"},
+}
+
+
+def _expand_focus_terms(
+    focus_areas: str | list[str] | None,
+    target_url: str = "",
+) -> set[str]:
+    raw_terms: list[str] = []
+    if isinstance(focus_areas, str):
+        raw_terms.extend(re.split(r"[\s,;，；/|]+", focus_areas))
+    elif isinstance(focus_areas, list):
+        for item in focus_areas:
+            if item:
+                raw_terms.extend(re.split(r"[\s,;，；/|]+", str(item)))
+
+    parsed = urlparse(target_url or "")
+    raw_terms.extend(part for part in parsed.path.split("/") if part)
+
+    expanded: set[str] = set()
+    for term in raw_terms:
+        normalized = term.strip().casefold()
+        if not normalized:
+            continue
+        expanded.add(normalized)
+        expanded.update(_FOCUS_ALIAS_MAP.get(normalized, set()))
+    return expanded
+
+
+def _filter_assertions_by_focus(
+    assertions: list[RequirementAssertion],
+    focus_areas: str | list[str] | None = None,
+    target_url: str = "",
+) -> list[RequirementAssertion]:
+    terms = expand_focus_terms(focus_areas, target_url)
+    if not terms:
+        return assertions
+
+    matched = []
+    for assertion in assertions:
+        haystack = " ".join(
+            [assertion.assertion_text, *assertion.source_references]
+        ).casefold()
+        if any(term in haystack for term in terms):
+            matched.append(assertion)
+
+    if matched:
+        print(
+            f"[L2Pipeline] Focus scope filtered assertions: "
+            f"{len(matched)}/{len(assertions)} for terms={sorted(terms)}."
+        )
+        return matched
+    return assertions
+
+
+def _filter_facts_for_assertions(
+    facts: list[RequirementFact],
+    assertions: list[RequirementAssertion],
+) -> list[RequirementFact]:
+    referenced_ids = {
+        fact_id
+        for assertion in assertions
+        for fact_id in assertion.fact_ids
+    }
+    if not referenced_ids:
+        return facts
+    filtered = [fact for fact in facts if fact.id in referenced_ids]
+    return filtered or facts
+
+
+def _filter_goals_for_assertions(
+    goals: list[ExplorationGoal],
+    assertions: list[RequirementAssertion],
+) -> list[ExplorationGoal]:
+    assertion_ids = {assertion.id for assertion in assertions}
+    if not assertion_ids:
+        return goals
+    filtered = [
+        goal
+        for goal in goals
+        if any(assertion_id in assertion_ids for assertion_id in goal.assertion_refs)
+    ]
+    return filtered or goals
 
 
 def adapt_legacy_goal(raw: dict) -> ExplorationGoal:
@@ -187,6 +278,7 @@ def _normalize_all_ids(package: TestAssetPackage) -> TestAssetPackage:
             old_to_new.get(cov.condition_id, cov.condition_id),
             old_to_new.get(cov.technique_id, cov.technique_id),
             cov.coverage_dimension,
+            cov.variant_key,
             cov.goal[:80],
         )
         old_to_new[cov.id] = new_id
@@ -355,6 +447,8 @@ async def generate_exploration_goals(
     prototype_notes: str = "",
     architecture_notes: str = "",
     rules: str = "",
+    focus_areas: str | list[str] | None = None,
+    target_url: str = "",
 ) -> tuple[list[ExplorationGoal], list[str], list[RequirementFact], list[RequirementAssertion]]:
     """Phase 1 (探索前): 提取事实 → 推导断言 → review gate → 生成探索目标。
 
@@ -374,6 +468,8 @@ async def generate_exploration_goals(
         prototype_notes=prototype_notes,
         architecture_notes=architecture_notes,
         rules=rules,
+        focus_areas=focus_areas,
+        target_url=target_url,
     )
     if not facts:
         return [], [], [], []
@@ -381,6 +477,11 @@ async def generate_exploration_goals(
     assertions = await derive_assertions(facts)
     if not assertions:
         return [], [], facts, []
+
+    scoped_assertions = _filter_assertions_by_focus(assertions, focus_areas, target_url)
+    if len(scoped_assertions) != len(assertions):
+        assertions = scoped_assertions
+        facts = _filter_facts_for_assertions(facts, assertions)
 
     confirmed, blocked = _split_by_review_gate(assertions)
     manual_review_items = [_manual_review_label(a) for a in blocked]
@@ -399,6 +500,8 @@ async def run_l2_pipeline(
     prototype_notes: str = "",
     architecture_notes: str = "",
     rules: str = "",
+    focus_areas: str | list[str] | None = None,
+    target_url: str = "",
     system_map: SystemMapEvid | None = None,
     source_registry: list[SourceAnchor] | None = None,
     precomputed_facts: list[RequirementFact] | None = None,
@@ -414,8 +517,9 @@ async def run_l2_pipeline(
     执行顺序:
     1. extract_facts (或复用 precomputed) → 2. derive_assertions (或复用)
     3. [Review Gate] 高风险 auto_generated 断言被拦截
-    4. analyze_conditions (仅已确认断言, 需要 system_map)
-    5. select_techniques → 6. analyze_coverage → 7. generate_cases
+    4. plan_coverage_blueprint
+    5. analyze_conditions (仅已确认断言, 需要 system_map)
+    6. select_techniques → 7. analyze_coverage → 8. generate_cases
     8. build_traceability → 9. assemble_package
     """
     from core.skills.asset_packager import assemble_package
@@ -435,8 +539,16 @@ async def run_l2_pipeline(
             prototype_notes=prototype_notes,
             architecture_notes=architecture_notes,
             rules=rules,
+            focus_areas=focus_areas,
+            target_url=target_url,
         )
         exploration_goals = goals
+
+    scoped_assertions = _filter_assertions_by_focus(assertions, focus_areas, target_url)
+    if len(scoped_assertions) != len(assertions):
+        assertions = scoped_assertions
+        facts = _filter_facts_for_assertions(facts, assertions)
+        exploration_goals = _filter_goals_for_assertions(exploration_goals, assertions)
 
     if not facts:
         return TestAssetPackage()
@@ -468,12 +580,18 @@ async def run_l2_pipeline(
         print("[L2Pipeline] 警告: system_map 为空，条件分析将仅基于文档断言，无真实 UI 证据。")
 
     from core.skills.condition_analyzer import analyze_conditions
+    from core.skills.coverage_planner import plan_coverage_blueprint
     from core.skills.technique_selector import select_techniques
     from core.skills.coverage_analyzer import analyze_coverage
     from core.skills.case_generator import generate_cases
     from core.skills.traceability_builder import build_traceability
 
-    conditions = await analyze_conditions(confirmed_assertions, system_map)
+    coverage_blueprint = await plan_coverage_blueprint(
+        confirmed_assertions, system_map
+    )
+    conditions = await analyze_conditions(
+        confirmed_assertions, system_map, coverage_blueprint
+    )
     if not conditions:
         from core.skills.traceability_builder import build_traceability
         traceability = build_traceability(facts, assertions, [], [], [], [])
@@ -499,6 +617,7 @@ async def run_l2_pipeline(
         source_registry=source_registry,
         exploration_goals=exploration_goals,
         system_map=system_map,
+        coverage_blueprint=coverage_blueprint,
         test_conditions=conditions,
         test_design_techniques=techniques,
         coverage_items=coverage_items,

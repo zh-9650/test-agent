@@ -1,0 +1,226 @@
+[
+  {
+    "id": "layer:entry",
+    "name": "入口层",
+    "description": "系统启动入口和 Agent 基类。main.py 同时启动后端 uvicorn 和前端 dev server；agents/base.py 定义所有 Agent 共享生命周期。",
+    "nodeIds": [
+      "file:main.py",
+      "file:agents/base.py",
+      "file:agents/__init__.py",
+      "file:agents/ui/__init__.py",
+      "function:main.py:main",
+      "function:main.py:shutdown"
+    ]
+  },
+  {
+    "id": "layer:api",
+    "name": "API 层",
+    "description": "FastAPI REST 端点层。提供任务 CRUD、WebSocket 实时监控、诊断日志、文件解析、智能体记忆管理等接口。后台异步执行测试会话。",
+    "nodeIds": [
+      "file:api/__init__.py",
+      "file:api/app.py",
+      "file:api/schemas.py",
+      "file:api/utils.py",
+      "file:api/websocket.py",
+      "function:__nofilepath__:api/app.py::_run_test_session",
+      "class:__nofilepath__:api/websocket.py::ConnectionManager",
+      "function:__nofilepath__:api/websocket.py::websocket_endpoint",
+      "function:__nofilepath__:api/utils.py::parse_doc",
+      "function:__nofilepath__:api/utils.py::fetch_url"
+    ]
+  },
+  {
+    "id": "layer:agent",
+    "name": "Agent 层",
+    "description": "LangGraph 执行子图和规划子图。execution_graph 实现 observe→decide→execute→assert→record 五节点 AI 测试循环；planning_graph 实现探索→建模→生成测试计划的规划链路。prompts.py 提供全部中文提示词模板。tools.py 封装 25 个浏览器自动化工具。",
+    "nodeIds": [
+      "module:batch2-mod-execution_graph",
+      "module:batch2-mod-planning_graph",
+      "module:batch2-mod-prompts",
+      "module:batch2-mod-tools",
+      "module:batch2-mod-setup_manager"
+    ]
+  },
+  {
+    "id": "layer:core",
+    "name": "核心层",
+    "description": "项目基础设施与通用服务。interfaces.py 定义全平台 Pydantic 类型中枢；llm_client.py 统一 LLM 调用（含安全结构化输出）；cdp_client.py 和 page_semantic.py 构成浏览器自动化「眼睛」；runtime.py 编排完整测试会话生命周期；context_manager.py 管理 LLM 上下文窗口；其余模块提供诊断日志、变化检测、报告生成、记忆管理、并行执行、文档解析等功能。",
+    "nodeIds": [
+      "file:core/__init__.py",
+      "file:core/interfaces.py",
+      "file:core/llm_client.py",
+      "file:core/runtime.py",
+      "file:core/cdp_client.py",
+      "file:core/page_semantic.py",
+      "file:core/context_manager.py",
+      "file:core/diag_logger.py",
+      "file:core/change_detector.py",
+      "file:core/report_builder.py",
+      "file:core/execution_logger.py",
+      "file:core/memory_utils.py",
+      "file:core/document_parser.py",
+      "file:core/backend_node_map.py",
+      "file:core/dependency.py",
+      "file:core/parallel_executor.py"
+    ]
+  },
+  {
+    "id": "layer:skills",
+    "name": "技能层",
+    "description": "L1 流水线技能模块，按 phase 过滤调度。覆盖知识提取、用例建模、覆盖检查、系统建模、目标生成、场景提取、风险分析、系统地图提取和覆盖率追踪。所有技能通过 BaseSkill 契约 + SkillRegistry 注册器管理。",
+    "nodeIds": [
+      "file:core/skills/__init__.py",
+      "file:core/skills/base.py",
+      "file:core/skills/registry.py",
+      "file:core/skills/knowledge_extractor.py",
+      "file:core/skills/goal_extractor.py",
+      "file:core/skills/scenario_extractor.py",
+      "file:core/skills/risk_analyzer.py",
+      "file:core/skills/system_mapper.py",
+      "file:core/skills/system_modeler.py",
+      "file:core/skills/use_case_coverage.py",
+      "file:core/skills/use_case_modeler.py"
+    ]
+  },
+  {
+    "id": "layer:database",
+    "name": "数据库层",
+    "description": "SQLAlchemy ORM 异步/同步引擎工厂。定义 Task、TaskStep、Report、AgentMemory 四个 ORM 模型，支持数据库自动初始化、JSONB 列、Phase1 兼容列。",
+    "nodeIds": [
+      "file:database/__init__.py",
+      "file:database/connection.py",
+      "file:database/models.py"
+    ]
+  },
+  {
+    "id": "layer:frontend",
+    "name": "前端层",
+    "description": "React + TypeScript 单页应用。包含任务创建表单（支持文档上传和 URL 抓取）、WebSocket 实时监控仪表盘、测试报告查看（含诊断日志 JSON 树）、历史任务列表、AI 记忆管理页面。通过 client.ts 封装全部 REST API。",
+    "nodeIds": [
+      "file:frontend/src/main.tsx",
+      "file:frontend/src/App.tsx",
+      "file:frontend/src/api/client.ts",
+      "file:frontend/src/components/DocumentUploader.tsx",
+      "file:frontend/src/hooks/useWebSocket.ts",
+      "file:frontend/src/pages/MemoryManager.tsx",
+      "file:frontend/src/pages/Monitor.tsx",
+      "file:frontend/src/pages/Report.tsx",
+      "file:frontend/src/pages/TaskCreate.tsx",
+      "file:frontend/src/pages/TaskHistory.tsx",
+      "file:frontend/src/types/index.ts",
+      "file:markup:frontend/index.html",
+      "file:markup:frontend/src/App.css",
+      "file:markup:frontend/src/index.css"
+    ]
+  },
+  {
+    "id": "layer:frontend-config",
+    "name": "前端配置层",
+    "description": "前端构建工具和项目配置。Vite 构建配置（含 API 代理）、TypeScript 编译配置、ESLint 扁平化规则、npm 依赖声明。",
+    "nodeIds": [
+      "config:frontend/package.json",
+      "config:frontend/tsconfig.app.json",
+      "config:frontend/tsconfig.json",
+      "config:frontend/tsconfig.node.json",
+      "file:frontend/vite.config.ts",
+      "file:frontend/eslint.config.js"
+    ]
+  },
+  {
+    "id": "layer:documentation",
+    "name": "文档层",
+    "description": "项目文档体系。README 项目介绍、CONTEXT 架构上下文、PRD 产品需求、DEVELOPMENT 开发指南、master-roadmap 路线图、prompt-engineering 提示契约、business_workflow 业务流程、AGENTS.md 和 CLAUDE.md AI 配置。",
+    "nodeIds": [
+      "document:README.md",
+      "document:CONTEXT.md",
+      "document:AGENTS.md",
+      "document:CLAUDE.md",
+      "document:docs/DEVELOPMENT.md",
+      "document:docs/PRD.md",
+      "document:docs/master-roadmap.md",
+      "document:docs/prompt-engineering.md",
+      "document:docs/business_workflow.md",
+      "document:docs/benchmark/2026-06-05-browser-use-alignment.md",
+      "document:frontend/README.md"
+    ]
+  },
+  {
+    "id": "layer:tests",
+    "name": "测试层",
+    "description": "单元测试和集成测试套件。覆盖 API 端点、数据库 CRUD、WebSocket、Agent 工具、CDP 解析、页面语义提取、依赖检测、并行执行器、context_manager 压缩、L2 Prompt 契约回归测试和 Phase 1.5 Skill 测试。",
+    "nodeIds": [
+      "file:tests/__init__.py",
+      "file:tests/conftest.py",
+      "file:tests/core/__init__.py",
+      "file:tests/core/test_backend_node_map.py",
+      "file:tests/core/test_cdp_resolve.py",
+      "file:tests/core/test_context_manager.py",
+      "file:tests/core/test_dependency.py",
+      "file:tests/core/test_l2_prompts.py",
+      "file:tests/core/test_page_semantic.py",
+      "file:tests/core/test_parallel_executor.py",
+      "file:tests/core/test_phase15_prompts.py",
+      "file:tests/core/test_system_mapper.py",
+      "file:tests/api/__init__.py",
+      "file:tests/api/test_app.py",
+      "file:tests/api/test_database.py",
+      "file:tests/api/test_websocket.py",
+      "file:tests/agents/__init__.py",
+      "file:tests/agents/ui/__init__.py",
+      "file:tests/agents/ui/test_action_result.py",
+      "file:tests/agents/ui/test_assert_integration.py",
+      "file:tests/agents/ui/test_resolve_via_cdp.py",
+      "file:tests/agents/ui/test_screenshot_on_demand.py",
+      "file:tests/agents/ui/test_tools.py"
+    ]
+  },
+  {
+    "id": "layer:benchmark",
+    "name": "基准测试层",
+    "description": "WebVoyager 公开基准测试子集（10 个代表性任务）。Playwright + LangGraph + MiMo v2.5 端到端流水线，含 runnner、冒烟测试、多模态能力测试、LC Schema 兼容性验证。",
+    "nodeIds": [
+      "file:tests/benchmarks/__init__.py",
+      "file:tests/benchmarks/webvoyager_subset/__init__.py",
+      "file:tests/benchmarks/webvoyager_subset/runner.py",
+      "file:tests/benchmarks/webvoyager_subset/test_day4_integration.py",
+      "file:tests/benchmarks/webvoyager_subset/test_dry_run.py",
+      "file:tests/benchmarks/webvoyager_subset/test_lc_schema.py",
+      "file:tests/benchmarks/webvoyager_subset/test_lg_compat.py",
+      "file:tests/benchmarks/webvoyager_subset/test_mimo.py",
+      "file:tests/benchmarks/webvoyager_subset/test_mimo_vision.py",
+      "file:tests/benchmarks/webvoyager_subset/test_mimo_vision2.py",
+      "file:tests/benchmarks/webvoyager_subset/test_smoke.py",
+      "config:tests/benchmarks/webvoyager_subset/tasks.json"
+    ]
+  },
+  {
+    "id": "layer:config",
+    "name": "配置层",
+    "description": "项目级配置文件。opencode.json MCP 配置、requirements.txt Python 依赖、.understand-anything 系列配置（忽略规则、插件配置、领域图）。",
+    "nodeIds": [
+      "config:opencode.json",
+      "document:requirements.txt",
+      "config:.understand-anything/.understandignore",
+      "config:.understand-anything/config.json",
+      "config:.understand-anything/domain-graph.json"
+    ]
+  },
+  {
+    "id": "layer:fixtures",
+    "name": "夹具数据层",
+    "description": "测试夹具数据。包含多个产品线（AI对话、自动化练习、采购系统、对抗性测试）的 PRD 文档、Changelog、Swagger API 定义，用于 L1 流水线测试。",
+    "nodeIds": [
+      "document:data/fixtures/README.md",
+      "document:data/fixtures/changelog_aitalk.md",
+      "document:data/fixtures/changelog_automation_exercise.md",
+      "document:data/fixtures/prd_adversarial.md",
+      "document:data/fixtures/prd_aitalk.md",
+      "document:data/fixtures/prd_automation_exercise.md",
+      "document:data/fixtures/prd_minimal.md",
+      "document:data/fixtures/prd_purchase.md",
+      "config:data/fixtures/swagger_aitalk.yaml",
+      "config:data/fixtures/swagger_automation_exercise.yaml",
+      "document:data/fixtures/swagger_purchase.txt"
+    ]
+  }
+]

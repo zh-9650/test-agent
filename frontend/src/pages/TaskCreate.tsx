@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createTask, testLayer1 } from '../api/client';
+import { createTask } from '../api/client';
 import type { CreateTaskRequest } from '../types';
 import DocumentUploader from '../components/DocumentUploader';
 
@@ -23,10 +23,8 @@ export default function TaskCreate() {
   const [prototypeUrl, setPrototypeUrl] = useState('');
   const [changelog, setChangelog] = useState('');
   const [loading, setLoading] = useState(false);
-  
-  const [testingLayer1, setTestingLayer1] = useState(false);
-  const [layer1Progress, setLayer1Progress] = useState('');
-  const [layer1Result, setLayer1Result] = useState<Record<string, unknown> | null>(null);
+  const [executionProfile, setExecutionProfile] = useState<'smoke' | 'balanced' | 'full'>('balanced');
+  const [executionTarget, setExecutionTarget] = useState('60');
 
   const addAccount = () => {
     setAccounts([...accounts, { role: '', username: '', password: '' }]);
@@ -60,6 +58,10 @@ export default function TaskCreate() {
           tech_doc: techDoc.trim() || undefined,
           prototype_url: prototypeUrl.trim() || undefined,
           changelog: changelog.trim() || undefined,
+          execution_profile: executionProfile,
+          execution_target: executionProfile === 'full'
+            ? undefined
+            : Math.max(1, Number.parseInt(executionTarget, 10) || (executionProfile === 'smoke' ? 20 : 60)),
         },
       };
       const task = await createTask(request);
@@ -106,6 +108,41 @@ export default function TaskCreate() {
     <div style={{ maxWidth: '800px', margin: '2rem auto', padding: '0 1rem' }}>
       <h1>创建测试任务</h1>
       <form onSubmit={handleSubmit}>
+        <div style={sectionStyle}>
+          <h3 style={{ marginTop: 0 }}>执行策略</h3>
+          <label style={labelStyle}>策略</label>
+          <select
+            value={executionProfile}
+            onChange={(event) => {
+              const profile = event.target.value as 'smoke' | 'balanced' | 'full';
+              setExecutionProfile(profile);
+              if (profile === 'smoke') setExecutionTarget('20');
+              if (profile === 'balanced') setExecutionTarget('60');
+            }}
+            style={inputStyle}
+          >
+            <option value="smoke">Smoke：核心冒烟，最多 30 条</option>
+            <option value="balanced">Balanced：风险与覆盖均衡</option>
+            <option value="full">Full：执行完整候选资产池</option>
+          </select>
+          {executionProfile !== 'full' && (
+            <>
+              <label style={labelStyle}>目标执行数</label>
+              <input
+                type="number"
+                min={1}
+                max={executionProfile === 'smoke' ? 30 : undefined}
+                value={executionTarget}
+                onChange={(event) => setExecutionTarget(event.target.value)}
+                style={inputStyle}
+              />
+            </>
+          )}
+          <div style={{ color: '#666', fontSize: '0.9rem' }}>
+            目标数是软目标；核心流程、关键依赖和高风险义务形成的必选骨架可能突破目标。
+          </div>
+        </div>
+
         <div style={sectionStyle}>
           <label style={labelStyle}>目标 URL *</label>
           <input
@@ -237,49 +274,6 @@ export default function TaskCreate() {
             placeholder="本次发版的更新内容，指导 AI 进行重点回归测试..."
           />
 
-          <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eee' }}>
-            <button
-              type="button"
-              onClick={async () => {
-                setTestingLayer1(true);
-                setLayer1Progress('初始化中...');
-                setLayer1Result(null);
-                try {
-                  const res = await testLayer1(prd, swagger, changelog, (msg) => {
-                    setLayer1Progress(msg);
-                  });
-                  setLayer1Result(res);
-                } catch (err: unknown) {
-                  const message = err instanceof Error ? err.message : String(err);
-                  alert('测试失败: ' + message);
-                } finally {
-                  setTestingLayer1(false);
-                  setLayer1Progress('');
-                }
-              }}
-              disabled={testingLayer1 || (!prd && !swagger && !changelog)}
-              style={{
-                ...buttonStyle,
-                backgroundColor: testingLayer1 ? '#999' : '#52c41a',
-                color: '#fff',
-                width: '100%'
-              }}
-            >
-              {testingLayer1 ? `🧠 ${layer1Progress}` : '🧪 试运行 Layer 1 (提取知识库 & 状态机)'}
-            </button>
-            
-            {layer1Result && (
-              <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#282c34', color: '#abb2bf', borderRadius: '4px', overflowX: 'auto', maxHeight: '500px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                  <h4 style={{ margin: 0, color: '#61afef' }}>提取结果 (JSON)</h4>
-                  <button type="button" onClick={() => setLayer1Result(null)} style={{ background: 'none', border: 'none', color: '#e06c75', cursor: 'pointer' }}>关闭</button>
-                </div>
-                <pre style={{ margin: 0, fontSize: '0.9rem' }}>
-                  {JSON.stringify(layer1Result, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
         </div>
 
         <button
