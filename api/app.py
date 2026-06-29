@@ -1,4 +1,4 @@
-"""api/app.py 鈥?FastAPI application with REST endpoints.
+﻿"""api/app.py 閳?FastAPI application with REST endpoints.
 
 Defines the main FastAPI app instance, includes routers, and configures middleware.
 """
@@ -18,10 +18,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
-import json
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -83,7 +81,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files for screenshots 鈥?mounted at /static/screenshots
+# Static files for screenshots 閳?mounted at /static/screenshots
 SCREENSHOTS_DIR = Path(__file__).resolve().parent.parent / "data" / "screenshots"
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="screenshots")
@@ -135,7 +133,7 @@ def _serialize_task(
     }
 
 
-# POST /api/tasks 鈥?Create task
+# POST /api/tasks 閳?Create task
 @app.post("/api/tasks", response_model=TaskResponse, status_code=201)
 async def create_task(request: CreateTaskRequest) -> dict[str, Any]:
     """Create a new test task and start it in the background."""
@@ -149,13 +147,12 @@ async def create_task(request: CreateTaskRequest) -> dict[str, Any]:
         session.add(task)
         await session.commit()
         await session.refresh(task)
-        if _background_tasks_enabled:
-            _start_task_session(task.id, task.target_url, task.config)
+        _start_task_session(task.id, task.target_url, task.config)
 
         return _serialize_task(task, None)
 
 
-# GET /api/tasks 鈥?List tasks
+# GET /api/tasks 閳?List tasks
 @app.get("/api/tasks", response_model=TaskListResponse)
 async def list_tasks(
     skip: int = Query(0, ge=0),
@@ -177,7 +174,7 @@ async def list_tasks(
         return TaskListResponse(tasks=serialized, total=total)  # type: ignore[arg-type]
 
 
-# GET /api/tasks/{task_id} 鈥?Task details
+# GET /api/tasks/{task_id} 閳?Task details
 @app.get("/api/tasks/{task_id}", response_model=TaskResponse)
 async def get_task(task_id: int) -> dict[str, Any]:
     """Get details for a single task by ID."""
@@ -189,7 +186,7 @@ async def get_task(task_id: int) -> dict[str, Any]:
         return _serialize_task(task, latest)
 
 
-# GET /api/tasks/{task_id}/steps 鈥?Task steps
+# GET /api/tasks/{task_id}/steps 閳?Task steps
 @app.get("/api/tasks/{task_id}/steps", response_model=StepListResponse)
 async def get_task_steps(
     task_id: int,
@@ -257,7 +254,7 @@ async def get_run_results(task_id: int, run_id: str) -> CaseResultListResponse:
         return CaseResultListResponse(results=results, total=len(results))
 
 
-# GET /api/tasks/{task_id}/diag 鈥?List diag log files for a task
+# GET /api/tasks/{task_id}/diag 閳?List diag log files for a task
 @app.get("/api/tasks/{task_id}/diag")
 async def get_diag_list(task_id: int) -> dict:
     """Return diag log index for a task. Files are loaded lazily via /diag/{stage}."""
@@ -306,14 +303,14 @@ async def get_diag_list(task_id: int) -> dict:
     }
 
 
-# GET /api/tasks/{task_id}/diag/{stage} 鈥?Get a single diag log file
+# GET /api/tasks/{task_id}/diag/{stage} 閳?Get a single diag log file
 @app.get("/api/tasks/{task_id}/diag/{stage}")
 async def get_diag_file(task_id: int, stage: str) -> dict:
     """Return a single diag stage JSON. stage is filename without .json extension."""
     import json
     from pathlib import Path
 
-    # 瀹夊叏: stage 涓嶅厑璁歌矾寰勫垎闅旂
+    # 鐎瑰鍙? stage 娑撳秴鍘戠拋姝岀熅瀵板嫬鍨庨梾鏃傤儊
     if "/" in stage or "\\" in stage or ".." in stage:
         raise HTTPException(status_code=400, detail="invalid stage name")
 
@@ -328,7 +325,7 @@ async def get_diag_file(task_id: int, stage: str) -> dict:
         raise HTTPException(status_code=500, detail=f"diag file '{stage}' unreadable: {e}")
 
 
-# GET /api/tasks/{task_id}/report 鈥?Get report
+# GET /api/tasks/{task_id}/report 閳?Get report
 @app.get("/api/tasks/{task_id}/report")
 async def get_report(
     task_id: int,
@@ -358,7 +355,7 @@ async def get_report(
                 return HTMLResponse(content=f.read())
 
 
-# POST /api/tasks/{task_id}/stop 鈥?Stop task
+# POST /api/tasks/{task_id}/stop 閳?Stop task
 @app.post("/api/tasks/{task_id}/stop", response_model=MessageResponse)
 async def stop_task(task_id: int) -> MessageResponse:
     """Stop a running task by updating its status to cancelled."""
@@ -398,7 +395,7 @@ async def _handle_ws_stop(task_id: int) -> None:
 set_stop_handler(_handle_ws_stop)
 
 
-# DELETE /api/tasks/{task_id} 鈥?Delete task
+# DELETE /api/tasks/{task_id} 閳?Delete task
 @app.delete("/api/tasks/{task_id}", response_model=MessageResponse)
 async def delete_task(task_id: int) -> MessageResponse:
     """Delete a task. Cannot delete a running task."""
@@ -448,80 +445,6 @@ async def resume_task(task_id: int) -> MessageResponse:
         resume_case_ids=retry_ids,
     )
     return MessageResponse(message="Task resumed", task_id=str(task_id))
-
-class Layer2TestRequest(BaseModel):
-    prd: str = ""
-    api_doc: str = ""
-    changelog: str = ""
-    prototype: str = ""
-    architecture: str = ""
-    rules: str = ""
-
-@app.post("/api/test/layer2")
-async def test_layer2_endpoint(req: Layer2TestRequest):
-    """Test the new L2 analysis pipeline with SSE streaming.
-
-    浣跨敤鏂扮殑 RequirementFact 鈫?RequirementAssertion 鈫?TestCondition
-    鈫?CoverageItem 鈫?CandidateTestCase 鈫?TestAssetPackage 绠￠亾銆?    """
-    if not any([req.prd, req.api_doc, req.changelog, req.prototype, req.architecture, req.rules]):
-        raise HTTPException(status_code=400, detail="At least one document is required")
-
-    req.prd = req.prd[:15000]
-    req.api_doc = req.api_doc[:15000]
-    req.changelog = req.changelog[:5000]
-    req.prototype = req.prototype[:5000]
-    req.architecture = req.architecture[:5000]
-    req.rules = req.rules[:5000]
-
-    async def generate():
-        try:
-            from core.skills.l2_pipeline import run_l2_pipeline
-
-            yield json.dumps({"progress": "[N1] 姝ｅ湪鎻愬彇鍘熷瓙鍖栭渶姹備簨瀹?(RequirementFact)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N1.5] 姝ｅ湪鎺ㄥ闇€姹傛柇瑷€ (RequirementAssertion)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N2] 姝ｅ湪鍒嗘瀽娴嬭瘯鏉′欢 (TestCondition)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N2.5] 姝ｅ湪閫夋嫨璁捐鎶€鏈?(TestDesignTechnique)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N3] 姝ｅ湪鍒嗘瀽瑕嗙洊椤?(CoverageItem)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N3.5] 姝ｅ湪鐢熸垚鍊欓€夌敤渚?(CandidateTestCase)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N4] 姝ｅ湪鏋勫缓杩芥函鐭╅樀 (TraceabilityMatrix)..."}, ensure_ascii=False) + "\n"
-            yield json.dumps({"progress": "[N4.5] 姝ｅ湪缁勮鏈€缁堜氦浠樼墿 (TestAssetPackage)..."}, ensure_ascii=False) + "\n"
-
-            package = await run_l2_pipeline(
-                prd_content=req.prd,
-                api_doc_content=req.api_doc,
-                changelog_content=req.changelog,
-                prototype_notes=req.prototype,
-                architecture_notes=req.architecture,
-                rules=req.rules,
-            )
-
-            final_result = {
-                "progress": "done",
-                "package": package.model_dump(),
-                "summary": {
-                    "fact_count": len(package.facts),
-                    "assertion_count": len(package.assertions),
-                    "condition_count": len(package.test_conditions),
-                    "technique_count": len(package.test_design_techniques),
-                    "coverage_count": len(package.coverage_items),
-                    "candidate_count": len(package.candidate_cases),
-                    "conflict_count": len(package.conflicts),
-                    "manual_review_count": len(package.manual_review_items),
-                },
-            }
-            yield json.dumps(final_result, ensure_ascii=False) + "\n"
-        except Exception as e:
-            import traceback
-            yield json.dumps({"progress": "error", "error": str(e), "traceback": traceback.format_exc()}, ensure_ascii=False) + "\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="application/x-ndjson",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no"
-        }
-    )
 
 # --- Memory Endpoints ---
 
@@ -590,8 +513,6 @@ async def delete_memory(memory_id: int) -> MessageResponse:
 _running_tasks: dict[int, asyncio.Task] = {}
 _task_lifecycle_service = TaskLifecycleService()
 
-# Flag to disable background tasks in tests
-_background_tasks_enabled: bool = True
 
 
 def _make_lifecycle_event_sink(
@@ -642,3 +563,4 @@ def _start_task_session(
     background_task.add_done_callback(
         lambda _task, current_id=task_id: _running_tasks.pop(current_id, None)
     )
+

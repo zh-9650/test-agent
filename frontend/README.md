@@ -1,14 +1,14 @@
-# Frontend
+﻿# Frontend
 
 React 19 + TypeScript + Vite frontend for Smart Test Agent.
 
 ## Pages
 
 - `TaskCreate`: rich task input and submission
-- `Monitor`: WebSocket execution stream
+- `Monitor`: WebSocket lifecycle stream
 - `Report`: generated report and execution details
 - `TaskHistory`: historical task list
-- `MemoryManager`: domain/global agent memory CRUD
+- `MemoryManager`: global/domain memory CRUD
 
 ## Commands
 
@@ -20,7 +20,7 @@ npm run lint
 ```
 
 The default development port is `5173`. API and WebSocket contracts are shared
-through `src/api/client.ts` and `src/types/index.ts`.
+through `src/api/client.ts`, `src/hooks/useWebSocket.ts`, and `src/types/index.ts`.
 
-When those contracts change, update the backend schema/event producer and the
-frontend consumer in the same change, then run `npm run build`.
+When those contracts change, update the backend producer and frontend consumer
+in the same change, then run `npm run build` and `npm run lint`.

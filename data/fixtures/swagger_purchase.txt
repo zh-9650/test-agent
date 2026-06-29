@@ -1,4 +1,0 @@
-POST /api/orders/create
-POST /api/orders/approve
-POST /api/orders/reject
-GET  /api/orders/list
