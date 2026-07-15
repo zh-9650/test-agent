@@ -32,10 +32,17 @@ async def fetch_url_content(url: str) -> str:
 async def parse_and_fetch_links(config: dict[str, Any]) -> dict[str, Any]:
     """
     Scan config fields for URLs and replace them with fetched content.
-    Fields checked: prd, api_doc/swagger, changelog.
+    Fields checked: prd, api_doc/swagger, changelog, prototype materials.
     """
     enriched_config = normalize_task_config(config)
-    fields_to_check = ["prd", "api_doc", "swagger", "changelog"]
+    fields_to_check = [
+        "prd",
+        "api_doc",
+        "swagger",
+        "changelog",
+        "prototype_url",
+        "prototype_source",
+    ]
     
     for field in fields_to_check:
         text = enriched_config.get(field)

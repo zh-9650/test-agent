@@ -26,6 +26,8 @@ export interface Task {
   failure_reason: string | null;
   config: Record<string, unknown> | null;
   analysis_package: AnalysisPackage | null;
+  checkpoints: Record<string, unknown> | null;
+  resume_policy: Record<string, unknown> | null;
   latest_run: LatestRun | null;
   started_at: string | null;
   completed_at: string | null;
@@ -67,8 +69,33 @@ export interface TaskStep {
   result: string;
   screenshot_path: string;
   change_report: Record<string, unknown> | null;
+  tool_result: Record<string, unknown> | null;
+  policy_decision: Record<string, unknown> | null;
   assertion_result: { status: string; reasoning: string } | null;
   created_at: string;
+}
+
+export interface HumanReviewRequest {
+  id: number;
+  task_id: number;
+  run_id: string | null;
+  candidate_case_id: string;
+  phase: string;
+  reason: string;
+  evidence_refs: string[];
+  blocked_tool: string | null;
+  requested_at: string;
+  status: 'pending' | 'approved' | 'edited' | 'rejected' | string;
+}
+
+export interface HumanReviewDecision {
+  id: number;
+  request_id: number;
+  decision: 'approved' | 'edited' | 'rejected' | string;
+  edited_inputs: Record<string, unknown> | null;
+  approved_tools: string[];
+  comment: string | null;
+  decided_at: string;
 }
 
 export type WSMessageType =
@@ -79,6 +106,7 @@ export type WSMessageType =
   | 'case_step'
   | 'case_completed'
   | 'session_completed'
+  | 'session_paused_for_review'
   | 'session_failed'
   | 'session_cancelled';
 
@@ -128,6 +156,22 @@ export interface AnalysisPackage {
     findings: Array<{ code: string; severity: 'error' | 'warning'; message: string }>;
   } | null;
   runtime_hints: {
+    execution_mode?: 'online' | 'pre_execution' | string;
+    execution_skipped?: boolean;
+    live_exploration?: {
+      status?: string;
+      reason?: string;
+      target_url?: string;
+    };
+    memory_context_hint_present?: boolean;
+    memory_context_policy?: string;
+    memory_context_refs?: Array<{
+      scope_type: string;
+      scope_value: string;
+      memory_key: string;
+      source_domain: string;
+      provenance: string;
+    }>;
     execution_selection?: {
       profile: 'smoke' | 'balanced' | 'full';
       target_count: number | null;
@@ -156,5 +200,7 @@ export interface CreateTaskRequest {
     changelog?: string;
     execution_profile?: 'smoke' | 'balanced' | 'full';
     execution_target?: number;
+    execution_mode?: 'online' | 'pre_execution';
+    prototype_source?: string;
   };
 }

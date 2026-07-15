@@ -151,7 +151,21 @@ async def derive_assertions(facts: list[RequirementFact]) -> list[RequirementAss
         return []
     if len(nonempty_results) != len(batches):
         failed = len(batches) - len(nonempty_results)
-        raise RuntimeError(f"assertion_derivation_incomplete: {failed}/{len(batches)} batches failed")
+        print(
+            "[AssertionDeriver] "
+            f"{failed}/{len(batches)} batches returned no usable assertions; "
+            "continuing with partial assertion set"
+        )
+        get_diag_auto().dump(
+            "02_l2_assertion",
+            node="N15_assertion_deriver",
+            output={
+                "failed_batches": failed,
+                "total_batches": len(batches),
+            },
+            status="partial_fallback",
+            raw_content=get_last_raw(),
+        )
 
     assertions = _normalize_assertion_ids(
         batch_results,

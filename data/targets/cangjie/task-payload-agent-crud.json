@@ -1,0 +1,68 @@
+{
+  "target_url": "http://localhost:3001/",
+  "task_name": "仓颉知道智能体新增检索 - TA-20260704 - write-flow",
+  "config": {
+    "accounts": [
+      {
+        "role": "管理员",
+        "username": "admin",
+        "password": "admin123",
+        "display_name": "zhanghong"
+      }
+    ],
+    "execution_mode": "online",
+    "execution_profile": "smoke",
+    "execution_target": 3,
+    "write_operation_allowed": true,
+    "focus_areas": [
+      "本任务只验证智能体广场写操作，不进入知识库和技能写操作。",
+      "必须从 http://localhost:3001/ 以管理员 admin/admin123 登录后，通过真实 UI 进入智能体广场。",
+      "必须覆盖新增智能体正向路径：使用名称 测试智能体-TA-20260704-AUTO 和 gatewayUrl=https://agent-gateway.cangjie.ai/v1/ta-20260704-auto，保存后搜索 TA-20260704-AUTO 应能看到该智能体。",
+      "必须覆盖新增智能体负向路径：gatewayUrl=not-url 应被前端或后端校验阻断，且搜索 TA-20260704-INVALID 不应创建成功。",
+      "测试数据只能使用 TA-20260704 后缀；清理时只允许删除名称、描述或 URL 中包含 TA-20260704 的智能体。"
+    ],
+    "rules": [
+      "只操作本地环境 http://localhost:3001/ 和 http://127.0.0.1:8080。",
+      "不要把列表加载或打开弹窗当作新增成功；新增成功必须有 UI 搜索命中或 API /system/agent/list 后置证据。",
+      "每个 UI 动作后必须验证微检查点：导航出现、弹窗打开、输入框值匹配、保存后弹窗关闭或错误提示出现、搜索结果刷新。",
+      "写操作后必须记录清理计划；只允许清理本任务创建且包含 TA-20260704 的记录。",
+      "POST /system/agent、GET /system/agent/list、DELETE /system/agent/{id} 可作为后端后置和清理证据，但当前浏览器 UI 用例不能退化成纯 API 创建。"
+    ],
+    "case_generation_requirements": [
+      "必须生成可由浏览器 UI 执行的智能体新增正向用例，不能只生成直接 API 请求用例。",
+      "必须生成 UI 负向用例：新增智能体时 gatewayUrl 填 not-url，期望校验失败或后端拒绝，并确认没有创建 TA-20260704-INVALID 记录。",
+      "正向用例 required_depth 至少为 D2：通过 UI 创建，搜索命中，并用页面刷新或 GET /system/agent/list 证明持久化。",
+      "负向用例 required_depth 至少为 D2：通过 UI 提交非法 URL，看到错误或停留弹窗，并用搜索/API 证明未创建。",
+      "如果测试平台暂时没有 API 后置执行 seam，应把 API 后置标为 deferred，不得把仅打开弹窗标为 pass。"
+    ],
+    "test_data": [
+      "正向智能体名称：测试智能体-TA-20260704-AUTO",
+      "正向业务描述：由 test_agent 自动化验收创建，可安全清理 TA-20260704",
+      "正向网关地址：https://agent-gateway.cangjie.ai/v1/ta-20260704-auto",
+      "负向智能体名称：测试智能体-TA-20260704-INVALID",
+      "负向网关地址：not-url"
+    ],
+    "prd": [
+      "智能体广场支持外部智能体接入配置的搜索、新增、编辑、删除和免登跳转。",
+      "智能体名称必填，未删除数据内唯一；网关地址必填，必须以 http:// 或 https:// 开头；接入 Token 可留空由后端生成。",
+      "列表默认按创建时间倒序展示，支持按名称、描述、URL 关键字模糊搜索。",
+      "已绑定知识库的智能体禁止删除；本任务不绑定知识库，因此本任务创建的数据允许清理。"
+    ],
+    "swagger": [
+      "POST /auth/login：admin/admin123 登录期望 code=200 且返回 access_token。",
+      "GET /system/agent/list?keyword=TA-20260704-AUTO：应返回包含 测试智能体-TA-20260704-AUTO 的 data 列表。",
+      "POST /system/agent：请求 agentName,agentDesc,gatewayUrl,accessToken,knowledgeBaseId；合法 gatewayUrl 应创建成功并返回智能体 id。",
+      "POST /system/agent 使用 gatewayUrl=not-url 应被校验阻断，不能产生可搜索记录。",
+      "DELETE /system/agent/{id}：本任务清理仅用于删除名称、描述或 URL 包含 TA-20260704 的测试智能体。"
+    ],
+    "tech_doc": [
+      "目标前端是 React/Vite，智能体接口由 src/api/index.ts 调用 /system/agent、/system/agent/list、/system/agent/{id}。",
+      "前端请求统一携带 clientid=e5cd7e4891bf95d1d19206ce24a7b32e 和登录后 Authorization Bearer token。",
+      "运行记录内提供清理/后置助手：data/test-runs/cangjie-20260704-acceptance/setup/cangjie_agent_api_helper.py。"
+    ],
+    "cleanup": [
+      "执行前可运行：python data/test-runs/cangjie-20260704-acceptance/setup/cangjie_agent_api_helper.py --keyword TA-20260704 --action cleanup",
+      "执行后必须再次运行同一清理命令，输出保存到 evidence/CJ-P1-004_agent_cleanup_after.json。"
+    ]
+  }
+}

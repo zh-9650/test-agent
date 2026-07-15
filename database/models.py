@@ -24,7 +24,8 @@ class Task(Base):
         id: Auto-increment primary key.
         task_name: Human-readable task name.
         target_url: The URL under test.
-        status: Current status (pending, running, completed, failed, cancelled).
+        status: Current status (pending, running, paused_for_review,
+            completed, failed, cancelled).
         config: JSONB with test rules, credentials, focus areas.
         started_at: Timestamp when the task started (nullable).
         completed_at: Timestamp when the task completed (nullable).
@@ -44,6 +45,8 @@ class Task(Base):
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     analysis_package: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="L2 分析管道产出的完整 TestAssetPackage")
+    checkpoints: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    resume_policy: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -54,6 +57,12 @@ class Task(Base):
         back_populates="task",
         cascade="all, delete-orphan",
         foreign_keys="ExecutionRunRecord.task_id",
+    )
+    human_review_requests: Mapped[list["HumanReviewRequestRecord"]] = relationship(
+        "HumanReviewRequestRecord",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        foreign_keys="HumanReviewRequestRecord.task_id",
     )
     reports: Mapped[list["Report"]] = relationship("Report", back_populates="task", cascade="all, delete-orphan")
 
@@ -102,6 +111,8 @@ class TaskStep(Base):
     result: Mapped[str] = mapped_column(Text, nullable=False, default="")
     screenshot_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
     change_report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    tool_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    policy_decision: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     assertion_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -144,6 +155,11 @@ class ExecutionRunRecord(Base):
         "TaskStep", back_populates="execution_run", cascade="all, delete-orphan"
     )
     reports: Mapped[list["Report"]] = relationship("Report", back_populates="execution_run")
+    human_review_requests: Mapped[list["HumanReviewRequestRecord"]] = relationship(
+        "HumanReviewRequestRecord",
+        back_populates="execution_run",
+        foreign_keys="HumanReviewRequestRecord.run_id",
+    )
 
 
 class CaseResultRecord(Base):
@@ -169,6 +185,68 @@ class CaseResultRecord(Base):
 
     execution_run: Mapped["ExecutionRunRecord"] = relationship(
         "ExecutionRunRecord", back_populates="results"
+    )
+
+
+class HumanReviewRequestRecord(Base):
+    """A durable request for human review before automation continues."""
+
+    __tablename__ = "human_review_request"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("task.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("execution_run.run_id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    candidate_case_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    phase: Mapped[str] = mapped_column(String(50), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    evidence_refs: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    blocked_tool: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    requested_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
+
+    task: Mapped["Task"] = relationship(
+        "Task",
+        back_populates="human_review_requests",
+        foreign_keys=[task_id],
+    )
+    execution_run: Mapped["ExecutionRunRecord | None"] = relationship(
+        "ExecutionRunRecord",
+        back_populates="human_review_requests",
+        foreign_keys=[run_id],
+    )
+    decisions: Mapped[list["HumanReviewDecisionRecord"]] = relationship(
+        "HumanReviewDecisionRecord",
+        back_populates="request",
+        cascade="all, delete-orphan",
+    )
+
+
+class HumanReviewDecisionRecord(Base):
+    """A user's decision for a pending human review request."""
+
+    __tablename__ = "human_review_decision"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    request_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("human_review_request.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    decision: Mapped[str] = mapped_column(String(50), nullable=False)
+    edited_inputs: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    approved_tools: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    request: Mapped["HumanReviewRequestRecord"] = relationship(
+        "HumanReviewRequestRecord",
+        back_populates="decisions",
     )
 
 

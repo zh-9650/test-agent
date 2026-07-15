@@ -452,7 +452,7 @@ class ExecutionRun(BaseModel):
     run_id: str = Field(description="运行 ID")
     task_id: str = Field(description="关联任务 ID")
     schema_version: str = Field(default="execution_run.v1", description="Schema 版本")
-    status: Literal["running", "completed", "failed", "cancelled"] = Field(
+    status: Literal["running", "paused_for_review", "completed", "failed", "cancelled"] = Field(
         default="running", description="运行状态"
     )
     started_at: str = Field(default="", description="开始时间 ISO 格式")

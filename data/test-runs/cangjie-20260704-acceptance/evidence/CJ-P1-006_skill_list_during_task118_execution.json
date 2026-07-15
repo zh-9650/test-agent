@@ -1,0 +1,26 @@
+{
+  "action": "list",
+  "base_url": "http://127.0.0.1:8080",
+  "keyword": "TA-20260704",
+  "skill_id": "",
+  "generated_at": "2026-07-04T19:35:50.559800+00:00",
+  "result": {
+    "raw_code": 200,
+    "raw_msg": "查询成功",
+    "total": 1,
+    "total_rows": 1,
+    "matched_count": 1,
+    "matched": [
+      {
+        "id": "2073489833438752769",
+        "skillId": "sk-cst-1783193474528",
+        "name": "测试技能-TA-20260704-AUTO",
+        "version": "1.0.0",
+        "author": "test_agent",
+        "description": "由 test_agent 自动化验收创建，可安全清理 TA-20260704",
+        "status": 1,
+        "createTime": "2026-07-05 03:31:14"
+      }
+    ]
+  }
+}

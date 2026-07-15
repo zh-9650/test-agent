@@ -285,13 +285,27 @@ async def extract_elements_via_cdp(page: Any, cdp_session: Any) -> list[dict[str
 
     elements = []
     counter = 1
+    interactive_nodes = [
+        node
+        for node in nodes
+        if _is_interactive(node) and node.get("backendDOMNodeId", 0)
+    ]
+    detail_semaphore = asyncio.Semaphore(8)
 
-    # Build a map of nodeId -> node for parent lookups
-    node_map = {n.get("nodeId", ""): n for n in nodes}
+    async def load_node_detail(node: dict) -> tuple[dict, dict[str, str], dict | None]:
+        backend_id = node.get("backendDOMNodeId", 0)
+        async with detail_semaphore:
+            attrs, box = await asyncio.gather(
+                get_node_attributes(cdp_session, backend_id),
+                get_node_box_model(cdp_session, backend_id),
+            )
+        return node, attrs, box
 
-    for node in nodes:
-        if not _is_interactive(node):
-            continue
+    node_details = await asyncio.gather(
+        *(load_node_detail(node) for node in interactive_nodes)
+    )
+
+    for node, attrs, box in node_details:
 
         role = _ax_role(node).lower()
         name = _ax_name(node)
@@ -300,13 +314,9 @@ async def extract_elements_via_cdp(page: Any, cdp_session: Any) -> list[dict[str
         if not backend_id:
             continue
 
-        # Get HTML attributes and box model
-        attrs = await get_node_attributes(cdp_session, backend_id) if cdp_session else {}
         tag_name = attrs.get("tagName", "")
         if tag_name in ("script", "style", "meta", "link", "head", "noscript", "svg"):
             continue
-
-        box = await get_node_box_model(cdp_session, backend_id) if cdp_session else None
 
         el_type = _ax_role_to_type(role, attrs)
         input_type = attrs.get("type", "text") if el_type == "input" else None
@@ -368,6 +378,12 @@ async def extract_elements_via_cdp(page: Any, cdp_session: Any) -> list[dict[str
 
         if el_type == "input" and input_type:
             el["input_type"] = input_type
+        if attrs.get("id"):
+            el["html_id"] = attrs["id"]
+        if attrs.get("name"):
+            el["name"] = attrs["name"]
+        if attrs.get("aria-label"):
+            el["aria_label"] = attrs["aria-label"]
         if el_type == "select":
             options = await _evaluate_backend_node(
                 cdp_session,

@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any
 
-from core.execution_store import upsert_case_result
+from core.execution_store import create_human_review_request, upsert_case_result
 from core.interfaces import (
     CaseResult,
     ExplorationGoal,
@@ -82,6 +82,8 @@ class RuntimeSession:
                             "args": {"timeout_seconds": attempt_timeout},
                         },
                         f"用例尝试超过 {attempt_timeout:g}s",
+                        status="timeout",
+                        error_code="case.attempt_timeout",
                     )
                     result = CaseResult(
                         run_id=run_id,
@@ -108,6 +110,8 @@ class RuntimeSession:
                             "args": {"error": str(exc)},
                         },
                         f"执行异常: {exc}",
+                        status="failed",
+                        error_code="case.execution_error",
                     )
                     result = CaseResult(
                         run_id=run_id,
@@ -139,6 +143,16 @@ class RuntimeSession:
                 final.terminal_status = "human_review_required"
                 final.failure_reason = final.failure_reason or "retry_exhausted"
             await upsert_case_result(final)
+            if final.terminal_status == "human_review_required":
+                await create_human_review_request(
+                    task_id=int(self.runtime.task_id),
+                    run_id=run_id,
+                    candidate_case_id=case.id,
+                    phase="executing",
+                    reason=final.failure_reason or final.summary,
+                    evidence_refs=list(final.evidence_refs),
+                    blocked_tool=None,
+                )
             results.append(final)
             self.runtime.clear_case_feedback(case.id)
             await self.emit(

@@ -1,0 +1,10 @@
+{
+  "agentSearchState": {
+    "hasAgentsTab": true,
+    "searchValue": "TA-20260704",
+    "stillOnAgentModule": true,
+    "url": "http://localhost:3001/",
+    "visibleText": "仓\n仓颉知道\nCONSOLE V1.2\n\n多元平台多模型融合语料关联网关\n\n智能体广场\n知识库管理\n技能管理\nAPI 网关: 正在校验\nA\nadmin\n新增智能体\n多租户 AI 平台集成面板\n\n管理所有接入的大模型端点。点击「进入平台」可免登跳转至外部系统。\n\n未检索到匹配的智能体\n\n© 2026 仓颉知道 - 多租户智能体集配控制台 · 版权所有\n\nFastGPT Knowledge Engine · 动态托管链路保护生效中"
+  },
+  "logs": []
+}

@@ -6,7 +6,7 @@ Defines input validation and output serialization models for the REST API.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,23 @@ class CreateTaskRequest(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:
         self.config = normalize_task_config(self.config)
+        mode_aliases = {
+            "online": "online",
+            "e2e": "online",
+            "full_run": "online",
+            "pre_execution": "pre_execution",
+            "pre-execution": "pre_execution",
+            "pre_execution_only": "pre_execution",
+            "offline_design": "pre_execution",
+            "design_only": "pre_execution",
+        }
+        raw_mode = self.config.get("execution_mode")
+        if raw_mode is None and self.config.get("pre_execution_only"):
+            raw_mode = "pre_execution"
+        mode = mode_aliases.get(str(raw_mode or "online").strip().lower())
+        if mode not in {"online", "pre_execution"}:
+            raise ValueError("execution_mode must be online or pre_execution")
+        self.config["execution_mode"] = mode
         profile = self.config.get("execution_profile", "balanced")
         if profile not in {"smoke", "balanced", "full"}:
             raise ValueError("execution_profile must be smoke, balanced, or full")
@@ -41,6 +58,30 @@ class AccountConfig(BaseModel):
     role: str = ""
     username: str = ""
     password: str = ""
+
+
+HumanReviewDecisionValue = Literal["approved", "edited", "rejected"]
+
+
+class HumanReviewRequestCreate(BaseModel):
+    """Payload for creating a durable human review request."""
+
+    task_id: int
+    run_id: Optional[str] = None
+    candidate_case_id: str = ""
+    phase: str
+    reason: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    blocked_tool: Optional[str] = None
+
+
+class HumanReviewDecisionRequest(BaseModel):
+    """Payload for resolving a pending human review request."""
+
+    decision: HumanReviewDecisionValue
+    edited_inputs: Optional[dict[str, Any]] = None
+    approved_tools: list[str] = Field(default_factory=list)
+    comment: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +100,8 @@ class TaskResponse(BaseModel):
     failure_reason: Optional[str] = None
     config: Optional[dict] = None
     analysis_package: Optional[dict] = None
+    checkpoints: Optional[dict] = None
+    resume_policy: Optional[dict] = None
     latest_run: Optional[dict] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -88,6 +131,8 @@ class StepResponse(BaseModel):
     result: str
     screenshot_path: str
     change_report: Optional[dict] = None
+    tool_result: Optional[dict] = None
+    policy_decision: Optional[dict] = None
     assertion_result: Optional[dict] = None
     created_at: datetime
 
@@ -136,6 +181,38 @@ class CaseResultResponse(BaseModel):
 class CaseResultListResponse(BaseModel):
     results: list[CaseResultResponse]
     total: int
+
+
+class HumanReviewRequestResponse(BaseModel):
+    id: int
+    task_id: int
+    run_id: Optional[str] = None
+    candidate_case_id: str
+    phase: str
+    reason: str
+    evidence_refs: list[str]
+    blocked_tool: Optional[str] = None
+    requested_at: datetime
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class HumanReviewRequestListResponse(BaseModel):
+    requests: list[HumanReviewRequestResponse]
+    total: int
+
+
+class HumanReviewDecisionResponse(BaseModel):
+    id: int
+    request_id: int
+    decision: str
+    edited_inputs: Optional[dict[str, Any]] = None
+    approved_tools: list[str]
+    comment: Optional[str] = None
+    decided_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class MessageResponse(BaseModel):

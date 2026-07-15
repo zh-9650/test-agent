@@ -2,6 +2,8 @@ import type {
   CaseResult,
   CreateTaskRequest,
   ExecutionRun,
+  HumanReviewDecision,
+  HumanReviewRequest,
   Task,
   TaskStep,
 } from '../types';
@@ -54,6 +56,37 @@ export async function getRunResults(taskId: number, runId: string): Promise<{ re
   const res = await fetch(`${API_BASE}/tasks/${taskId}/runs/${runId}/results`);
   if (!res.ok) throw new Error(await res.text());
   return res.json() as Promise<{ results: CaseResult[]; total: number }>;
+}
+
+export async function listHumanReviews(
+  taskId: number,
+  status?: string,
+): Promise<{ requests: HumanReviewRequest[]; total: number }> {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const suffix = params.toString() ? `?${params}` : '';
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/human-reviews${suffix}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ requests: HumanReviewRequest[]; total: number }>;
+}
+
+export async function decideHumanReview(
+  requestId: number,
+  decision: 'approved' | 'edited' | 'rejected',
+  comment?: string,
+): Promise<HumanReviewDecision> {
+  const res = await fetch(`${API_BASE}/human-reviews/${requestId}/decisions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      decision,
+      edited_inputs: null,
+      approved_tools: [],
+      comment: comment || null,
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<HumanReviewDecision>;
 }
 
 export function getReportUrl(taskId: number): string {

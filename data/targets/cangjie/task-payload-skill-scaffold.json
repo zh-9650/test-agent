@@ -1,0 +1,41 @@
+{
+  "task_name": "仓颉知道技能脚手架创建与核心文件保护 - TA-20260704 - write-flow",
+  "target_url": "http://localhost:3001/",
+  "config": {
+    "execution_mode": "online",
+    "execution_profile": "smoke",
+    "execution_target": 3,
+    "write_operation_allowed": true,
+    "accounts": [
+      {
+        "role": "管理员",
+        "username": "admin",
+        "password": "admin123",
+        "display_name": "zhanghong"
+      }
+    ],
+    "prd": "技能管理用于维护系统级 AI 技能插件。管理员可以查看技能列表、按关键字搜索、上传技能 ZIP、快速初始化技能脚手架、打开在线修编、修改元数据、查看文件树、新建文件或目录、导出 ZIP、冻结/激活和逻辑删除技能。技能脚手架必须生成 SKILL.md 与 index.js；SKILL.md 是核心文件，禁止重复创建和删除。技能名称建议 1-50 个字符；版本默认 1.0.0；作者默认本站开发者。本任务只验证技能脚手架创建、元数据保存、文件树核心文件和重复 SKILL.md 阻断，不验证 ZIP 上传、状态切换、导出和删除业务。",
+    "focus_areas": "本任务只验证技能管理写路径，不进入智能体和知识库写操作。\n必须从 http://localhost:3001/ 以管理员 admin/admin123 登录后，通过真实 UI 点击“技能管理”。\n必须覆盖正向路径：点击“快速初始化脚手架”，打开最新技能的“在线修编”，将技能名称保存为 测试技能-TA-20260704-AUTO，作者保存为 test_agent，描述保存为 由 test_agent 自动化验收创建，可安全清理 TA-20260704；保存后技能列表应显示该技能，在线修编文件树应包含 SKILL.md 和 index.js。\n必须覆盖负向路径：打开该测试技能在线修编，在“创建新文件或目录”输入 SKILL.md 并提交，重复核心文件创建应被前端或后端阻断，不能创建第二个 SKILL.md。\n测试数据只能使用 TA-20260704 后缀；清理时只允许删除名称、描述、作者或 skillId 中包含 TA-20260704 的技能。",
+    "rules": [
+      "只操作本地环境 http://localhost:3001/ 和 http://127.0.0.1:8080。",
+      "不要把技能管理页面加载、点击技能管理或打开编辑器当作脚手架创建成功；成功必须有技能列表命中或 /system/skill/page 后置证据。",
+      "不要把点击快速初始化后出现默认技能名当作最终成功；为保证可清理，必须通过在线修编把元数据保存为 测试技能-TA-20260704-AUTO。",
+      "每个 UI 动作后必须验证微检查点：导航进入技能管理、脚手架按钮点击后出现技能卡片、在线修编打开、元数据输入值匹配、保存后列表/编辑器刷新、重复 SKILL.md 提交后出现阻断提示。",
+      "写操作后必须记录清理计划；只允许清理包含 TA-20260704 的测试技能。"
+    ],
+    "swagger": "POST /auth/login：admin/admin123 登录期望 code=200 且返回 access_token。\nPOST /system/skill/page：请求 keyword,status,pageNum,pageSize；keyword=TA-20260704-AUTO 应返回包含 测试技能-TA-20260704-AUTO 的 rows。\nPOST /system/skill/scaffold：请求 name,author,description；前端快速初始化按钮当前不传参，会创建默认技能并生成 SKILL.md 与 index.js。\nGET /system/skill/{skillId}/files：应返回文件树，包含 path=SKILL.md,isCore=1 与 path=index.js。\nPOST /system/skill/{skillId}/file：请求 filePath,content,type；filePath=SKILL.md 应被拒绝，不能重复创建核心文件。\nPUT /system/skill/{skillId}/save：保存 metadata 与 files；元数据保存后列表名称应更新。\nDELETE /system/skill/{skillId}：本任务清理仅用于删除名称、描述、作者或 skillId 包含 TA-20260704 的测试技能。",
+    "tech_doc": "目标前端是 React/Vite。技能管理入口按钮 id 为 #tab-skills-mgmt；上传按钮 id 为 #btn-upload-skill-trigger；技能列表容器 id 为 #skills-list-container；每个技能编辑按钮 id 形如 edit-skill-btn-{skillId}。\n前端技能 API 由 src/api/index.ts 调用 /system/skill/page、/system/skill/scaffold、/system/skill/{skillId}/files、/system/skill/{skillId}/file、/system/skill/{skillId}/save、/system/skill/{skillId}。\n后端控制器源码为 cangcloud-modules/cangcloud-system/.../SkillController.java，服务实现为 SkillServiceImpl.java。createFile 会阻断 SKILL.md 重复创建；deleteFile 会阻断 isCore=1 的文件删除。\n运行记录内提供清理/后置助手：data/test-runs/cangjie-20260704-acceptance/setup/cangjie_skill_api_helper.py。",
+    "test_data": [
+      "正向技能名称：测试技能-TA-20260704-AUTO",
+      "正向作者：test_agent",
+      "正向技能描述：由 test_agent 自动化验收创建，可安全清理 TA-20260704",
+      "负向重复文件路径：SKILL.md"
+    ],
+    "cleanup": [
+      "执行前运行：python data/test-runs/cangjie-20260704-acceptance/setup/cangjie_skill_api_helper.py --keyword TA-20260704 --action cleanup",
+      "执行后必须再次运行同一清理命令，输出保存到 evidence/CJ-P1-006_skill_cleanup_after.json。",
+      "后置文件树证据可运行：python data/test-runs/cangjie-20260704-acceptance/setup/cangjie_skill_api_helper.py --keyword TA-20260704-AUTO --action files --output data/test-runs/cangjie-20260704-acceptance/evidence/CJ-P1-006_skill_files_after.json"
+    ],
+    "case_generation_requirements": "必须生成可由浏览器 UI 执行的技能脚手架正向用例，不能只生成直接 API 请求用例。\n正向用例 required_depth 至少为 D2：通过 UI 快速初始化脚手架，在线修编保存 TA-20260704-AUTO 元数据，列表命中，并用文件树 UI 或 GET /system/skill/{skillId}/files 证明 SKILL.md 与 index.js 存在。\n必须生成负向用例：重复创建 SKILL.md 核心文件，应通过 UI 或后端阻断提示证明失败，不能生成第二个 SKILL.md。\n如果测试平台暂时没有 API 后置执行 seam，应把纯 API 后置标为 deferred，不得把仅打开技能管理或编辑器标为 pass。"
+  }
+}

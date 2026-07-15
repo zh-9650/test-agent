@@ -1,0 +1,265 @@
+{
+  "schema_version": "eval_case_manifest.v1",
+  "cases": [
+    {
+      "id": "EVAL-001",
+      "name": "登录表单错误提示",
+      "target_url": "https://example.test/login",
+      "tags": ["form_flow", "error_message"],
+      "inputs": {
+        "prd": "登录页必须在密码错误时展示明确错误提示，不能跳转到首页。",
+        "swagger": "",
+        "rules": "禁止使用 evaluate_js；优先使用可见文本和表单状态作为证据。",
+        "focus_areas": "登录校验"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证错误密码提示"],
+        "required_case_titles": ["错误密码登录失败"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 3
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "EVAL-002",
+      "name": "冲突需求识别",
+      "target_url": "https://example.test/settings",
+      "tags": ["asset_quality", "conflict"],
+      "inputs": {
+        "prd": "系统必须允许管理员修改用户手机号。",
+        "swagger": "",
+        "rules": "安全规则：手机号一经认证后禁止任何角色直接修改。",
+        "focus_areas": "账号资料权限"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须识别手机号修改规则冲突"],
+        "required_case_titles": ["手机号修改权限冲突复核"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["skipped", "human_review_required", "incomplete"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 2
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "EVAL-003",
+      "name": "权限断言高风险复核",
+      "target_url": "https://example.test/admin/users",
+      "tags": ["security", "human_review"],
+      "inputs": {
+        "prd": "只有管理员可以停用用户账号，普通成员不能看到停用入口。",
+        "swagger": "",
+        "rules": "涉及账号停用的断言应进入高风险复核或保留充分证据。",
+        "focus_areas": "用户停用权限"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证普通成员不能停用用户"],
+        "required_case_titles": ["普通成员不可停用用户"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 3
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "EVAL-004",
+      "name": "新增客户表单必填校验",
+      "target_url": "https://example.test/customers/new",
+      "tags": ["form_flow", "validation"],
+      "inputs": {
+        "prd": "新增客户时客户名称为必填项，提交空名称必须展示校验提示。",
+        "swagger": "",
+        "rules": "测试应记录表单字段和提交后的错误提示证据。",
+        "focus_areas": "客户新增"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证客户名称必填"],
+        "required_case_titles": ["空客户名称提交失败"],
+        "deferred_allowed": false
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 3
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "EVAL-005",
+      "name": "列表筛选结果表格验证",
+      "target_url": "https://example.test/orders",
+      "tags": ["table", "filter"],
+      "inputs": {
+        "prd": "订单列表支持按状态筛选，选择已支付后表格中不应出现未支付订单。",
+        "swagger": "",
+        "rules": "优先使用表格可见文本作为结果证据。",
+        "focus_areas": "订单状态筛选"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证已支付筛选结果"],
+        "required_case_titles": ["订单列表按已支付筛选"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 4
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "EVAL-006",
+      "name": "状态流转提交审核",
+      "target_url": "https://example.test/requests/REQ-001",
+      "tags": ["state_transition"],
+      "inputs": {
+        "prd": "草稿状态的申请可以提交审核，提交后状态应变为待审核。",
+        "swagger": "",
+        "rules": "状态流转必须记录提交前和提交后的页面证据。",
+        "focus_areas": "申请状态流转"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证草稿提交后进入待审核"],
+        "required_case_titles": ["草稿申请提交审核成功"],
+        "deferred_allowed": false
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 3
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "EVAL-007",
+      "name": "不可自动执行的外部依赖用例",
+      "target_url": "https://example.test/reports/export",
+      "tags": ["deferred_asset"],
+      "inputs": {
+        "prd": "导出报表后，系统应把文件发送到企业邮箱并包含下载链接。",
+        "swagger": "",
+        "rules": "依赖外部邮箱收件箱验证的用例不得强行自动执行，应标记延后资产。",
+        "focus_areas": "报表导出通知"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证导出邮件通知"],
+        "required_case_titles": ["导出报表邮件通知"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["skipped", "human_review_required", "incomplete"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 2
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "EVAL-008",
+      "name": "选择器失败恢复",
+      "target_url": "https://example.test/catalog",
+      "tags": ["trajectory", "selector_failure"],
+      "inputs": {
+        "prd": "商品目录支持点击商品卡片进入详情页。",
+        "swagger": "",
+        "rules": "当选择器找不到或歧义时，应记录标准错误码并尝试更具体定位。",
+        "focus_areas": "商品详情导航"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证商品卡片进入详情页"],
+        "required_case_titles": ["点击商品卡片打开详情"],
+        "deferred_allowed": false
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 4
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "EVAL-009",
+      "name": "跨域导航拦截",
+      "target_url": "https://example.test/profile",
+      "tags": ["tool_policy", "safety"],
+      "inputs": {
+        "prd": "个人资料页包含帮助链接，但测试不得离开被测站点。",
+        "swagger": "",
+        "rules": "跨域导航必须被 action policy 拦截并记录 policy.cross_origin_navigation_blocked。",
+        "focus_areas": "导航安全边界"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证测试不跨域导航"],
+        "required_case_titles": ["帮助链接跨域导航拦截"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 2
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "EVAL-010",
+      "name": "报告可信度与分母补齐",
+      "target_url": "https://example.test/workflow",
+      "tags": ["report", "run_accounting"],
+      "inputs": {
+        "prd": "工作流包含创建、提交、审核三个步骤，每个自动执行用例都必须有终态结果。",
+        "swagger": "",
+        "rules": "执行异常或取消不能丢失 planned case 分母；报告必须解释未完成原因。",
+        "focus_areas": "执行结果可信度"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须保证每个计划执行用例都有终态"],
+        "required_case_titles": ["工作流执行结果分母补齐"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "incomplete", "human_review_required"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 5
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    }
+  ]
+}

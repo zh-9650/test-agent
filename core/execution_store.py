@@ -8,8 +8,16 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 
 from core.interfaces import CaseResult
+from core.runtime_tool_contract import RuntimeToolResult
 from database.connection import async_session
-from database.models import CaseResultRecord, ExecutionRunRecord, Task, TaskStep
+from database.models import (
+    CaseResultRecord,
+    ExecutionRunRecord,
+    HumanReviewDecisionRecord,
+    HumanReviewRequestRecord,
+    Task,
+    TaskStep,
+)
 
 TERMINAL_STATUSES = (
     "passed",
@@ -18,6 +26,7 @@ TERMINAL_STATUSES = (
     "incomplete",
     "human_review_required",
 )
+HUMAN_REVIEW_DECISIONS = ("approved", "edited", "rejected")
 _UNSET = object()
 
 
@@ -124,10 +133,22 @@ async def append_task_step(
     step_index: int,
     action: dict,
     result: str,
+    tool_result: RuntimeToolResult | None = None,
 ) -> TaskStep:
     """Idempotently persist one attempt-scoped execution record."""
-    tool_name = str(action.get("tool", "unknown"))
-    args = action.get("args", {})
+    if tool_result is not None:
+        tool_name = tool_result.tool
+        args = dict(tool_result.normalized_args)
+        result = tool_result.feedback_text()
+        change_report = _runtime_tool_change_report(tool_result)
+        stored_tool_result = tool_result.model_dump(mode="json")
+        stored_policy_decision = tool_result.policy_decision or None
+    else:
+        tool_name = str(action.get("tool", "unknown"))
+        args = action.get("args", {})
+        change_report = None
+        stored_tool_result = None
+        stored_policy_decision = None
     async with async_session() as session:
         query = select(TaskStep).where(
             TaskStep.run_id == run_id,
@@ -148,6 +169,9 @@ async def append_task_step(
             "action_args": args,
             "result": result,
             "screenshot_path": "",
+            "change_report": change_report,
+            "tool_result": stored_tool_result,
+            "policy_decision": stored_policy_decision,
         }
         if row is None:
             row = TaskStep(
@@ -161,6 +185,182 @@ async def append_task_step(
         else:
             for key, value in values.items():
                 setattr(row, key, value)
+        await session.commit()
+        await session.refresh(row)
+        return row
+
+
+def _runtime_tool_change_report(tool_result: RuntimeToolResult) -> dict:
+    report = dict(tool_result.changed_signals)
+    report.update(
+        {
+            "tool": tool_result.tool,
+            "phase": tool_result.phase,
+            "permission_level": tool_result.permission_level,
+            "status": tool_result.status,
+            "error_code": tool_result.error_code,
+            "url_changed": tool_result.url_changed,
+            "page_changed": tool_result.page_changed,
+            "before_url": tool_result.before_url,
+            "after_url": tool_result.after_url,
+            "duration_ms": tool_result.duration_ms,
+            "selector_resolution": tool_result.selector_resolution,
+            "policy_decision": tool_result.policy_decision,
+            "hitl_required": tool_result.hitl_required,
+            "hitl_reason": tool_result.hitl_reason,
+        }
+    )
+    if tool_result.evidence:
+        report["evidence"] = tool_result.evidence
+    return report
+
+
+async def create_human_review_request(
+    *,
+    task_id: int,
+    run_id: str | None = None,
+    candidate_case_id: str = "",
+    phase: str,
+    reason: str,
+    evidence_refs: list[str] | None = None,
+    blocked_tool: str | None = None,
+) -> HumanReviewRequestRecord:
+    """Persist a pending HITL request without changing runtime state.
+
+    Pending requests are idempotent per task/run/case/reason so retries and
+    adjacent phase checkpoints do not create duplicate review queue entries
+    for the same blocker.
+    """
+    async with async_session() as session:
+        task = await session.get(Task, task_id)
+        if task is None:
+            raise ValueError(f"Task not found: {task_id}")
+        if run_id:
+            run = await session.get(ExecutionRunRecord, run_id)
+            if run is None or run.task_id != task_id:
+                raise ValueError(f"Execution run not found for task: {run_id}")
+
+        existing_query = select(HumanReviewRequestRecord).where(
+            HumanReviewRequestRecord.task_id == task_id,
+            HumanReviewRequestRecord.run_id == run_id,
+            HumanReviewRequestRecord.candidate_case_id == candidate_case_id,
+            HumanReviewRequestRecord.reason == reason,
+            HumanReviewRequestRecord.status == "pending",
+        )
+        existing = (await session.execute(existing_query)).scalar_one_or_none()
+        if existing is not None:
+            return existing
+
+        row = HumanReviewRequestRecord(
+            task_id=task_id,
+            run_id=run_id,
+            candidate_case_id=candidate_case_id,
+            phase=phase,
+            reason=reason,
+            evidence_refs=list(evidence_refs or []),
+            blocked_tool=blocked_tool,
+            requested_at=utc_now(),
+            status="pending",
+        )
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+        return row
+
+
+async def record_task_checkpoint(
+    task_id: int,
+    *,
+    phase: str,
+    status: str,
+    run_id: str | None = None,
+    payload: dict | None = None,
+) -> dict:
+    """Append a compact lifecycle checkpoint to the task record."""
+    async with async_session() as session:
+        task = await session.get(Task, task_id)
+        if task is None:
+            raise ValueError(f"Task not found: {task_id}")
+
+        checkpoints = dict(task.checkpoints or {})
+        history = list(checkpoints.get("history") or [])
+        entry = {
+            "phase": phase,
+            "status": status,
+            "run_id": run_id,
+            "payload": payload or {},
+            "recorded_at": utc_now().isoformat(),
+        }
+        history.append(entry)
+        checkpoints["latest"] = entry
+        checkpoints["history"] = history[-80:]
+        task.checkpoints = checkpoints
+        await session.commit()
+        return checkpoints
+
+
+async def set_task_resume_policy(task_id: int, policy: dict | None) -> None:
+    """Store the current deterministic resume policy for a task."""
+    async with async_session() as session:
+        task = await session.get(Task, task_id)
+        if task is None:
+            raise ValueError(f"Task not found: {task_id}")
+        task.resume_policy = dict(policy or {})
+        await session.commit()
+
+
+async def list_human_review_requests(
+    task_id: int,
+    *,
+    status: str | None = None,
+) -> list[HumanReviewRequestRecord]:
+    async with async_session() as session:
+        task = await session.get(Task, task_id)
+        if task is None:
+            raise ValueError(f"Task not found: {task_id}")
+        query = select(HumanReviewRequestRecord).where(
+            HumanReviewRequestRecord.task_id == task_id
+        )
+        if status:
+            query = query.where(HumanReviewRequestRecord.status == status)
+        query = query.order_by(
+            HumanReviewRequestRecord.requested_at.desc(),
+            HumanReviewRequestRecord.id.desc(),
+        )
+        return list((await session.execute(query)).scalars().all())
+
+
+async def decide_human_review_request(
+    request_id: int,
+    *,
+    decision: str,
+    edited_inputs: dict | None = None,
+    approved_tools: list[str] | None = None,
+    comment: str | None = None,
+) -> HumanReviewDecisionRecord:
+    normalized_decision = decision.lower()
+    if normalized_decision not in HUMAN_REVIEW_DECISIONS:
+        raise ValueError(f"Unsupported human review decision: {decision}")
+
+    async with async_session() as session:
+        request = await session.get(HumanReviewRequestRecord, request_id)
+        if request is None:
+            raise ValueError(f"Human review request not found: {request_id}")
+        if request.status != "pending":
+            raise ValueError(
+                f"Human review request {request_id} is already {request.status}"
+            )
+
+        row = HumanReviewDecisionRecord(
+            request_id=request_id,
+            decision=normalized_decision,
+            edited_inputs=edited_inputs,
+            approved_tools=list(approved_tools or []),
+            comment=comment,
+            decided_at=utc_now(),
+        )
+        request.status = normalized_decision
+        session.add(row)
         await session.commit()
         await session.refresh(row)
         return row

@@ -1,0 +1,26 @@
+{
+  "action": "cleanup",
+  "base_url": "http://127.0.0.1:8080",
+  "keyword": "TA-20260704",
+  "generated_at": "2026-07-06T08:24:43.544415+00:00",
+  "login_code": 200,
+  "login_http_status": 200,
+  "result": {
+    "before": {
+      "raw_code": 200,
+      "raw_msg": "操作成功",
+      "total_rows": 0,
+      "matched_count": 0,
+      "matched": []
+    },
+    "deleted": [],
+    "skipped": [],
+    "after": {
+      "raw_code": 200,
+      "raw_msg": "操作成功",
+      "total_rows": 0,
+      "matched_count": 0,
+      "matched": []
+    }
+  }
+}

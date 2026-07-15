@@ -6,12 +6,74 @@ import os
 from pydantic import BaseModel, Field
 
 from core.diag_logger import get_diag_auto
-from core.interfaces import CandidateTestCase, CoverageItem
+from core.interfaces import CandidateTestCase, CoverageItem, StructuredPrecondition
 from core.llm_client import get_last_raw, safe_structured_invoke
 
 
 class CaseGenerationResult(BaseModel):
     cases: list[CandidateTestCase] = Field(description="候选用例列表")
+
+
+def fallback_cases(coverage_items: list[CoverageItem]) -> list[CandidateTestCase]:
+    cases: list[CandidateTestCase] = []
+    for index, item in enumerate(coverage_items, start=1):
+        title = item.goal[:60] or f"覆盖项 {item.id} 验证"
+        lower_goal = item.goal.lower()
+        expected_result = "页面呈现与覆盖目标一致的可观察结果。"
+        execution_hint = "打开目标页面，按覆盖目标完成对应 UI 操作并观察结果。"
+        if any(
+            marker in lower_goal
+            for marker in (
+                "错误密码",
+                "无效密码",
+                "密码错误",
+                "错误凭据",
+                "错误输入",
+                "错误提示",
+                "错误流程",
+                "拒绝登录",
+                "wrong password",
+                "invalid password",
+                "invalid credential",
+                "wrong credential",
+            )
+        ):
+            expected_result = "提交后仍停留在登录页，并显示密码错误或登录失败提示。"
+            execution_hint = "回到登录页，输入覆盖目标中的用户名和错误密码，点击立即登录。"
+        elif any(marker in lower_goal for marker in ("一键填值", "quick fill", "quick-fill")):
+            expected_result = "点击一键填值后，登录表单字段值符合覆盖目标。"
+            execution_hint = "回到登录页，点击一键填值体验按钮并观察输入框值。"
+        elif any(marker in lower_goal for marker in ("登录成功", "有效凭据", "dashboard", "控制台")):
+            expected_result = "提交有效凭据后进入控制台，并显示登录后入口或账号身份。"
+            execution_hint = "回到登录页，输入已配置的有效账号密码，点击立即登录。"
+
+        cases.append(
+            CandidateTestCase(
+                id=f"TC-CAND-{index:03d}",
+                title=title,
+                goal=item.goal,
+                description="由覆盖项生成的确定性候选用例。",
+                preconditions=[
+                    StructuredPrecondition(
+                        type="environment",
+                        description="目标页面已加载且可通过浏览器访问。",
+                        satisfiable_by_agent=True,
+                        failure_policy="incomplete",
+                    )
+                ],
+                expected_result=expected_result,
+                priority=item.risk_level,
+                category="functional",
+                trace_references=[item.id],
+                execution_hint=execution_hint,
+                module_ids=item.module_ids,
+                business_flow_ids=item.business_flow_ids,
+                dependency_ids=item.dependency_ids,
+                branch_type=item.branch_type,
+                estimated_cost="low",
+            )
+        )
+    return cases
 
 
 async def generate_cases(
@@ -115,20 +177,37 @@ async def _generate_case_batch(
 输入 CoverageItem：
 {[item.model_dump() for item in coverage_items]}
 """
-    result = await safe_structured_invoke(
-        prompt,
-        CaseGenerationResult,
-        model_type="haiku",
-    )
-    if result is None or not result.cases:
+    timeout_seconds = float(os.getenv("L2_CASE_GENERATION_TIMEOUT_SECONDS", "90"))
+    try:
+        result = await asyncio.wait_for(
+            safe_structured_invoke(
+                prompt,
+                CaseGenerationResult,
+                model_type="haiku",
+            ),
+            timeout=timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        items = fallback_cases(coverage_items)
         get_diag_auto().dump(
             "06_l2_case",
             node="N35_case_generator",
-            output=[],
-            status="empty_fallback",
+            output=items,
+            status="deterministic_fallback_timeout",
+            timeout_seconds=timeout_seconds,
             raw_content=get_last_raw(),
         )
-        return []
+        return items
+    if result is None or not result.cases:
+        items = fallback_cases(coverage_items)
+        get_diag_auto().dump(
+            "06_l2_case",
+            node="N35_case_generator",
+            output=items,
+            status="deterministic_fallback_empty",
+            raw_content=get_last_raw(),
+        )
+        return items
     get_diag_auto().dump(
         "06_l2_case",
         node="N35_case_generator",

@@ -1,0 +1,25 @@
+{
+  "action": "list",
+  "base_url": "http://127.0.0.1:8080",
+  "keyword": "TA-20260704",
+  "generated_at": "2026-07-04T13:22:13.942755+00:00",
+  "result": {
+    "raw_code": 200,
+    "raw_msg": "操作成功",
+    "total_rows": 1,
+    "matched_count": 1,
+    "matched": [
+      {
+        "id": 5,
+        "agentName": "测试智能体-TA-20260704-AUTO",
+        "agentDesc": "由 test_agent 自动化验收创建，可安全清理 TA-20260704",
+        "gatewayUrl": "https://agent-gateway.cangjie.ai/v1/ta-20260704-auto",
+        "accessTokenMasked": "c79365b4***",
+        "knowledgeBaseId": null,
+        "knowledgeBaseName": null,
+        "status": 1,
+        "createTime": "2026-07-04 21:14:15"
+      }
+    ]
+  }
+}

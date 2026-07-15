@@ -1,0 +1,15 @@
+{
+  "action": "list",
+  "base_url": "http://127.0.0.1:8080",
+  "keyword": "TA-20260704",
+  "skill_id": "",
+  "generated_at": "2026-07-04T20:06:14.840519+00:00",
+  "result": {
+    "raw_code": 200,
+    "raw_msg": "查询成功",
+    "total": null,
+    "total_rows": 0,
+    "matched_count": 0,
+    "matched": []
+  }
+}

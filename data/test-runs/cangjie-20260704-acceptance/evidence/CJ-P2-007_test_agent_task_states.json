@@ -1,0 +1,52 @@
+{
+  "case_id": "CJ-P2-007",
+  "target": "test_agent task lifecycle against http://localhost:3001/",
+  "task_81_path_payload": {
+    "payload": "data/targets/cangjie/task-payload.json",
+    "status": "failed",
+    "failure_reason": "analysis_produced_no_exploration_goals",
+    "diagnosis": "The payload mostly referenced local markdown paths such as data/targets/cangjie/reverse-prd.md. test_agent fetches URLs in config fields, but does not expand local relative file paths, so the analyzer received too little actionable business/API context."
+  },
+  "optimization": {
+    "asset_added": "data/targets/cangjie/task-payload-inline.json",
+    "readme_updated": "data/targets/cangjie/README.md",
+    "runtime_updated": "core/runtime.py",
+    "change": "Inline PRD, API contract, test data, rules, focus areas, and known calibration risks directly into the task config. Add a locator fallback from missing label[for=\"field-id\"] selectors to [id=\"field-id\"] controls."
+  },
+  "task_82_inline_payload": {
+    "payload": "data/targets/cangjie/task-payload-inline.json",
+    "task_id": 82,
+    "final_status": "cancelled",
+    "stop_reason": "Stopped manually after confirming the optimized input passed analysis/design and after execution made no progress beyond the first timed-out case.",
+    "analysis_package": {
+      "facts": 9,
+      "exploration_goals": 7,
+      "candidate_cases": 10
+    },
+    "run": {
+      "run_id": "run-5d8c1a8906184bb991556188d9a74130",
+      "status": "cancelled",
+      "planned": 7,
+      "passed": 0,
+      "failed": 0,
+      "human_review_required": 1,
+      "incomplete": 1,
+      "skipped": 5,
+      "terminal": 7
+    },
+    "first_result": {
+      "candidate_case_id": "TC-4cc4aed364",
+      "terminal_status": "human_review_required",
+      "attempt_count": 3,
+      "failure_reason": "case_attempt_timeout: 120s",
+      "backend_error_observed": "Playwright timed out waiting for label[for=\"username-input\"] and label[for=\"password-input\"]."
+    }
+  },
+  "platform_findings": [
+    "Inline task inputs fix the no-exploration-goals failure mode for this target.",
+    "Generated cases included useful credential-calibration coverage, including the one-click-fill password mismatch.",
+    "Execution needs stronger per-case preconditions/state reset. Login-page cases should clear session or navigate to a known logged-out state before looking for username/password fields.",
+    "Execution progress should surface per-case timeout and active locator/action in task checkpoints so long-running runs are easier to diagnose.",
+    "The runtime locator fallback has been patched in code, but the running 8002 backend was not restarted because unrelated tasks 74 and 75 were still running."
+  ]
+}

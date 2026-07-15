@@ -1,0 +1,16 @@
+{
+  "kbState": {
+    "hasKbModuleText": true,
+    "hasKbTab": true,
+    "hasNewKbButton": true,
+    "url": "http://localhost:3001/",
+    "visibleText": "仓\n仓颉知道\nCONSOLE V1.2\n\n多元平台多模型融合语料关联网关\n\n智能体广场\n知识库管理\n技能管理\nAPI 网关: 正在校验\nA\nadmin\n新建知识库\n知识库管理控制台\n\n维护专属知识库。一对一绑定规则：单个智能体仅可绑定唯一专属知识库。\n\n管理员身份已授权\n未检索到知识库\n\n点击右上角 [+ 新建知识库] 快速配置。\n\n© 2026 仓颉知道 - 多租户智能体集配控制台 · 版权所有\n\nFastGPT Knowledge Engine · 动态托管链路保护生效中"
+  },
+  "skillsState": {
+    "hasSkillText": true,
+    "hasSkillsTab": true,
+    "url": "http://localhost:3001/",
+    "visibleText": "仓\n仓颉知道\nCONSOLE V1.2\n\n多元平台多模型融合语料关联网关\n\n智能体广场\n知识库管理\n技能管理\nAPI 网关: 正在校验\nA\nadmin\n上传技能 ZIP\n核心系统级 AI 插件与技能配置平台\n\n智能插件支持模型突破上下文禁区、执行具体的系统调用。控制台支持一键上传打包的 ZIP 文件，您可以直接对插件元数据与各脚本进行在线查阅、调修，更贴心支持了无损 ZIP 反向打包生成与下载。\n\n快速初始化脚手架\n智能技能上传器\n点击或拖拽 ZIP 文件到此处\n压缩包内请确保含有 SKILL.md 业务元数据与配置声明\nZIP 文件打包规制指引：\n主配置项命名须为 SKILL.md\n必须包含头部 YAML 元数据段落：\n---\nname: \"插件名称\"\ndescription: \"核心业务详情摘要描述\"\nversion: \"1.0.0\"\nauthor: \"发行提供端\"\n---\n\n# 说明文档\n在此撰写插件细节。\n暂未检索到任何符合的技能套件\n\n您可以点击左侧的上传模块，或点击快速初始化脚手架。\n\n© 2026 仓颉知道 - 多租户智能体集配控制台 · 版权所有\n\nFastGPT Knowledge Engine · 动态托管链路保护生效中"
+  },
+  "logs": []
+}

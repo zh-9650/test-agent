@@ -1,0 +1,24 @@
+# Test Charter
+
+- Created: 2026-07-03T23:01:20+00:00
+- Objective: 反向整理仓颉知道被测系统资料，生成可喂给 test_agent 的 PRD/API/测试数据，并用当前 test_agent 对 `http://localhost:3001/` 做小范围高价值验收。
+- Testing mode: 在线探索 + 设计 + 执行；旁路浏览器烟测用于校准真实页面和环境。
+- Clarification gate result: passed. 用户确认 `http://localhost:3001/` 是被测地址，当前项目用于生成资产、执行测试并根据观察优化测试项目。默认不修改 `C:\Users\17381\Desktop\cangjie` 产品代码。
+- In scope: 登录、智能体广场、知识库管理、技能管理；真实管理员登录；列表加载；一个正向新增链路；一个负向/规格不一致链路；当前测试项目的测试资产和 eval manifest。
+- Out of scope: 全量后端 Controller 扫描、跨系统外部跳转真实联调、生产数据、非本次创建数据的删除。
+- Scenario inventory: 见 `coverage-matrix.csv`。
+- Entry point and route source: 用户提供入口 `http://localhost:3001/`；前端源码 `src\App.tsx`、`src\api\index.ts`；启动文档确认网关 `http://127.0.0.1:8080`。
+- Environment and accounts: 本地前端 3001、网关 8080、test_agent 后端 8002 均已监听。管理员账号 `admin/admin123` 经网关验证成功；历史一键填值 `admin/cangjie*2026` 经网关验证失败。
+- Stable prerequisites: 管理员登录、进入三大模块、测试数据后缀 `TA-20260704`。
+- Setup artifacts: `data/targets/cangjie/task-payload.json`；如浏览器登录态可复用则记录为 setup exception。
+- Frontend/runtime stack: React 19 + Vite + 自定义组件，非 Element Plus。
+- Component-library signals: lucide-react、motion、Tailwind/Vite；未发现 Element Plus。
+- Browser automation risks: 登录页一键填值密码失效；删除/解绑有副作用；重复提交拦截；无稳定 data-testid。
+- Component-library strategy: 以可见文本、输入框 id、按钮文本和模块标签 id 为主。
+- Browser-control fallback policy: 优先 test_agent 运行时和 in-app browser Playwright；不使用坐标点击作为通过证据。
+- UI action contract policy: 每次点击/填写后立刻验证微检查点，如值变更、错误提示、模块页标题、列表刷新或接口结果。
+- Tool fallback order: test_agent API task -> in-app browser Playwright -> 直接网关 API 只读/校准。
+- Required depth floors: 登录和列表 D1-D2；写操作 D2，需要刷新或 API/列表复查；绑定/删除约束 D3；测试项目优化 D4 以 eval runner/schema validation 为最小传感器。
+- Evidence contract: 保存页面截图、API 响应摘要、test_agent task/run/report、eval runner 输出；每个 pass/partial 必须有 evidence 文件或明确降级原因。
+- Fix policy: 默认只优化当前 `test_agent` 的测试资产、eval manifest、运行记录和必要测试输入；不改被测 `cangjie` 产品代码。
+- Completion verification: eval manifest 校验通过；test_agent 创建任务并进入完成/失败/复核终态；最终报告包含执行范围、发现、残余风险。

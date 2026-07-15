@@ -1,0 +1,15 @@
+{
+  "loginState": {
+    "backendReadyText": true,
+    "currentUserVisible": true,
+    "hasAgentsTab": true,
+    "hasKbTab": true,
+    "hasLoginCard": false,
+    "hasSkillsTab": true,
+    "title": "仓颉知道3.0",
+    "url": "http://localhost:3001/",
+    "visibleText": "仓\n仓颉知道\nCONSOLE V1.2\n\n多元平台多模型融合语料关联网关\n\n智能体广场\n知识库管理\n技能管理\nAPI 网关: 正在校验\nA\nadmin\n新增智能体\n多租户 AI 平台集成面板\n\n管理所有接入的大模型端点。点击「进入平台」可免登跳转至外部系统。\n\nzhanghong\nID: 4\n未关联知识库\n\n暂无描述内容。\n\n端点地址:\nhttps://192.168.110.160:5000\n对接 Token:\n80313530***\n进入平台\n人才盘点22\nID: 2\n未关联知识库\n\n暂无描述内容。\n\n端点地址:\nhttp://192.168.110.213:5000/\n对接 Token:\n89eb8e7e***\n进入平台\n人才盘点\nID: 1\n未关联知识库\n\n暂无描述内容。\n\n端点地址:\nhttp://192.168.110.247:5000/\n对接 Token:\n06288cc5***\n进入平台\n\n© 2026 仓颉知道 - 多租户智能体集配控制台 · 版权所有\n\nFastGPT Knowledge Engine · 动态托管链路保护生效中"
+  },
+  "logs": [],
+  "snapshotExcerpt": "- banner:\n  - generic: 仓\n  - generic: 仓颉知道\n  - generic: Console v1.2\n  - paragraph: 多元平台多模型融合语料关联网关\n  - navigation:\n    - button \"智能体广场\":\n      - generic: 智能体广场\n    - button \"知识库管理\":\n      - generic: 知识库管理\n    - button \"技能管理\":\n      - generic: 技能管理\n  - generic: \"API 网关: 正在校验\"\n  - generic: A\n  - generic: admin\n  - button \"登出系统\":\n- main:\n  - textbox \"搜索智能体名称...\"\n  - button \"新增智能体\":\n    - generic: 新增智能体\n  - heading \"多租户 AI 平台集成面板\" [level=2]:\n    - generic: 多租户 AI 平台集成面板\n  - paragraph: 管理所有接入的大模型端点。点击「进入平台」可免登跳转至外部系统。\n  - heading \"zhanghong\" [level=3]\n  - generic: \"ID: 4\"\n  - generic: 未关联知识库\n  - paragraph: 暂无描述内容。\n  - generic: \"端点地址:\"\n  - generic \"https://192.168.110.160:5000\"\n  - generic: \"对接 Token:\"\n  - generic: 80313530***\n  - button \"编辑\":\n  - button \"删除\":\n  - button \"进入平台\":\n    - generic: 进入平台\n  - heading \"人才盘点22\" [level=3]\n  - generic: \"ID: 2\"\n  - generic: 未关联知识库\n  - paragraph: 暂无描述内容。\n  - generic: \"端点地址:\"\n  - generic \"http://192.168.110.213:5000/\"\n  - generic: \"对接 Token:\"\n  - generic: 89eb8e7e***\n  - button \"编辑\":\n  - button \"删除\":\n  - button \"进入平台\":\n    - generic: 进入平台\n  - heading \"人才盘点\" [level=3]\n  - generic: \"ID: 1\"\n  - generic: 未关联知识库\n  - paragraph: 暂无描述内容。\n  - generic: \"端点地址:\"\n  - generic \"http://192.168.110.247:5000/\"\n  - generic: \"对接 Token:\"\n  - generic: 06288cc5***\n  - button \"编辑\":\n  - button \"删除\":\n  - button \"进入平台\":\n    - generic: 进入平台\n- contentinfo:\n  - paragraph: © 2026 仓颉知道 - 多租户智能体集配控制台 · 版权所有\n  - paragraph: FastGPT Knowledge Engine · 动态托管链路保护生效中"
+}

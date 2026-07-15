@@ -12,8 +12,10 @@ _TEXT_CONFIG_FIELDS = {
     "swagger",
     "tech_doc",
     "prototype_url",
+    "prototype_source",
     "changelog",
     "focus_areas",
+    "case_generation_requirements",
 }
 
 
@@ -36,6 +38,16 @@ def normalize_text_input(value: Any) -> str:
         parts = [normalize_text_input(item).strip() for item in value]
         return "\n".join(part for part in parts if part)
     return str(value)
+
+
+def combine_text_inputs(*values: Any) -> str:
+    """Join heterogeneous text inputs while dropping empty entries."""
+    parts: list[str] = []
+    for value in values:
+        normalized = normalize_text_input(value).strip()
+        if normalized:
+            parts.append(normalized)
+    return "\n".join(parts)
 
 
 def normalize_task_config(config: Mapping[str, Any] | None) -> dict[str, Any]:

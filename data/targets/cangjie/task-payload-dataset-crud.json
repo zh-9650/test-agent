@@ -1,0 +1,38 @@
+{
+  "task_name": "仓颉知道知识库新增检索 - TA-20260704 - write-flow",
+  "target_url": "http://localhost:3001/",
+  "config": {
+    "execution_mode": "online",
+    "execution_profile": "smoke",
+    "execution_target": 3,
+    "write_operation_allowed": true,
+    "accounts": [
+      {
+        "role": "管理员",
+        "username": "admin",
+        "password": "admin123",
+        "display_name": "zhanghong"
+      }
+    ],
+    "prd": "知识库管理支持知识库列表、按名称或描述关键字搜索、新建知识库、删除未绑定知识库、绑定/解绑智能体、上传文本语料和上传文件。知识库名称必填且最长 128 个字符；描述可选；列表按创建时间倒序展示。已绑定智能体的知识库禁止删除。本任务只验证知识库新增、搜索、必填校验和清理，不验证上传语料、文件上传或智能体绑定。",
+    "focus_areas": "本任务只验证知识库管理写操作，不进入智能体绑定、文本语料上传和文件上传流程。\n必须从 http://localhost:3001/ 以管理员 admin/admin123 登录后，通过真实 UI 点击“知识库管理”，再点击“新建知识库”。\n必须覆盖正向新增知识库：名称使用 测试知识库-TA-20260704-AUTO，描述使用 由 test_agent 自动化验收创建，可安全清理 TA-20260704，保存后搜索 TA-20260704-AUTO 应能看到该知识库。\n必须覆盖负向必填校验：打开新建知识库弹窗，知识库名称留空，描述可填 测试空名称-TA-20260704-EMPTY，点击保存应被 HTML required 或前端逻辑阻断，不能创建 TA-20260704-EMPTY 记录。\n测试数据只能使用 TA-20260704 后缀；清理时只允许删除名称、描述或 datasetId 中包含 TA-20260704 且未绑定智能体的知识库。",
+    "rules": [
+      "只操作本地环境 http://localhost:3001/ 和 http://127.0.0.1:8080。",
+      "不要把知识库管理页加载或弹窗打开当作新增成功；新增成功必须有 UI 搜索命中或 /fastgpt/dataset/list 后置证据。",
+      "每个 UI 动作后必须验证微检查点：导航出现、弹窗打开、输入框值匹配、保存后弹窗关闭或校验提示出现、搜索结果刷新。",
+      "写操作后必须记录清理计划；只允许清理本任务创建且包含 TA-20260704 的未绑定知识库。"
+    ],
+    "swagger": "POST /auth/login：admin/admin123 登录期望 code=200 且返回 access_token。\nPOST /fastgpt/dataset：请求 name,intro,type；合法 name 应创建成功并返回 datasetId。\nGET /fastgpt/dataset/list?keyword=TA-20260704-AUTO：应返回包含 测试知识库-TA-20260704-AUTO 的 data 列表。\nPOST /fastgpt/dataset 使用空 name 应被校验阻断，不能产生可搜索记录。\nDELETE /fastgpt/dataset/{datasetId}：本任务清理仅用于删除名称、描述或 datasetId 包含 TA-20260704 且 agentId 为空的知识库。",
+    "tech_doc": "目标前端是 React/Vite，知识库接口由 src/api/index.ts 调用 /fastgpt/dataset、/fastgpt/dataset/list、/fastgpt/dataset/{datasetId}。\n前端知识库创建弹窗在 src/App.tsx 中，按钮文案为“新建知识库”，字段 placeholder 为“例如：财务政策库”和“对知识库范围进行说明...”。\n前端请求统一携带 clientid=e5cd7e4891bf95d1d19206ce24a7b32e 和登录后 Authorization Bearer token。\n运行记录内提供清理/后置助手：data/test-runs/cangjie-20260704-acceptance/setup/cangjie_dataset_api_helper.py。",
+    "test_data": [
+      "正向知识库名称：测试知识库-TA-20260704-AUTO",
+      "正向知识库描述：由 test_agent 自动化验收创建，可安全清理 TA-20260704",
+      "负向空名称识别后缀：TA-20260704-EMPTY"
+    ],
+    "cleanup": [
+      "执行前运行：python data/test-runs/cangjie-20260704-acceptance/setup/cangjie_dataset_api_helper.py --keyword TA-20260704 --action cleanup",
+      "执行后必须再次运行同一清理命令，输出保存到 evidence/CJ-P1-005_dataset_cleanup_after.json。"
+    ],
+    "case_generation_requirements": "必须生成可由浏览器 UI 执行的知识库新增正向用例，不能只生成直接 API 请求用例。\n必须生成 UI 负向用例：新建知识库时名称留空，点击保存应被 required 校验阻断，并确认没有创建 TA-20260704-EMPTY 记录。\n正向用例 required_depth 至少为 D2：通过 UI 创建，搜索命中，并用页面刷新或 GET /fastgpt/dataset/list 证明持久化。\n负向用例 required_depth 至少为 D2：通过 UI 提交空名称，看到校验阻断或弹窗保持打开，并用搜索/API 证明未创建。\n如果测试平台暂时没有 API 后置执行 seam，应把纯 API 后置标为 deferred，不得把仅打开弹窗标为 pass。"
+  }
+}

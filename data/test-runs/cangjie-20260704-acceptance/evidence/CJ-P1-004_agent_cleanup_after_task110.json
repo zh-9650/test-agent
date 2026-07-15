@@ -1,0 +1,41 @@
+{
+  "action": "cleanup",
+  "base_url": "http://127.0.0.1:8080",
+  "keyword": "TA-20260704",
+  "generated_at": "2026-07-04T14:41:35.007475+00:00",
+  "result": {
+    "before": {
+      "raw_code": 200,
+      "raw_msg": "操作成功",
+      "total_rows": 1,
+      "matched_count": 1,
+      "matched": [
+        {
+          "id": 7,
+          "agentName": "测试智能体-TA-20260704-AUTO",
+          "agentDesc": "由 test_agent 自动化验收创建，可安全清理 TA-20260704",
+          "gatewayUrl": "https://agent-gateway.cangjie.ai/v1/ta-20260704-auto",
+          "accessTokenMasked": "1a20a90c***",
+          "knowledgeBaseId": null,
+          "knowledgeBaseName": null,
+          "status": 1,
+          "createTime": "2026-07-04 22:40:43"
+        }
+      ]
+    },
+    "deleted": [
+      {
+        "id": 7,
+        "agentName": "测试智能体-TA-20260704-AUTO"
+      }
+    ],
+    "skipped": [],
+    "after": {
+      "raw_code": 200,
+      "raw_msg": "操作成功",
+      "total_rows": 0,
+      "matched_count": 0,
+      "matched": []
+    }
+  }
+}

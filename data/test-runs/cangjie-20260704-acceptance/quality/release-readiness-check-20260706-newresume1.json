@@ -1,0 +1,17 @@
+{
+  "run_dir": "data\\test-runs\\cangjie-20260704-acceptance",
+  "release_status": "no-go",
+  "total_cases": 8,
+  "pass_cases": 7,
+  "no_go_cases": [
+    "CJ-P1-005"
+  ],
+  "findings": [
+    {
+      "case_id": "CJ-P1-005",
+      "severity": "release-blocker",
+      "code": "case_not_passed",
+      "message": "case status is blocked: Cangjie/FastGPT dataset creation returns code=502 FastGPT服务异常"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "case_id": "CJ-P1-004",
+  "title": "新增智能体并按名称检索",
+  "target": "http://localhost:3001/",
+  "test_agent_backend": "http://127.0.0.1:8003",
+  "scope": "Cangjie 智能体广场 UI 新增正向路径、非法 gatewayUrl 负向路径、管理员登录前置路径",
+  "test_data_keyword": "TA-20260704",
+  "final_task": {
+    "task_id": 110,
+    "run_id": "run-647e3fa56b944967a0b24ff42b4f4039",
+    "status": "completed",
+    "summary": {
+      "planned": 3,
+      "passed": 3,
+      "failed": 0,
+      "incomplete": 0,
+      "human_review_required": 0
+    },
+    "selected_cases": [
+      {
+        "candidate_case_id": "TC-d44f137dc1",
+        "result": "passed",
+        "coverage": "UI 输入 gatewayUrl=not-url，保存后被浏览器表单校验阻断，弹窗保持打开"
+      },
+      {
+        "candidate_case_id": "TC-d9913ee1ae",
+        "result": "passed",
+        "coverage": "UI 新增 测试智能体-TA-20260704-AUTO，合法 gatewayUrl 保存后列表可见"
+      },
+      {
+        "candidate_case_id": "TC-a007fa6f56",
+        "result": "passed",
+        "coverage": "admin/admin123 登录后显示 zhanghong 和控制台导航"
+      }
+    ]
+  },
+  "backend_oracle": {
+    "after_task110": "evidence/CJ-P1-004_agent_after_task110.json",
+    "after_task110_observed": "GET /system/agent/list matched 测试智能体-TA-20260704-AUTO id=7 gatewayUrl=https://agent-gateway.cangjie.ai/v1/ta-20260704-auto",
+    "cleanup_after_task110": "evidence/CJ-P1-004_agent_cleanup_after_task110.json",
+    "cleanup_result": "deleted id=7 and verified matched_count=0"
+  },
+  "optimization_history": [
+    {
+      "task_id": 105,
+      "finding": "payload generated/selected login and API-token cases instead of CJ-P1-004 write flow",
+      "optimization": "added explicit agent CRUD payload and L2 augmentation for agent create/invalid-gateway UI cases"
+    },
+    {
+      "task_id": 106,
+      "finding": "agent cases were selected but UI modal fill/save timed out",
+      "optimization": "added deterministic agent form sequence and terminal assertions"
+    },
+    {
+      "task_id": 107,
+      "finding": "positive create passed and created a real backend row, but invalid-gateway could be misclassified as invalid login; login cases also suffered state pollution",
+      "optimization": "agent assertions now run before invalid-login assertions; agent cases are excluded from invalid-login classification; browser reset clears richer storage and can use logout fallback"
+    },
+    {
+      "task_id": 108,
+      "finding": "core positive and negative paths passed, but duplicate generic invalid-gateway cases timed out and API postcondition cases could be UI-passed without HTTP evidence",
+      "optimization": "smoke execution selection deduplicates gateway invalid representatives and defers pure API/query candidates"
+    },
+    {
+      "task_id": 109,
+      "finding": "planned count was reduced to 3 but focus drifted to login/API because optional API postcondition markers deferred the explicit UI agent cases",
+      "optimization": "UI-primary cases with optional API oracle remain executable; login success cases are deduplicated in smoke selection"
+    }
+  ],
+  "regression_checks": [
+    "python evals/test_runtime_terminal_assertions.py",
+    "python evals/test_l2_explicit_agent_requirements.py",
+    "python evals/test_l2_explicit_login_requirements.py",
+    "python evals/test_auto_executability.py",
+    "python evals/test_execution_selector.py",
+    "python -m py_compile core/runtime.py core/skills/l2_pipeline.py core/skills/auto_executability.py core/skills/execution_selector.py"
+  ],
+  "residual_risk": [
+    "The platform still does not have a general HTTP/API execution seam; direct API-only oracles remain deferred.",
+    "The positive UI terminal assertion is supported by a separate backend helper snapshot for persistence evidence."
+  ]
+}

@@ -6,6 +6,7 @@ This is the "eyes" of the AI testing agent.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import os
@@ -888,9 +889,20 @@ async def _find_label(page: Any, el: Any) -> str:
     # 2. Associated label via id/for
     el_id = await el.get_attribute("id")
     if el_id:
-        label_locator = page.locator(f'label[for="{el_id}"]')
         try:
-            label_text = await label_locator.text_content()
+            label_text = await asyncio.wait_for(
+                page.evaluate(
+                    """
+id => {
+  const labels = Array.from(document.querySelectorAll("label[for]"));
+  const label = labels.find((item) => item.getAttribute("for") === id);
+  return (label && label.textContent ? label.textContent.trim() : "");
+}
+""",
+                    el_id,
+                ),
+                timeout=float(os.getenv("SEMANTIC_LABEL_LOOKUP_TIMEOUT", "1")),
+            )
             if label_text:
                 return label_text.strip()
         except Exception:

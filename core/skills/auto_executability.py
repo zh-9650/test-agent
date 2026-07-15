@@ -13,17 +13,42 @@ class AutoExecutabilityAssessment:
     reasons: tuple[str, ...] = ()
 
 
+_OPTIONAL_API_ORACLE_MARKERS = (
+    "api后置",
+    "api 后置",
+    "后置证据",
+    "/system/agent/list",
+    "/fastgpt/dataset/list",
+    "/system/skill/page",
+    "/system/skill/{skillid}/files",
+)
+
+
+_OPTIONAL_API_ORACLE_ENDPOINT_MARKERS = (
+    "/system/agent/list",
+    "/fastgpt/dataset/list",
+    "/system/skill/page",
+    "/system/skill/{skillid}/files",
+)
+
+
+_OPTIONAL_READONLY_METHOD_MARKERS = (
+    "get /",
+)
+
+
 _UNSUPPORTED_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "requires_browser_devtools",
         (
             "开发者工具",
             "浏览器控制台",
-            "控制台",
             "执行javascript",
             "执行 javascript",
             "javascript代码",
             "javascript 代码",
+            "开发者控制台",
+            "调试控制台",
             "developer tools",
             "dev tools",
             "elements 面板",
@@ -99,6 +124,18 @@ _UNSUPPORTED_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "修改源数据",
             "源数据更新",
             "测试数据集",
+            "决策表规则",
+            "仅名称包含",
+            "仅描述包含",
+            "agentid",
+            "agent id",
+            "agentid 为",
+            "agentid非空",
+            "agentid 非空",
+            "agentid 为 null",
+            "删除成功",
+            "删除被拒绝",
+            "成功删除",
             "空数据状态",
             "零数据状态",
             "无任何盘点项目",
@@ -147,6 +184,38 @@ _UNSUPPORTED_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "fetch(",
             "发起http",
             "发起 http",
+            "发送post",
+            "发送 post",
+            "发送get",
+            "发送 get",
+            "发送put",
+            "发送 put",
+            "发送delete",
+            "发送 delete",
+            "post /",
+            "get /",
+            "put /",
+            "delete /",
+            "patch /",
+            "http 200",
+            "响应状态码",
+            "状态码",
+            "响应体",
+            "请求体",
+            "access_token",
+            "访问令牌",
+            "令牌",
+            "authorization",
+            "bearer token",
+            "请求头",
+            "登录接口",
+            "调用登录接口",
+            "返回唯一标识",
+            "返回400",
+            "返回 400",
+            "datasetid",
+            "返回访问令牌",
+            "/auth/login",
             "post/put",
             "post/put/delete",
             "post、put",
@@ -162,8 +231,33 @@ _UNSUPPORTED_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "api接口",
             "api调用",
             "api 调用",
+            "api查询",
+            "api 查询",
+            "通过api查询",
+            "通过 api 查询",
+            "api后置",
+            "api 后置",
+            "api校验",
+            "api 校验",
+            "api返回",
+            "api 返回",
+            "接口返回",
+            "接口查询",
+            "接口校验",
+            "后置证据",
+            "调用接口",
+            "后端拒绝",
+            "拒绝请求",
+            "clientid",
+            "伪造",
+            "缺少username",
+            "缺少 username",
+            "缺少password",
+            "缺少 password",
+            "accesstoken",
             "非法api调用",
             "非法 api 调用",
+            "/system/agent/list",
             "写操作api",
             "写操作 api",
             "method not allowed",
@@ -227,6 +321,48 @@ _UNSUPPORTED_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def _is_ui_primary_with_optional_api_oracle(
+    haystack: str,
+    matched_keywords: list[str],
+) -> bool:
+    strong_keywords = [
+        keyword
+        for keyword in matched_keywords
+        if keyword.lower() not in _OPTIONAL_API_ORACLE_MARKERS
+        and not (
+            keyword.lower() in _OPTIONAL_READONLY_METHOD_MARKERS
+            and any(
+                endpoint in haystack
+                for endpoint in _OPTIONAL_API_ORACLE_ENDPOINT_MARKERS
+            )
+            and any(
+                marker in haystack
+                for marker in ("api后置", "api 后置", "后置证据")
+            )
+        )
+    ]
+    if strong_keywords:
+        return False
+    ui_markers = (
+        "通过 ui",
+        "ui ",
+        "页面",
+        "浏览器",
+        "新增智能体",
+        "新建知识库",
+        "知识库管理",
+        "技能管理",
+        "快速初始化脚手架",
+        "在线修编",
+        "技能脚手架",
+        "弹窗",
+        "填写",
+        "保存",
+        "搜索",
+    )
+    return any(marker in haystack for marker in ui_markers)
+
+
 def assess_case_auto_executability(
     case: CandidateTestCase,
 ) -> AutoExecutabilityAssessment:
@@ -251,7 +387,18 @@ def assess_case_auto_executability(
     ).lower()
 
     for reason, keywords in _UNSUPPORTED_RULES:
-        if any(keyword.lower() in haystack for keyword in keywords):
+        matched_keywords = [
+            keyword
+            for keyword in keywords
+            if keyword.lower() in haystack
+        ]
+        if reason == "requires_http_request_tooling" and matched_keywords:
+            if _is_ui_primary_with_optional_api_oracle(
+                haystack,
+                matched_keywords,
+            ):
+                continue
+        if matched_keywords:
             reasons.append(reason)
 
     deduped = tuple(dict.fromkeys(reasons))

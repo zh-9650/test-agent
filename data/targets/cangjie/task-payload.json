@@ -1,0 +1,23 @@
+{
+  "target_url": "http://localhost:3001/",
+  "task_name": "仓颉知道本地验收 - TA-20260704",
+  "config": {
+    "accounts": [
+      {
+        "role": "管理员",
+        "username": "admin",
+        "password": "admin123",
+        "display_name": "zhanghong"
+      }
+    ],
+    "execution_mode": "online",
+    "execution_profile": "smoke",
+    "execution_target": 8,
+    "focus_areas": "重点验证登录、智能体广场、知识库管理、技能管理。登录时必须使用管理员账号 admin/admin123，不要使用一键填值体验作为成功登录前置；一键填值 admin/cangjie*2026 应作为规格不一致风险单独记录。",
+    "rules": "测试只操作本地环境 http://localhost:3001/ 和 http://127.0.0.1:8080。所有新增数据必须使用 TA-20260704 后缀。遇到删除、作废、解绑等有副作用操作时，只允许清理本次创建的数据。不要使用 evaluate_js。每个 UI 动作后需要观察微检查点。",
+    "prd": "见 data/targets/cangjie/reverse-prd.md。本轮验收目标：登录页加载；管理员 admin/admin123 成功登录；一键填值 admin/cangjie*2026 登录失败风险；登录后导航至智能体广场、知识库管理、技能管理；验证列表加载；验证新增智能体、知识库和技能脚手架的正向路径；记录已绑定数据删除阻断等约束。",
+    "swagger": "见 data/targets/cangjie/api-contract.md。关键接口：POST /auth/login；GET /system/agent/list；POST /system/agent；DELETE /system/agent/{id}；GET /fastgpt/dataset/list；POST /fastgpt/dataset；PUT /fastgpt/dataset/bind；POST /system/skill/page；POST /system/skill/scaffold；GET /system/skill/{skillId}/files；DELETE /system/skill/{skillId}。",
+    "tech_doc": "前端为 React 19 + Vite，入口 http://localhost:3001/，API 前缀 /dev-api，固定 clientid=e5cd7e4891bf95d1d19206ce24a7b32e。后端为 Spring Cloud Gateway + Auth/System/FastGPT/System Skill 微服务，网关端口 8080。当前测试平台只能通过 UI 动作执行，不应默认直接写数据库。",
+    "changelog": "反向校准发现：登录页一键填值密码为 cangjie*2026，但当前网关实测 admin/admin123 才能登录；技能文档基础路径存在 /skill 与前端 /system/skill 的口径差异。"
+  }
+}

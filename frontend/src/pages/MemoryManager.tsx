@@ -16,7 +16,6 @@ export default function MemoryManager() {
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<Partial<MemoryItem>>({});
-
   const [isCreating, setIsCreating] = useState(false);
 
   const fetchMemories = async () => {
@@ -49,7 +48,7 @@ export default function MemoryManager() {
   }, []);
 
   const handleDelete = async (id: number) => {
-    if (!confirm('确定删除这条记忆吗？')) return;
+    if (!confirm('确定删除这条记忆规则吗？这将无法恢复。')) return;
     try {
       await fetch(`/api/memory/${id}`, { method: 'DELETE' });
       fetchMemories();
@@ -98,106 +97,195 @@ export default function MemoryManager() {
   };
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h2>AI 知识库 / 记忆管理</h2>
-      <p>管理 AI 在测试过程中学习到的系统经验与特定操作规则。</p>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       
-      <button onClick={startCreate} style={{ marginBottom: '1rem', padding: '0.5rem 1rem', background: '#4CAF50', color: 'white', border: 'none', cursor: 'pointer' }}>
-        + 添加记忆
-      </button>
+      {/* Title Header */}
+      <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '1.8rem' }}>AI 知识库 / 记忆管理</h1>
+          <p style={{ margin: '0.25rem 0 0', color: 'var(--text-secondary)' }}>
+            维护 AI 智能体在页面探索、设计中使用的全局或域级经验（如特定验证码规则、绕过规则等）。
+          </p>
+        </div>
+        {!isCreating && (
+          <button onClick={startCreate} className="btn btn-primary">
+            + 添加记忆知识
+          </button>
+        )}
+      </div>
 
+      {/* Add New Memory Form Panel */}
       {isCreating && (
-        <div style={{ padding: '1rem', border: '1px solid #ccc', marginBottom: '1rem' }}>
-          <h3>新增记忆</h3>
-          <div style={{ marginBottom: '8px' }}>
-            <label>作用域类型: </label>
-            <select value={editForm.scope_type} onChange={e => setEditForm({...editForm, scope_type: e.target.value})}>
-              <option value="global">Global (全局通用)</option>
-              <option value="domain">Domain (系统隔离)</option>
-            </select>
+        <div className="glass-panel" style={{ borderLeft: '4px solid var(--accent-blue)' }}>
+          <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1.25rem' }}>
+            新增知识规则
+          </h3>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-group">
+              <label className="form-label">作用域类型 (Scope)</label>
+              <select 
+                value={editForm.scope_type} 
+                onChange={e => setEditForm({...editForm, scope_type: e.target.value})}
+                className="form-select"
+              >
+                <option value="global">Global (全局通用)</option>
+                <option value="domain">Domain (特定系统隔离)</option>
+              </select>
+            </div>
+            
+            <div className="form-group">
+              <label className="form-label">作用域目标 (URL 或 Domain)</label>
+              <input 
+                value={editForm.scope_value} 
+                onChange={e => setEditForm({...editForm, scope_value: e.target.value})} 
+                placeholder="如 example.com 或 * 表示所有"
+                className="form-input" 
+              />
+            </div>
           </div>
-          <div style={{ marginBottom: '8px' }}>
-            <label>作用域目标 (URL/Domain 或 *): </label>
-            <input value={editForm.scope_value} onChange={e => setEditForm({...editForm, scope_value: e.target.value})} style={{ width: '300px' }} />
+
+          <div className="form-group">
+            <label className="form-label">知识标识 (Key)</label>
+            <input 
+              value={editForm.memory_key} 
+              onChange={e => setEditForm({...editForm, memory_key: e.target.value})} 
+              placeholder="如 input_text.captcha.bypass_rule (建议小写点分规范)"
+              className="form-input" 
+            />
           </div>
-          <div style={{ marginBottom: '8px' }}>
-            <label>记忆标识 (Key): </label>
-            <input value={editForm.memory_key} onChange={e => setEditForm({...editForm, memory_key: e.target.value})} style={{ width: '100%' }} />
+
+          <div className="form-group">
+            <label className="form-label">详细规则内容 (Value / Knowledge)</label>
+            <textarea 
+              value={editForm.memory_value} 
+              onChange={e => setEditForm({...editForm, memory_value: e.target.value})} 
+              placeholder="输入该场景下 AI 需遵守的具体经验描述..."
+              rows={4}
+              className="form-textarea" 
+            />
           </div>
-          <div style={{ marginBottom: '8px' }}>
-            <label>详细知识 (Value): </label>
-            <textarea value={editForm.memory_value} onChange={e => setEditForm({...editForm, memory_value: e.target.value})} style={{ width: '100%', height: '80px' }} />
+
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
+            <button onClick={handleCreate} className="btn btn-primary" style={{ padding: '0.5rem 1.5rem' }}>
+              保存知识
+            </button>
+            <button onClick={() => setIsCreating(false)} className="btn btn-secondary">
+              取消
+            </button>
           </div>
-          <button onClick={handleCreate} style={{ marginRight: '8px' }}>保存</button>
-          <button onClick={() => setIsCreating(false)}>取消</button>
         </div>
       )}
 
-      {loading ? <p>加载中...</p> : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '1rem' }}>
-          <thead>
-            <tr style={{ background: '#f5f5f5', textAlign: 'left' }}>
-              <th style={{ padding: '8px', borderBottom: '1px solid #ddd', width: '50px' }}>ID</th>
-              <th style={{ padding: '8px', borderBottom: '1px solid #ddd', width: '100px' }}>Scope</th>
-              <th style={{ padding: '8px', borderBottom: '1px solid #ddd', width: '150px' }}>Target</th>
-              <th style={{ padding: '8px', borderBottom: '1px solid #ddd', width: '150px' }}>Key</th>
-              <th style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>Value (Knowledge)</th>
-              <th style={{ padding: '8px', borderBottom: '1px solid #ddd', width: '120px' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {memories.map(mem => (
-              <tr key={mem.id}>
-                {editingId === mem.id ? (
-                  <>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>{mem.id}</td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>
-                      <select value={editForm.scope_type} onChange={e => setEditForm({...editForm, scope_type: e.target.value})}>
-                        <option value="global">Global</option>
-                        <option value="domain">Domain</option>
-                      </select>
+      {/* Memories Table List */}
+      <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
+        {loading ? (
+          <p style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>正在载入知识库内容...</p>
+        ) : (
+          <div className="table-container" style={{ border: 'none', borderRadius: 0, background: 'transparent' }}>
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '8%' }}>ID</th>
+                  <th style={{ width: '12%' }}>Scope 类型</th>
+                  <th style={{ width: '15%' }}>作用目标 (Domain)</th>
+                  <th style={{ width: '20%' }}>知识标识 (Key)</th>
+                  <th style={{ width: '30%' }}>详细内容描述 (Value)</th>
+                  <th style={{ width: '15%', textAlign: 'center' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {memories.map(mem => (
+                  <tr key={mem.id}>
+                    {editingId === mem.id ? (
+                      <>
+                        <td>#{mem.id}</td>
+                        <td>
+                          <select 
+                            value={editForm.scope_type} 
+                            onChange={e => setEditForm({...editForm, scope_type: e.target.value})}
+                            className="form-select"
+                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+                          >
+                            <option value="global">Global</option>
+                            <option value="domain">Domain</option>
+                          </select>
+                        </td>
+                        <td>
+                          <input 
+                            value={editForm.scope_value} 
+                            onChange={e => setEditForm({...editForm, scope_value: e.target.value})} 
+                            className="form-input"
+                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+                          />
+                        </td>
+                        <td>
+                          <input 
+                            value={editForm.memory_key} 
+                            onChange={e => setEditForm({...editForm, memory_key: e.target.value})} 
+                            className="form-input"
+                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+                          />
+                        </td>
+                        <td>
+                          <textarea 
+                            value={editForm.memory_value} 
+                            onChange={e => setEditForm({...editForm, memory_value: e.target.value})} 
+                            className="form-textarea"
+                            style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem', minHeight: '60px' }}
+                          />
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <button onClick={() => handleSaveEdit(mem.id)} className="btn btn-success" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}>
+                              保存
+                            </button>
+                            <button onClick={() => setEditingId(null)} className="btn btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}>
+                              取消
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td>#{mem.id}</td>
+                        <td>
+                          <span className={`badge ${mem.scope_type === 'global' ? 'badge-passed' : 'badge-review'}`} style={{ fontSize: '0.7rem' }}>
+                            {mem.scope_type === 'global' ? '全局通用' : '独立域'}
+                          </span>
+                        </td>
+                        <td><code>{mem.scope_value}</code></td>
+                        <td><strong style={{ fontFamily: 'var(--font-mono)' }}>{mem.memory_key}</strong></td>
+                        <td style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                          {mem.memory_value}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <button onClick={() => startEdit(mem)} className="btn btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}>
+                              编辑
+                            </button>
+                            <button onClick={() => handleDelete(mem.id)} className="btn btn-danger" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}>
+                              删除
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+
+                {memories.length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      📂 暂无记忆规则。添加测试特定知识可指引智能体更聪明地操作。
                     </td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>
-                      <input value={editForm.scope_value} onChange={e => setEditForm({...editForm, scope_value: e.target.value})} style={{ width: '100%' }} />
-                    </td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>
-                      <input value={editForm.memory_key} onChange={e => setEditForm({...editForm, memory_key: e.target.value})} style={{ width: '100%' }} />
-                    </td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>
-                      <textarea value={editForm.memory_value} onChange={e => setEditForm({...editForm, memory_value: e.target.value})} style={{ width: '100%', minHeight: '60px' }} />
-                    </td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>
-                      <button onClick={() => handleSaveEdit(mem.id)} style={{ marginRight: '4px' }}>保存</button>
-                      <button onClick={() => setEditingId(null)}>取消</button>
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>{mem.id}</td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>
-                      <span style={{ padding: '2px 6px', background: mem.scope_type === 'global' ? '#e3f2fd' : '#fff3e0', borderRadius: '4px', fontSize: '0.85em' }}>
-                        {mem.scope_type}
-                      </span>
-                    </td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>{mem.scope_value}</td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}><strong>{mem.memory_key}</strong></td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>{mem.memory_value}</td>
-                    <td style={{ padding: '8px', borderBottom: '1px solid #ddd' }}>
-                      <button onClick={() => startEdit(mem)} style={{ marginRight: '8px' }}>编辑</button>
-                      <button onClick={() => handleDelete(mem.id)} style={{ color: 'red' }}>删除</button>
-                    </td>
-                  </>
+                  </tr>
                 )}
-              </tr>
-            ))}
-            {memories.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ padding: '1rem', textAlign: 'center', color: '#666' }}>暂无记忆数据</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

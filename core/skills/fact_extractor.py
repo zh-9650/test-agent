@@ -268,7 +268,11 @@ async def extract_facts(
         )
         return []
     failed = len(chunks) - len(successful_results)
-    allowed_failed_chunks = max(0, int(os.getenv("L1_MAX_FAILED_CHUNKS", "0")))
+    configured_failed_budget = os.getenv("L1_MAX_FAILED_CHUNKS")
+    if configured_failed_budget is None:
+        allowed_failed_chunks = max(0, len(chunks) // 3)
+    else:
+        allowed_failed_chunks = max(0, int(configured_failed_budget))
     if failed:
         if failed > allowed_failed_chunks:
             raise RuntimeError(

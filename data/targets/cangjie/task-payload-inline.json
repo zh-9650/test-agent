@@ -1,0 +1,63 @@
+{
+  "target_url": "http://localhost:3001/",
+  "task_name": "仓颉知道本地验收 - TA-20260704 - inline",
+  "config": {
+    "accounts": [
+      {
+        "role": "管理员",
+        "username": "admin",
+        "password": "admin123",
+        "display_name": "zhanghong"
+      }
+    ],
+    "execution_mode": "online",
+    "execution_profile": "smoke",
+    "execution_target": 8,
+    "focus_areas": [
+      "本轮被测地址是 http://localhost:3001/，当前 test_agent 项目只是测试平台。",
+      "重点验证登录、智能体广场、知识库管理、技能管理四条主流程。",
+      "成功登录必须使用 admin/admin123；登录页一键填值 admin/cangjie*2026 是规格不一致风险，不应作为成功登录前置。",
+      "所有新增数据必须使用 TA-20260704 后缀，避免污染既有业务数据。"
+    ],
+    "rules": [
+      "只操作本地环境 http://localhost:3001/ 和 http://127.0.0.1:8080。",
+      "每个 UI 动作后必须做可见微检查点，例如按钮消失、导航出现、列表文案变化、错误提示出现。",
+      "不要使用 evaluate_js 作为主要断言手段；优先使用页面可见状态和接口结果。",
+      "遇到删除、解绑、作废等有副作用操作时，只允许清理本轮创建且包含 TA-20260704 的数据。",
+      "如写操作失败，需要保留失败提示、接口错误或页面截图作为证据，不要直接跳过。"
+    ],
+    "prd": [
+      "仓颉知道是一个多租户智能体与知识库关联管理控制台，管理员登录后可访问智能体广场、知识库管理、技能管理。",
+      "登录模块：用户名和密码必填，支持密码显隐和记住密码。登录成功后进入控制台，展示用户名 admin、API 网关状态和三大业务导航。Token 失效时应回到登录页。",
+      "已校准的登录事实：本地可用管理员账号为 admin/admin123；登录页一键填值仍填 admin/cangjie*2026，当前网关实测该密码失败，应记录为产品规格或演示数据不一致风险。",
+      "智能体广场：支持外部智能体接入配置的搜索、新增、编辑、删除和免登跳转。智能体名称必填且未删除数据内唯一，网关地址必填且必须以 http:// 或 https:// 开头，接入 Token 可留空由后端生成，已绑定知识库的智能体禁止删除。",
+      "知识库管理：支持 FastGPT 数据集创建、列表查询、详情、删除、文本集合、文件集合、数据推送、语义搜索、绑定或解绑智能体。知识库与智能体是一对一绑定，已绑定知识库禁止直接删除。",
+      "技能管理：支持分页搜索、技能脚手架创建、ZIP 上传、状态切换、逻辑删除、导出、详情、文件树、文件编辑和元数据更新。脚手架创建应生成 SKILL.md 和 index.js，SKILL.md 是核心文件，不允许重复创建或删除。",
+      "本轮验收先做高价值小范围：登录页加载、错误密码提示、真实凭据登录、三大模块导航和列表加载、至少一个新增正向路径、至少一个约束或负向路径。"
+    ],
+    "swagger": [
+      "通用约定：前端入口 http://localhost:3001/，网关入口 http://127.0.0.1:8080，前端 API 前缀 /dev-api，业务接口需要 Authorization: Bearer token 和固定 clientid e5cd7e4891bf95d1d19206ce24a7b32e，登录租户 tenantId=000000。",
+      "POST /auth/login：请求 username,password,grantType=password,tenantId=000000,clientId=e5cd7e4891bf95d1d19206ce24a7b32e；成功期望 code=200 且 data/access_token 存在。admin/admin123 应成功，admin/cangjie*2026 应失败并展示错误提示。",
+      "GET /auth/code：返回登录配置，当前 captchaEnabled=false。",
+      "GET /system/agent/list：查询智能体列表，可带 keyword；期望 code=200，列表区域稳定加载。",
+      "POST /system/agent：新增智能体，请求 agentName,agentDesc,gatewayUrl,accessToken,knowledgeBaseId；测试数据为 测试智能体-TA-20260704，gatewayUrl=https://agent-gateway.cangjie.ai/v1/ta-20260704。",
+      "PUT /system/agent：编辑智能体；DELETE /system/agent/{id}：删除智能体，已绑定知识库时应阻断；GET /system/agent/{id}/redirect：返回 redirectUrl。",
+      "GET /fastgpt/dataset/list：查询知识库列表；POST /fastgpt/dataset：创建知识库，请求 name,intro，测试数据为 测试知识库-TA-20260704。",
+      "POST /fastgpt/dataset/collection/text：创建文本集合，请求 datasetId,name,text；测试语料名为 测试语料-TA-20260704.md。",
+      "PUT /fastgpt/dataset/bind：绑定或解绑知识库与智能体；DELETE /fastgpt/dataset/{datasetId}：删除知识库，已绑定时应阻断。",
+      "POST /system/skill/page：分页搜索技能；POST /system/skill/scaffold：创建技能脚手架，请求 name,author,description，测试数据为 测试技能-TA-20260704。",
+      "GET /system/skill/{skillId}/files：查询技能文件树；DELETE /system/skill/{skillId}：逻辑删除技能；POST/PUT/DELETE /system/skill/{skillId}/file：维护文件，重复创建或删除 SKILL.md 应被阻断。"
+    ],
+    "tech_doc": [
+      "目标前端是 React 19 + Vite，运行在 http://localhost:3001/，源码目录 C:/Users/17381/Desktop/cangjie/cangjie-zhidao3.0。",
+      "目标后端是 Spring Cloud Gateway + Auth/System/FastGPT/System Skill 微服务，网关端口 8080，源码目录 C:/Users/17381/Desktop/cangjie/cangcloud。",
+      "当前 test_agent 后端运行在 http://127.0.0.1:8002，前端运行在 http://127.0.0.1:5173。",
+      "当前 test_agent 会抓取配置字段中的 URL，但不会自动展开本地相对路径；因此本 payload 已内联 PRD、接口和测试数据正文。"
+    ],
+    "changelog": [
+      "反向校准发现登录页一键填值密码 cangjie*2026 与真实本地密码 admin123 不一致。",
+      "技能接口旧文档存在 /skill 与前端实际 /system/skill 的路径口径差异，测试应以前端实际调用 /system/skill 为准。",
+      "上一轮 task-payload.json 只写本地文档路径，任务 81 在分析阶段失败：analysis_produced_no_exploration_goals。本文件用于验证正文内联输入是否能让 test_agent 生成探索目标。"
+    ]
+  }
+}

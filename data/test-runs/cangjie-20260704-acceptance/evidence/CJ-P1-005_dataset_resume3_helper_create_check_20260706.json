@@ -1,0 +1,54 @@
+{
+  "action": "create-check",
+  "base_url": "http://127.0.0.1:8080",
+  "keyword": "TA-20260704-RESUME3-20260706",
+  "generated_at": "2026-07-06T08:24:51.095538+00:00",
+  "login_code": 200,
+  "login_http_status": 200,
+  "result": {
+    "request": {
+      "name": "测试知识库-TA-20260704-RESUME3-20260706",
+      "intro": "test_agent helper create-check resumed audit 3",
+      "type": "dataset"
+    },
+    "create_http_status": 200,
+    "create_response": {
+      "code": 502,
+      "msg": "FastGPT服务异常",
+      "data": null
+    },
+    "list_after_create": {
+      "raw_code": 200,
+      "raw_msg": "操作成功",
+      "total_rows": 0,
+      "matched_count": 0,
+      "matched": []
+    },
+    "matched_after_create": [],
+    "cleanup": {
+      "before": {
+        "raw_code": 200,
+        "raw_msg": "操作成功",
+        "total_rows": 0,
+        "matched_count": 0,
+        "matched": []
+      },
+      "deleted": [],
+      "skipped": [],
+      "after": {
+        "raw_code": 200,
+        "raw_msg": "操作成功",
+        "total_rows": 0,
+        "matched_count": 0,
+        "matched": []
+      }
+    },
+    "list_after_cleanup": {
+      "raw_code": 200,
+      "raw_msg": "操作成功",
+      "total_rows": 0,
+      "matched_count": 0,
+      "matched": []
+    }
+  }
+}

@@ -94,7 +94,10 @@ def normalize_coverage(
                 "branch_type": item.branch_type if item.branch_type != "positive" else condition.branch_type,
             })
         )
-    return normalized
+    return [
+        item.model_copy(update={"id": f"COV-{index:03d}"})
+        for index, item in enumerate(normalized, start=1)
+    ]
 
 
 async def analyze_coverage(

@@ -58,11 +58,13 @@ yarn.lock
 data/screenshots/*
 data/sessions/*
 data/reports/*
+data/evals/*
 data/webvoyager_report*.md
 data/bench_errors/*
 !data/screenshots/.gitkeep
 !data/sessions/.gitkeep
 !data/reports/.gitkeep
+!data/evals/.gitkeep
 
 # Claude Code local settings
 .claude/

@@ -1,0 +1,76 @@
+﻿{
+    "results":  [
+                    {
+                        "candidate_case_id":  "TC-a007fa6f56",
+                        "terminal_status":  "passed",
+                        "attempt_count":  1,
+                        "summary":  "é«æ°³ç¹: è¾å\u0085¥ admin/admin123 å¹¶ç¹å»ç«å³ç»å½åéªè¯è¿å\u0085¥æ§å¶å°",
+                        "evidence_refs":  [
+                                              "input: #username-input -\u003e #username-input",
+                                              "input: #password-input -\u003e #password-input",
+                                              "clicked: #login-submit-button -\u003e #login-submit-button",
+                                              "page_url: http://localhost:3001/",
+                                              "page_title: ä»é¢ç¥é3.0",
+                                              "terminal_assertion: Configured login succeeded: visible account identity \u0027zhanghong\u0027 and dashboard markers æºè½ä½å¹¿åº, ç¥è¯åºç®¡ç, æè½ç®¡ç were found after submit.",
+                                              "locator_metrics: {\"locator_attempts\": 3, \"locator_failure_by_reason\": {}, \"locator_failure_rate\": 0.0, \"locator_failures\": 0, \"locator_success_by_strategy\": {\"css\": 3}, \"locator_successes\": 3, \"semantic_observations\": 2, \"semantic_source_counts\": {\"cdp\": 2}}"
+                                          ],
+                        "failure_reason":  null,
+                        "started_at":  "2026-07-04T19:57:05.973233Z",
+                        "completed_at":  "2026-07-04T19:57:15.387410Z"
+                    },
+                    {
+                        "candidate_case_id":  "TC-5a78d55f42",
+                        "terminal_status":  "passed",
+                        "attempt_count":  1,
+                        "summary":  "éè¿: éè¿ UI æè½ç®¡çå¿«éåå§åèææ¶ï¼ä¿å­ä¸º æµè¯æè½-TA-20260704-AUTO åéªè¯åè¡¨åæä»¶æ ã",
+                        "evidence_refs":  [
+                                              "input: #username-input -\u003e #username-input",
+                                              "input: #password-input -\u003e #password-input",
+                                              "clicked: #login-submit-button -\u003e #login-submit-button",
+                                              "clicked: #tab-skills-mgmt -\u003e #tab-skills-mgmt",
+                                              "clicked: button:has-text(\"å¿«éåå§åèææ¶\") -\u003e button:has-text(\"å¿«éåå§åèææ¶\")",
+                                              "clicked: skill editor button #edit-skill-btn-sk-cst-1783195062768",
+                                              "input: div.fixed input[type=\"text\"] \u003e\u003e nth=0 -\u003e div.fixed input[type=\"text\"] \u003e\u003e nth=0",
+                                              "input: div.fixed input[type=\"text\"] \u003e\u003e nth=1 -\u003e div.fixed input[type=\"text\"] \u003e\u003e nth=1",
+                                              "input: div.fixed input[type=\"text\"] \u003e\u003e nth=2 -\u003e div.fixed input[type=\"text\"] \u003e\u003e nth=2",
+                                              "input: div.fixed textarea \u003e\u003e nth=0 -\u003e div.fixed textarea \u003e\u003e nth=0",
+                                              "clicked: div.fixed button:has-text(\"ç¼è¯æå»ºå¹¶å è½½\") -\u003e div.fixed button:has-text(\"ç¼è¯æå»ºå¹¶å è½½\")",
+                                              "clicked: skill editor button #edit-skill-btn-sk-cst-1783195062768",
+                                              "skill_file_tree: SKILL.md,index.js",
+                                              "closed: skill editor modal (after scaffold evidence)",
+                                              "page_url: http://localhost:3001/",
+                                              "page_title: ä»é¢ç¥é3.0",
+                                              "terminal_assertion: Skill scaffold succeeded through UI: the renamed skill æµè¯æè½-TA-20260704-AUTO is visible and the editor/file tree exposes SKILL.md and index.js.",
+                                              "locator_metrics: {\"locator_attempts\": 10, \"locator_failure_by_reason\": {}, \"locator_failure_rate\": 0.0, \"locator_failures\": 0, \"locator_success_by_strategy\": {\"css\": 10}, \"locator_successes\": 10, \"semantic_observations\": 4, \"semantic_source_counts\": {\"cdp\": 4}}"
+                                          ],
+                        "failure_reason":  null,
+                        "started_at":  "2026-07-04T19:57:15.874680Z",
+                        "completed_at":  "2026-07-04T19:57:52.090300Z"
+                    },
+                    {
+                        "candidate_case_id":  "TC-1a3573a720",
+                        "terminal_status":  "passed",
+                        "attempt_count":  1,
+                        "summary":  "éè¿: éè¿ UI å¨çº¿ä¿®ç¼å°è¯æ°å»ºéå¤æ ¸å¿æä»¶ SKILL.mdï¼éªè¯è¢«é»æ­ã",
+                        "evidence_refs":  [
+                                              "input: #username-input -\u003e #username-input",
+                                              "input: #password-input -\u003e #password-input",
+                                              "clicked: #login-submit-button -\u003e #login-submit-button",
+                                              "clicked: #tab-skills-mgmt -\u003e #tab-skills-mgmt",
+                                              "clicked: skill editor button #edit-skill-btn-sk-cst-1783195062768",
+                                              "input: div.fixed form input[type=\"text\"] -\u003e SKILL.md",
+                                              "pressed: Enter on SKILL.md duplicate file path",
+                                              "dialog: SKILL.mdä¸ºæ ¸å¿æä»¶ï¼ä¸å¯éå¤åå»º",
+                                              "closed: skill editor modal (after duplicate attempt)",
+                                              "page_url: http://localhost:3001/",
+                                              "page_title: ä»é¢ç¥é3.0",
+                                              "terminal_assertion: Duplicate SKILL.md creation was blocked by the UI/API dialog evidence: dialog: SKILL.mdä¸ºæ ¸å¿æä»¶ï¼ä¸å¯éå¤åå»º",
+                                              "locator_metrics: {\"locator_attempts\": 4, \"locator_failure_by_reason\": {}, \"locator_failure_rate\": 0.0, \"locator_failures\": 0, \"locator_success_by_strategy\": {\"css\": 4}, \"locator_successes\": 4, \"semantic_observations\": 4, \"semantic_source_counts\": {\"cdp\": 4}}"
+                                          ],
+                        "failure_reason":  null,
+                        "started_at":  "2026-07-04T19:57:52.559689Z",
+                        "completed_at":  "2026-07-04T19:58:27.723660Z"
+                    }
+                ],
+    "total":  3
+}

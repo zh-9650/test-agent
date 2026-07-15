@@ -1,0 +1,56 @@
+{
+  "target_url": "http://localhost:3001/",
+  "task_name": "仓颉知道登录回归 - TA-20260704 - patched-runtime",
+  "config": {
+    "accounts": [
+      {
+        "role": "管理员",
+        "username": "admin",
+        "password": "admin123",
+        "display_name": "zhanghong"
+      }
+    ],
+    "execution_mode": "online",
+    "execution_profile": "smoke",
+    "execution_target": 3,
+    "focus_areas": [
+      "只验证登录页和登录后控制台入口，不进入业务写操作。",
+      "必须覆盖一键填值体验：点击后用户名应为 admin，当前密码实测为 cangjie*2026；这不是成功登录凭据，应记录为规格不一致风险。",
+      "必须覆盖真实凭据：admin/admin123 应登录成功；页面身份可显示为 admin 对应昵称 zhanghong，并应看到智能体广场、知识库管理、技能管理。"
+    ],
+    "rules": [
+      "只操作 http://localhost:3001/。",
+      "每个用例开始时先回到 http://localhost:3001/ 并观察当前是否是登录页；如果已经登录，优先通过页面退出或重新打开无状态会话，不要把登录态误当成登录页。",
+      "输入框优先使用当前页面真实可见的输入控件；如果模型选择 label[for=\"username-input\"] 或 label[for=\"password-input\"]，运行时应能回退到对应 id 输入框。",
+      "不要使用 evaluate_js。断言必须来自可见页面文本、输入框值或任务步骤证据。",
+      "不要创建、编辑、删除业务数据。"
+    ],
+    "case_generation_requirements": [
+      "本 online 回归任务必须生成可由浏览器 UI 执行的用例，不能只生成直接 API 请求用例。",
+      "至少生成 1 条 UI 有效登录用例：在登录页输入 admin/admin123，点击立即登录，预期进入控制台；账号身份可显示为 admin 或昵称 zhanghong，并看到智能体广场、知识库管理、技能管理。",
+      "至少生成 1 条 UI 一键填值用例：点击一键填值体验后，只验证 username=admin 和 password=cangjie*2026，不把它当作成功登录凭据。",
+      "至少生成 1 条 UI 错误密码用例：使用 admin/cangjie*2026 提交登录，预期仍停留在登录页并显示密码错误提示。",
+      "POST /auth/login、HTTP 状态码、access_token 只能作为背景 oracle 或后续 API 执行器范围；当前浏览器 UI 执行器不要直接选择发送 HTTP 请求的用例。"
+    ],
+    "prd": [
+      "仓颉知道登录页提供用户名和密码输入、立即登录按钮、一键填值体验、记住密码、用户协议和隐私政策入口。",
+      "当前本地真实管理员凭据为 admin/admin123，登录成功后应进入控制台；登录账号 admin 当前页面展示昵称为 zhanghong，并显示智能体广场、知识库管理、技能管理。",
+      "登录页一键填值体验当前填入 admin/cangjie*2026；该密码经网关实测会失败，因此应作为产品规格或演示数据不一致风险记录。",
+      "密码错误时用户应停留在登录页，并看到明确错误提示，不能进入控制台。"
+    ],
+    "swagger": [
+      "POST /auth/login 请求 username,password,grantType=password,tenantId=000000,clientId=e5cd7e4891bf95d1d19206ce24a7b32e。",
+      "admin/admin123 登录期望 code=200 且返回 access_token。",
+      "admin/cangjie*2026 登录期望非成功业务码，并在页面显示密码错误提示。",
+      "GET /auth/code 当前返回 captchaEnabled=false。"
+    ],
+    "tech_doc": [
+      "目标前端是 React/Vite，登录输入框 id 为 username-input 和 password-input，提交按钮 id 为 login-submit-button。",
+      "目标登录页的 label 没有 for 属性，测试平台运行时已增加 label[for=\"...\"] 到 [id=\"...\"] 的兜底解析。"
+    ],
+    "changelog": [
+      "任务 82 的自动执行曾因为等待 label[for=\"username-input\"] / label[for=\"password-input\"] 超时而进入人工复核。",
+      "本回归任务用于验证 patched runtime 的 selector fallback 是否能让登录页类用例继续推进。"
+    ]
+  }
+}

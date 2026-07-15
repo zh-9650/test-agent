@@ -1,0 +1,37 @@
+﻿{
+    "generated_at":  "2026-07-06T08:00:35.3923865Z",
+    "target":  "CJ-P1-005 FastGPT dataset create resumed audit recheck 2",
+    "base_url":  "http://127.0.0.1:8080",
+    "request":  {
+                    "name":  "测试知识库-TA-20260704-RESUME2-20260706",
+                    "type":  "dataset",
+                    "intro":  "test_agent 2026-07-06 resumed blocked-audit recheck 2"
+                },
+    "login_code":  200,
+    "create_http_status":  200,
+    "create_response":  {
+                            "code":  502,
+                            "msg":  "FastGPTæå¡å¼å¸¸",
+                            "data":  null
+                        },
+    "list_after_create":  {
+                              "code":  200,
+                              "msg":  "æä½æå",
+                              "data":  [
+
+                                       ]
+                          },
+    "matched_after_create":  [
+
+                             ],
+    "cleanup":  [
+
+                ],
+    "list_after_cleanup":  {
+                               "code":  200,
+                               "msg":  "æä½æå",
+                               "data":  [
+
+                                        ]
+                           }
+}

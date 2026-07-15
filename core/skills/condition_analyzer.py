@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import re
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from core.diag_logger import get_diag_auto
 from core.interfaces import (
@@ -19,6 +21,81 @@ from core.llm_client import get_last_raw, safe_structured_invoke
 
 class ConditionResult(BaseModel):
     conditions: list[TestCondition] = Field(description="生成的测试条件列表")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_llm_condition_shapes(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        conditions = value.get("conditions")
+        if not isinstance(conditions, list):
+            return value
+
+        normalized_conditions: list[object] = []
+        for item in conditions:
+            if not isinstance(item, dict):
+                normalized_conditions.append(item)
+                continue
+            normalized = dict(item)
+            for field in ("statement", "precondition", "trigger", "oracle"):
+                if field in normalized:
+                    normalized[field] = _coerce_condition_text(normalized[field])
+            condition_type_aliases = {
+                "e2e": "functional",
+                "normal": "functional",
+                "negative": "validation",
+                "state": "state_transition",
+                "exception": "error_handling",
+                "recovery": "error_handling",
+                "security": "risk_case",
+            }
+            raw_condition_type = str(normalized.get("condition_type") or "").strip().lower()
+            if raw_condition_type in condition_type_aliases:
+                normalized["condition_type"] = condition_type_aliases[raw_condition_type]
+            oracle_type_aliases = {
+                "ui": "ui_state",
+                "api": "api_response",
+                "http": "api_response",
+                "db": "database",
+                "rule": "business_rule",
+                "manual": "human_review",
+            }
+            raw_oracle_type = str(normalized.get("oracle_type") or "").strip().lower()
+            if raw_oracle_type in oracle_type_aliases:
+                normalized["oracle_type"] = oracle_type_aliases[raw_oracle_type]
+            for field in (
+                "source_references",
+                "module_ids",
+                "business_flow_ids",
+                "dependency_ids",
+            ):
+                if field in normalized:
+                    normalized[field] = _coerce_condition_list(normalized[field])
+            normalized_conditions.append(normalized)
+
+        updated = dict(value)
+        updated["conditions"] = normalized_conditions
+        return updated
+
+
+def _coerce_condition_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list, tuple, set)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _coerce_condition_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple, set)):
+        return [_coerce_condition_text(item) for item in value if item is not None]
+    return [_coerce_condition_text(value)]
 
 
 _STANDARD_TALENT_LABELS = [
@@ -151,10 +228,15 @@ def _normalize_conditions(
     assertions_by_id = {assertion.id: assertion for assertion in assertions}
     normalized: list[TestCondition] = []
     for condition in conditions:
+        condition = _normalize_condition_assertion_ref(
+            condition,
+            assertions_by_id,
+        )
         assertion = assertions_by_id.get(condition.assertion_ref)
+        if assertion is None:
+            continue
         if (
-            assertion is not None
-            and condition.branch_type == "positive"
+            condition.branch_type == "positive"
             and _requires_standard_talent_label_guard(assertion)
         ):
             normalized.append(
@@ -162,8 +244,7 @@ def _normalize_conditions(
             )
             continue
         if (
-            assertion is not None
-            and condition.branch_type == "positive"
+            condition.branch_type == "positive"
             and _looks_read_only_assertion(assertion.assertion_text)
         ):
             normalized.append(
@@ -172,6 +253,23 @@ def _normalize_conditions(
             continue
         normalized.append(condition)
     return normalized
+
+
+def _normalize_condition_assertion_ref(
+    condition: TestCondition,
+    assertions_by_id: dict[str, RequirementAssertion],
+) -> TestCondition:
+    if condition.assertion_ref in assertions_by_id:
+        return condition
+    candidates = [
+        token.strip()
+        for token in re.split(r"[,，;；\s]+", condition.assertion_ref or "")
+        if token.strip()
+    ]
+    for candidate in candidates:
+        if candidate in assertions_by_id:
+            return condition.model_copy(update={"assertion_ref": candidate})
+    return condition
 
 
 def _build_positive_condition(
@@ -340,6 +438,7 @@ async def analyze_conditions(
     assertions: list[RequirementAssertion],
     system_map: SystemMapEvid | None = None,
     blueprint: CoverageBlueprint | None = None,
+    memory_context: str = "",
 ) -> list[TestCondition]:
     """Generate TestCondition objects from assertions."""
     if not assertions:
@@ -351,16 +450,42 @@ async def analyze_conditions(
 
     async def analyze_batch(batch: list[RequirementAssertion]) -> list[TestCondition]:
         async with semaphore:
-            return await _analyze_condition_batch(batch, system_map, blueprint)
+            return await _analyze_condition_batch(
+                batch,
+                system_map,
+                blueprint,
+                memory_context,
+            )
 
     batches = [
         assertions[index:index + batch_size]
         for index in range(0, len(assertions), batch_size)
     ]
-    results = await asyncio.gather(*(analyze_batch(batch) for batch in batches))
-    if any(not result for result in results):
-        raise RuntimeError("condition_analysis_batch_failed")
-    conditions = [condition for result in results for condition in result]
+    results = await asyncio.gather(
+        *(analyze_batch(batch) for batch in batches),
+        return_exceptions=True,
+    )
+    condition_batches: list[list[TestCondition]] = []
+    failed_batches = 0
+    for result in results:
+        if isinstance(result, Exception):
+            failed_batches += 1
+            continue
+        if not result:
+            failed_batches += 1
+            continue
+        condition_batches.append(result)
+    if failed_batches:
+        print(
+            f"[ConditionAnalyzer] {failed_batches}/{len(batches)} batches "
+            "returned no usable conditions; continuing with local fallbacks",
+            flush=True,
+        )
+    conditions = [
+        condition
+        for result in condition_batches
+        for condition in result
+    ]
     conditions = _normalize_conditions(assertions, conditions)
     conditions = _ensure_positive_conditions(assertions, conditions)
     conditions = _ensure_core_flow_e2e_conditions(
@@ -377,10 +502,17 @@ async def _analyze_condition_batch(
     assertions: list[RequirementAssertion],
     system_map: SystemMapEvid | None,
     blueprint: CoverageBlueprint | None,
+    memory_context: str = "",
 ) -> list[TestCondition]:
     assertions_json = [assertion.model_dump() for assertion in assertions]
     system_map_json = system_map.model_dump() if system_map else {}
     blueprint_json = blueprint.model_dump() if blueprint else {}
+    memory_context_section = (
+        f"\n### MemoryContext (hint-only, never a RequirementFact source)\n"
+        f"{memory_context}\n"
+        if memory_context
+        else ""
+    )
 
     prompt = f"""<role>
 你是一个测试条件分析师。你的唯一职责是把“需要验证什么（断言）”转化为精确的“可测试条件（TestCondition）”。
@@ -461,6 +593,7 @@ Return ONLY the following JSON object. No markdown fences. No explanation. No pr
 ```json
 {blueprint_json}
 ```
+{memory_context_section}
 """
     result = await safe_structured_invoke(prompt, ConditionResult, model_type="default")
     if result is None or not result.conditions:

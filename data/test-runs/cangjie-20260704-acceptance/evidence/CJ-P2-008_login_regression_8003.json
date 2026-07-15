@@ -1,0 +1,513 @@
+{
+  "case_id": "CJ-P2-008",
+  "target": "patched test_agent backend on http://127.0.0.1:8003 against http://localhost:3001/",
+  "purpose": "Continue optimizing the test platform toward release-grade automated login regression for Cangjie.",
+  "isolated_backend": {
+    "port": 8003,
+    "start_mode": "START_FRONTEND=false, MAX_TEST_CASE_RETRIES=0",
+    "reason": "The primary backend on 8002 had unrelated running tasks, so a patched backend was started on an isolated port to avoid interrupting other work."
+  },
+  "payload": "data/targets/cangjie/task-payload-login-regression.json",
+  "runs": [
+    {
+      "task_id": 83,
+      "status": "failed",
+      "failure_reason": "condition_analysis_batch_failed",
+      "analysis_summary": {
+        "facts": 4,
+        "goals": 3,
+        "conditions": 0,
+        "candidate_cases": 0
+      },
+      "finding": "ConditionResult validation failed when the LLM returned trigger as an object such as {\"username\":\"admin\",\"password\":\"admin123\"} instead of a string.",
+      "fix": "core/skills/condition_analyzer.py now normalizes LLM condition shapes before Pydantic validation."
+    },
+    {
+      "task_id": 84,
+      "status": "failed",
+      "failure_reason": "assertion_derivation_incomplete: 2/7 batches failed",
+      "analysis_summary": {
+        "facts": 0,
+        "goals": 0,
+        "conditions": 0,
+        "candidate_cases": 0
+      },
+      "finding": "The assertion derivation stage failed the whole task when any source-group batch produced no usable assertions.",
+      "fix": "core/skills/assertion_deriver.py now continues with partial assertion sets and records partial_fallback diagnostics instead of failing the entire task."
+    },
+    {
+      "task_id": 85,
+      "status": "cancelled",
+      "failure_reason": "cancelled after diagnosis",
+      "analysis_summary": {
+        "facts": 6,
+        "goals": 4,
+        "conditions": 6,
+        "candidate_cases": 6
+      },
+      "run_summary": {
+        "run_id": "run-7bb15ec0a133440c8d2c9112d159d07d",
+        "planned": 3,
+        "passed": 0,
+        "failed": 1,
+        "incomplete": 1,
+        "human_review_required": 1,
+        "terminal": 3
+      },
+      "finding": "Execution clicked the quick-fill button successfully but timed out because the terminal checker did not have deterministic form-value evidence.",
+      "fix": "core/runtime.py adds deterministic quick-fill input-value terminal checks for explicitly quick-fill/preset-credential cases."
+    },
+    {
+      "task_id": 86,
+      "status": "cancelled",
+      "failure_reason": "cancelled after false-positive audit",
+      "analysis_summary": {
+        "facts": 3,
+        "goals": 2,
+        "conditions": 5,
+        "candidate_cases": 5
+      },
+      "run_summary": {
+        "run_id": "run-72d8c168dc7d4286814edf3d414eec1e",
+        "planned": 3,
+        "passed": 1,
+        "failed": 0,
+        "incomplete": 1,
+        "skipped": 1,
+        "terminal": 3
+      },
+      "finding": "The first deterministic input-value implementation was too broad and produced a false positive for a normal login-success case by seeing only username=admin.",
+      "fix": "core/runtime.py now restricts deterministic input-value checks to explicit quick-fill/preset-credential cases and requires both expected username and expected password."
+    },
+    {
+      "task_id": 87,
+      "status": "completed",
+      "analysis_summary": {
+        "facts": 6,
+        "goals": 3,
+        "assertions": 4,
+        "conditions": 4,
+        "candidate_cases": 4,
+        "selected_cases": 1,
+        "deferred_cases": 3
+      },
+      "run_summary": {
+        "run_id": "run-e1d4d2177ea64a7399730c8fe3af95d6",
+        "planned": 1,
+        "passed": 1,
+        "failed": 0,
+        "incomplete": 0,
+        "skipped": 0,
+        "human_review_required": 0,
+        "terminal": 1
+      },
+      "executed_case": {
+        "candidate_case_id": "TC-dab98ffcdf",
+        "title": "一键填值自动填充正确的管理员凭据",
+        "terminal_status": "passed",
+        "attempt_count": 1,
+        "terminal_assertion": "确定性表单值证据匹配: username=admin, password=expected credential",
+        "evidence_scope": "This proves the quick-fill form-value branch only; it does not prove successful admin login."
+      },
+      "finding": "The post-tightening online run completed and the narrowed quick-fill deterministic assertion passed without the previous login-success false positive.",
+      "remaining_gap": "The run selected only 1 of 4 generated candidate cases. The real admin login success/API-token assertion remained deferred or manual-review scoped, so full login regression is not yet covered."
+    },
+    {
+      "task_id": 88,
+      "status": "paused_for_review",
+      "analysis_summary": {
+        "facts": 8,
+        "assertions": 5,
+        "candidate_cases": 7,
+        "auto_executable_cases": 7,
+        "selected_cases": 3,
+        "deferred_cases": 4
+      },
+      "run_summary": {
+        "run_id": "run-00b88ebb53fa4e4ba7ca7db01a6e63ce",
+        "planned": 3,
+        "passed": 0,
+        "failed": 1,
+        "incomplete": 0,
+        "human_review_required": 2,
+        "terminal": 3
+      },
+      "report": "data/reports/report_run-00b88ebb53fa4e4ba7ca7db01a6e63ce.html",
+      "finding": "After restarting 8003 with the business-console fix, online selection expanded from 1 to 3 cases and no longer deferred all dashboard/login-success cases.",
+      "execution_findings": [
+        "TC-c5955979b9 valid-login E2E attempted #5 but resolved to stale xpath=//input[5], then timed out.",
+        "TC-7a183c6132 direct API login case was selected into the UI runtime and failed because the runtime has no HTTP request tool.",
+        "TC-5776b88b1c login-success UI assertion clicked one-click fill instead of completing real admin login, then timed out."
+      ],
+      "fixes_after_run": [
+        "core/cdp_client.py now preserves html_id, name, and aria_label from CDP DOM attributes.",
+        "core/runtime.py now resolves semantic #N elements through stable html_id/name/placeholder/label before falling back to xpath.",
+        "core/skills/auto_executability.py now defers direct API cases containing POST /, HTTP status, response body, or access_token wording."
+      ],
+      "selection_replay_after_fixes": {
+        "source_task": 88,
+        "profile": "smoke",
+        "target": 3,
+        "selected_case_ids": [
+          "TC-5776b88b1c",
+          "TC-c5955979b9",
+          "TC-0597996be0"
+        ],
+        "deferred_case_ids_including_api": [
+          "TC-7a183c6132",
+          "TC-876d58dba0"
+        ],
+        "auto_executable_case_count": 5,
+        "non_auto_executable_case_count": 2
+      }
+    },
+    {
+      "task_id": 89,
+      "status": "completed",
+      "analysis_summary": {
+        "facts": 2,
+        "assertions": 2,
+        "candidate_cases": 6,
+        "auto_executable_cases": 0,
+        "selected_cases": 0,
+        "deferred_cases": 6
+      },
+      "run_summary": {
+        "run_id": "run-1c400ecec2d44111a6e2bb24d0bff4d4",
+        "planned": 0,
+        "passed": 0,
+        "failed": 0,
+        "incomplete": 0,
+        "human_review_required": 0,
+        "terminal": 0
+      },
+      "report": "data/reports/report_run-1c400ecec2d44111a6e2bb24d0bff4d4.html",
+      "finding": "After restarting with semantic-locator and API-routing fixes, all generated candidates were direct API-style cases and were correctly deferred from the UI runtime.",
+      "remaining_gap": "The same login regression payload can drift into API-only candidate generation, leaving no executable UI cases. The payload was tightened after this run to require UI valid-login, quick-fill, and wrong-password cases."
+    },
+    {
+      "task_id": 90,
+      "status": "paused_for_review",
+      "analysis_summary": {
+        "facts": 4,
+        "assertions": 1,
+        "conditions": 2,
+        "candidate_cases": 6,
+        "auto_executable_cases": 6,
+        "selected_cases": 3,
+        "deferred_cases": 3
+      },
+      "run_summary": {
+        "run_id": "run-73efec3c822b4bd3b7edd874d1edf5a7",
+        "planned": 3,
+        "passed": 0,
+        "failed": 1,
+        "incomplete": 0,
+        "human_review_required": 2,
+        "terminal": 3
+      },
+      "report": "data/reports/report_run-73efec3c822b4bd3b7edd874d1edf5a7.html",
+      "finding": "The tightened payload generated browser-UI login candidates again and selected 3 high-risk UI cases.",
+      "execution_findings": [
+        "TC-42236bfefb failed without recorded form actions because terminal evaluation observed the app still on the login page.",
+        "TC-b0d32c02ed attempted input_text with value=admin instead of text=admin and was blocked by policy.missing_input_text, then timed out.",
+        "TC-9829619e9c timed out while verifying post-login navigation/session behavior."
+      ],
+      "fixes_after_run": [
+        "core/runtime_action_policy.py now normalizes input_text args.value to args.text when text is absent.",
+        "evals/test_runtime_action_policy.py covers value alias acceptance and still rejects missing text/value."
+      ]
+    },
+    {
+      "task_id": 91,
+      "status": "completed",
+      "run_summary": {
+        "run_id": "run-2b0c3f15583246bf94354f0d0e44781a",
+        "planned": 1,
+        "passed": 1,
+        "terminal": 1
+      },
+      "finding": "A false positive was found: the invalid-password UI case passed without recorded input/click actions because the terminal path extractor treated http://localhost:3001/ as expected path /localhost.",
+      "fixes_after_run": [
+        "core/runtime.py now ignores bare root URLs when extracting expected paths.",
+        "core/runtime.py now requires relevant input/click evidence before terminal pass for interactive cases."
+      ]
+    },
+    {
+      "task_id": 92,
+      "status": "paused_for_review",
+      "run_summary": {
+        "run_id": "run-ed4a78f8f7984521b274acdbf3926a8e",
+        "planned": 3,
+        "human_review_required": 3
+      },
+      "finding": "case_generation_requirements started feeding the L2 pipeline, producing UI quick-fill, valid-login, and wrong-password candidates, but execution still timed out after partial actions.",
+      "fixes_after_run": [
+        "core/input_normalization.py preserves case_generation_requirements as text.",
+        "core/task_lifecycle.py merges rules and case_generation_requirements before fact extraction and case design."
+      ]
+    },
+    {
+      "task_id": 93,
+      "status": "paused_for_review",
+      "run_summaries": [
+        {
+          "run_id": "run-a1bc2f58536446a8a0558fc80aa8d1be",
+          "planned": 3,
+          "passed": 1,
+          "human_review_required": 2,
+          "validated_path": "quick-fill clicked and deterministic form-value assertion passed"
+        },
+        {
+          "run_id": "run-f56740b8ccf544d5ab49eb75fba87562",
+          "planned": 2,
+          "failed": 1,
+          "human_review_required": 1,
+          "validated_path": "configured login sequence filled username/password and clicked submit"
+        }
+      ],
+      "finding": "The deterministic configured-login sequence worked, but the login-success oracle failed because the admin account is displayed as zhanghong, not literal admin.",
+      "fixes_after_run": [
+        "core/runtime.py executes configured login as a deterministic username/password/submit sequence.",
+        "data/targets/cangjie/test-data.md and task payloads now record display_name=zhanghong for username admin.",
+        "core/runtime.py accepts configured account identity aliases such as display_name during terminal evaluation."
+      ]
+    },
+    {
+      "task_id": 94,
+      "status": "completed",
+      "run_summaries": [
+        {
+          "run_id": "run-4c12bfac611d4cbf96b5cbec0d980d7b",
+          "planned": 3,
+          "passed": 1,
+          "human_review_required": 2,
+          "finding": "quick-fill form-value case passed; passive mark_task_complete cases still timed out"
+        },
+        {
+          "run_id": "run-1c8e12e48c634da3a7cb5a959794f45c",
+          "planned": 2,
+          "passed": 1,
+          "failed": 1,
+          "finding": "passive login-page button existence case passed; quick-fill value case failed after LLM hand-filled username instead of clicking quick-fill"
+        }
+      ],
+      "fixes_after_run": [
+        "core/runtime.py now returns passed when an allowed mark_task_complete action is emitted.",
+        "core/runtime.py distinguishes passive observation cases from interactive cases before accepting completion.",
+        "core/runtime.py now clicks the one-click-fill button deterministically for quick-fill value cases."
+      ]
+    },
+    {
+      "direct_runtime_probe": "quick-fill",
+      "status": "passed",
+      "evidence": [
+        "clicked: button:has-text(\"一键填值体验\") -> button:has-text(\"一键填值体验\")",
+        "terminal_assertion: 确定性表单值证据匹配: username=admin, password=expected credential"
+      ]
+    },
+    {
+      "direct_runtime_probe": "valid-login",
+      "status": "passed",
+      "evidence": [
+        "input: #username-input -> #username-input",
+        "input: #password-input -> #password-input",
+        "clicked: #login-submit-button -> #login-submit-button",
+        "terminal_assertion: Configured login succeeded: visible account identity 'zhanghong' and dashboard markers 智能体广场, 知识库管理, 技能管理 were found after submit."
+      ],
+      "finding": "Dashboard entry labels were exposed through interactive_elements rather than visible_texts, so the configured-login oracle was expanded to include interactive element text/label."
+    },
+    {
+      "task_id": 103,
+      "status": "completed",
+      "analysis_summary": {
+        "facts": 14,
+        "assertions": 9,
+        "conditions": 12,
+        "candidate_cases": 12,
+        "selected_cases": 5
+      },
+      "run_summary": {
+        "run_id": "run-e4ad6b40c6c14da28b64dbd8349b1bd3",
+        "planned": 5,
+        "passed": 5,
+        "failed": 0,
+        "incomplete": 0,
+        "human_review_required": 0,
+        "terminal": 5
+      },
+      "validated_paths": [
+        "quick-fill field values: clicked 一键填值体验 and deterministic assertion matched username=admin, password=cangjie*2026",
+        "wrong-password UI rejection: filled username/password, clicked submit, stayed on login page with error evidence",
+        "valid login path remained covered in the latest lifecycle loop through configured login evidence in task 102 and direct probes"
+      ],
+      "finding": "Full login-regression task lifecycle no longer stalls, no longer leaves pending review, and produces trustworthy terminal assertions for mandatory quick-fill and wrong-password coverage."
+    },
+    {
+      "task_id": 104,
+      "status": "completed",
+      "analysis_summary": {
+        "facts": 5,
+        "assertions": 5,
+        "conditions": 7,
+        "candidate_cases": 7,
+        "selected_cases": 3
+      },
+      "run_summary": {
+        "run_id": "run-b4cd5a0ddc21497590ca18aa4ec5d99d",
+        "planned": 3,
+        "passed": 3,
+        "failed": 0,
+        "incomplete": 0,
+        "human_review_required": 0,
+        "terminal": 3
+      },
+      "validated_paths": [
+        "valid login: input admin/admin123, clicked submit, terminal assertion matched zhanghong plus dashboard markers",
+        "quick-fill field values: clicked 一键填值体验 and deterministic assertion matched username=admin, password=cangjie*2026",
+        "wrong-password UI rejection: input admin/cangjie*2026, clicked submit, stayed on login page with error evidence"
+      ],
+      "finding": "Task 104 is the first same-run D4 pass covering all three mandatory login-regression paths: valid login, quick-fill field values, and wrong-password rejection."
+    }
+  ],
+  "code_changes": [
+    {
+      "file": "core/runtime.py",
+      "change": "Fallback missing label[for=\"field-id\"] selectors to [id=\"field-id\"] controls."
+    },
+    {
+      "file": "core/skills/condition_analyzer.py",
+      "change": "Normalize LLM-generated condition scalar/list fields before validation."
+    },
+    {
+      "file": "core/skills/assertion_deriver.py",
+      "change": "Treat partial assertion batch failures as degraded diagnostics instead of task-fatal errors."
+    },
+    {
+      "file": "core/runtime.py",
+      "change": "Add narrowed deterministic quick-fill form-value terminal check; unit verification passed for quick-fill and avoided the login-success false-positive branch."
+    },
+    {
+      "file": "core/skills/auto_executability.py",
+      "change": "Remove the bare Chinese business term 控制台 from the DevTools blocker keyword list so dashboard/login-success cases are not falsely deferred."
+    },
+    {
+      "file": "core/cdp_client.py",
+      "change": "Preserve CDP DOM html_id, name, and aria_label attributes for stable semantic element resolution."
+    },
+    {
+      "file": "core/runtime.py",
+      "change": "Resolve semantic #N selectors through stable html_id/name/placeholder/label before falling back to xpath."
+    },
+    {
+      "file": "core/skills/auto_executability.py",
+      "change": "Defer direct API-only cases from the UI runtime when candidate text requires POST /, HTTP status code, response body, or access_token checks."
+    },
+    {
+      "file": "evals/test_auto_executability.py",
+      "change": "Add regression checks proving business 控制台 remains auto-executable, 浏览器控制台 remains blocked, and direct API cases do not enter the UI runtime."
+    },
+    {
+      "file": "data/targets/cangjie/task-payload-login-regression.json",
+      "change": "Tighten login regression requirements so online runs must generate browser-UI valid-login, quick-fill, and wrong-password cases instead of drifting to API-only cases."
+    },
+    {
+      "file": "core/runtime_action_policy.py",
+      "change": "Normalize input_text value to text so LLM-emitted value aliases are not blocked as missing_input_text."
+    },
+    {
+      "file": "evals/test_runtime_action_policy.py",
+      "change": "Add regression checks for input_text value alias normalization and missing text/value rejection."
+    },
+    {
+      "file": "core/input_normalization.py",
+      "change": "Normalize case_generation_requirements as text input for downstream fact extraction."
+    },
+    {
+      "file": "core/task_lifecycle.py",
+      "change": "Merge rules with case_generation_requirements before the analysis pipeline."
+    },
+    {
+      "file": "core/runtime.py",
+      "change": "Ignore root localhost URLs as terminal path assertions and require action evidence for interactive terminal passes."
+    },
+    {
+      "file": "core/runtime.py",
+      "change": "Add deterministic configured-login action sequence and configured account identity alias terminal checks."
+    },
+    {
+      "file": "core/runtime.py",
+      "change": "Accept allowed mark_task_complete actions as passed case results while rejecting completion for interactive cases without evidence."
+    },
+    {
+      "file": "core/runtime.py",
+      "change": "Add deterministic one-click-fill action for quick-fill value cases and include interactive element text/label in dashboard terminal evidence."
+    },
+    {
+      "file": "data/targets/cangjie/test-data.md",
+      "change": "Record that username admin is displayed as zhanghong after login."
+    },
+    {
+      "file": "evals/test_runtime_terminal_assertions.py",
+      "change": "Add regression coverage for root URL path extraction, action evidence, account aliases, mark_task_complete, configured login action, quick-fill action, and interactive dashboard labels."
+    },
+    {
+      "file": "core/skills/case_generator.py",
+      "change": "Add bounded case-generation timeout with deterministic CoverageItem-to-CandidateTestCase fallback."
+    },
+    {
+      "file": "core/skills/l2_pipeline.py",
+      "change": "Promote explicit login regression requirements into high-priority UI quick-fill and wrong-password candidates, normalize API-only negative cases away from UI coverage, and keep fixture-account assertions out of unnecessary review gates."
+    },
+    {
+      "file": "core/skills/condition_analyzer.py",
+      "change": "Repair comma-separated assertion_ref values to a valid single assertion and drop unrecoverable dangling condition refs."
+    },
+    {
+      "file": "evals/test_l2_explicit_login_requirements.py",
+      "change": "Add regression coverage for explicit UI wrong-password augmentation, quick-fill promotion, and fixture-account review-gate behavior."
+    },
+    {
+      "file": "evals/test_case_generator_fallback.py",
+      "change": "Add regression coverage for deterministic case-generation fallback preserving trace refs and negative branches."
+    },
+    {
+      "file": "evals/test_condition_analyzer_normalization.py",
+      "change": "Add regression coverage for multi-assertion condition ref repair and unknown-ref dropping."
+    }
+  ],
+  "unit_verification": {
+    "command": "inline Python fake-page check for Runtime._deterministic_input_value_assertion",
+    "result": {
+      "quickfill_passes": true,
+      "login_case_not_handled_by_quickfill_branch": true,
+      "quick_reason": "deterministic form value matched username and expected credential"
+    },
+    "auto_executability_regression": "python evals/test_auto_executability.py",
+    "selection_replay_after_fix": {
+      "source_task": 87,
+      "profile": "smoke",
+      "target": 3,
+      "before": {
+        "selected_count": 1,
+        "auto_executable_case_count": 1,
+        "deferred_reason": "requires_browser_devtools caused by business 控制台 wording"
+      },
+      "after": {
+        "selected_count": 3,
+        "auto_executable_case_count": 4,
+        "selected_case_ids": [
+          "TC-da0adb5d54",
+          "TC-dab98ffcdf",
+          "TC-57f1da0736"
+        ],
+        "deferred_count": 1
+      }
+    }
+  },
+  "remaining_risk": [
+    "Direct API assertions are now deferred from UI runtime; a future API execution seam is still needed to verify status code and access_token postconditions automatically.",
+    "The task lifecycle is still slow for narrow login regression because analyzing/exploring/designing can take several minutes before execution.",
+    "The target product still has the one-click-fill password mismatch: quick-fill uses cangjie*2026 while the real local password is admin123."
+  ]
+}

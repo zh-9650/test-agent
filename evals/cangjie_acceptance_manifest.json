@@ -1,0 +1,109 @@
+{
+  "schema_version": "eval_case_manifest.v1",
+  "cases": [
+    {
+      "id": "CANGJIE-EVAL-001",
+      "name": "仓颉知道登录凭据校准",
+      "target_url": "http://localhost:3001/",
+      "tags": ["cangjie", "login", "credential_calibration"],
+      "inputs": {
+        "prd": "管理员应使用 admin/admin123 登录控制台；一键填值体验填入的 admin/cangjie*2026 当前应被识别为规格不一致风险。",
+        "swagger": "POST /auth/login 返回 access_token 表示登录成功；错误密码返回非 200 业务码或错误提示。",
+        "rules": "不要把一键填值作为成功路径。必须区分真实可用账号和历史快捷填值。",
+        "focus_areas": "登录成功、登录失败提示、凭据来源校准"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证管理员真实凭据可以登录", "必须记录一键填值密码失效风险"],
+        "required_case_titles": ["管理员真实凭据登录成功", "一键填值密码登录失败"],
+        "deferred_allowed": false
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required", "incomplete"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 3
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "CANGJIE-EVAL-002",
+      "name": "智能体广场核心 CRUD 资产生成",
+      "target_url": "http://localhost:3001/",
+      "tags": ["cangjie", "agent_plaza", "crud"],
+      "inputs": {
+        "prd": "智能体广场支持查询、新增、编辑、删除和免登跳转；新增必须填写智能体名称和合法网关地址。",
+        "swagger": "GET /system/agent/list；POST /system/agent；PUT /system/agent；DELETE /system/agent/{id}；GET /system/agent/{id}/redirect。",
+        "rules": "新增数据必须使用 TA-20260704 后缀，删除只能清理本次创建的数据。",
+        "focus_areas": "智能体列表、新增校验、检索、删除约束"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证智能体列表加载", "必须验证新增智能体名称和网关地址校验"],
+        "required_case_titles": ["新增智能体成功", "智能体网关地址非法提交失败"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required", "incomplete"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 4
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "CANGJIE-EVAL-003",
+      "name": "知识库一对一绑定规则资产生成",
+      "target_url": "http://localhost:3001/",
+      "tags": ["cangjie", "dataset", "binding_rule"],
+      "inputs": {
+        "prd": "知识库支持创建、列表、上传文本语料、绑定/解绑智能体；知识库和智能体必须一对一绑定。",
+        "swagger": "GET /fastgpt/dataset/list；POST /fastgpt/dataset；POST /fastgpt/dataset/collection/text；PUT /fastgpt/dataset/bind。",
+        "rules": "测试数据使用 TA-20260704 后缀。绑定类副作用需要记录 cleanup 或保留原因。",
+        "focus_areas": "知识库列表、新建、语料上传、一对一绑定约束"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证知识库新建成功", "必须验证一对一绑定约束"],
+        "required_case_titles": ["新建知识库成功", "重复绑定知识库被阻断"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required", "incomplete"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 4
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    },
+    {
+      "id": "CANGJIE-EVAL-004",
+      "name": "技能管理脚手架和文件树资产生成",
+      "target_url": "http://localhost:3001/",
+      "tags": ["cangjie", "skills", "file_tree"],
+      "inputs": {
+        "prd": "技能管理支持分页搜索、脚手架创建、状态切换、详情、文件树和逻辑删除；核心文件 SKILL.md 受保护。",
+        "swagger": "POST /system/skill/page；POST /system/skill/scaffold；GET /system/skill/{skillId}/files；DELETE /system/skill/{skillId}。",
+        "rules": "技能测试数据使用 TA-20260704 后缀。必须验证脚手架返回 SKILL.md 和 index.js。",
+        "focus_areas": "技能列表、创建脚手架、文件树、核心文件保护"
+      },
+      "expected_assets": {
+        "required_assertions": ["必须验证技能脚手架生成核心文件", "必须验证核心文件 SKILL.md 保护"],
+        "required_case_titles": ["创建技能脚手架成功", "重复创建 SKILL.md 被阻断"],
+        "deferred_allowed": true
+      },
+      "expected_execution": {
+        "allowed_terminal_statuses": ["passed", "failed", "human_review_required", "incomplete"],
+        "must_not_use_tools": ["evaluate_js"],
+        "max_tool_failures": 4
+      },
+      "report_checks": {
+        "must_explain_result": true,
+        "must_include_traceability": true
+      }
+    }
+  ]
+}

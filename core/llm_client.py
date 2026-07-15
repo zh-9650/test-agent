@@ -426,8 +426,30 @@ def _decode_nested_jsonish(value: Any) -> Any:
             for key, item in dict(value).items()
         }
     if isinstance(value, list):
-        return [_decode_nested_jsonish(item) for item in value]
+        return [
+            _decode_nested_jsonish(item)
+            for item in value
+            if not _is_provider_control_block(item)
+        ]
     return value
+
+
+_PROVIDER_CONTROL_BLOCK_TYPES = {
+    "thinking",
+    "redacted_thinking",
+    "text",
+    "tool_use",
+    "server_tool_use",
+}
+
+
+def _is_provider_control_block(value: Any) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    block_type = str(value.get("type") or "").strip().lower()
+    if block_type not in _PROVIDER_CONTROL_BLOCK_TYPES:
+        return False
+    return any(key in value for key in ("thinking", "signature", "text", "input", "name"))
 
 
 def _decode_json_container_fields(payload: dict[str, Any], schema: type[T]) -> dict[str, Any]:
@@ -579,6 +601,8 @@ def _salvage_list_items_from_text(
         for blob in _extract_top_level_object_blobs(normalized):
             parsed = _parse_jsonish_once(blob)
             if isinstance(parsed, Mapping):
+                if _is_provider_control_block(parsed):
+                    continue
                 parsed_items.append(_decode_nested_jsonish(dict(parsed)))
 
         if parsed_items:
@@ -790,6 +814,70 @@ def _normalize_case_generation_case(case: dict[str, Any]) -> None:
     case["required_roles"] = roles
 
 
+def _normalize_fact_extraction_payload(payload: dict[str, Any]) -> None:
+    facts = payload.get("facts")
+    if not isinstance(facts, list):
+        return
+
+    source_aliases = {
+        "api": "swagger",
+        "openapi": "swagger",
+        "swagger": "swagger",
+        "prd": "prd",
+        "prototype": "prototype",
+        "architecture": "architecture",
+        "changelog": "changelog",
+        "rule": "rule",
+        "rules": "rule",
+        "inferred": "inferred",
+    }
+    valid_statuses = {"draft", "confirmed", "conflicted", "superseded"}
+    text_fields = ("id", "source_reference", "quote", "subject", "action", "object")
+    nullable_text_fields = ("condition", "outcome")
+
+    normalized: list[dict[str, Any]] = []
+    for index, item in enumerate(facts, start=1):
+        if not isinstance(item, Mapping):
+            continue
+        fact = dict(item)
+
+        fact["id"] = _coerce_text_like_value(fact.get("id") or f"FACT-{index:03}").strip()
+        for field_name in text_fields:
+            if field_name == "id":
+                continue
+            value = fact.get(field_name)
+            if value is None:
+                fact[field_name] = "N/A" if field_name == "quote" else ""
+            elif not isinstance(value, str):
+                fact[field_name] = _coerce_text_like_value(value)
+        if not fact.get("quote", "").strip():
+            fact["quote"] = "N/A"
+
+        for field_name in nullable_text_fields:
+            value = fact.get(field_name)
+            if value is not None and not isinstance(value, str):
+                fact[field_name] = _coerce_text_like_value(value)
+
+        raw_source = _coerce_text_like_value(fact.get("source_type") or "").strip().lower()
+        fact["source_type"] = source_aliases.get(raw_source, "inferred")
+
+        raw_confidence = fact.get("confidence")
+        try:
+            confidence = float(raw_confidence)
+        except (TypeError, ValueError):
+            confidence = 0.6
+        fact["confidence"] = max(0.0, min(1.0, confidence))
+
+        raw_status = _coerce_text_like_value(fact.get("status") or "").strip().lower()
+        fact["status"] = raw_status if raw_status in valid_statuses else "draft"
+        fact["conflict_references"] = _normalize_string_list(
+            fact.get("conflict_references")
+        )
+        normalized.append(fact)
+
+    payload["facts"] = normalized
+
+
 def _coerce_to_pydantic(payload: Any, schema: type[T]) -> T:
     """Coerce dict/str/list payloads into the target pydantic model."""
     if isinstance(payload, schema):
@@ -856,6 +944,8 @@ def _coerce_to_pydantic(payload: Any, schema: type[T]) -> T:
                     if item.get("coverage_dimension") == "e2e":
                         item["coverage_dimension"] = "normal"
                         item.setdefault("branch_type", "e2e")
+        if schema.__name__ == "FactExtractionResult":
+            _normalize_fact_extraction_payload(payload)
         # Robust mapping for typical LLM model field aliases in AssertionResult
         if schema.__name__ == "AssertionResult":
             if "reason" in payload and "reasoning" not in payload:
@@ -911,6 +1001,66 @@ def sanitize_messages_for_structured_output(messages: list[AnyMessage]) -> list[
     return sanitized
 
 
+def _use_native_structured_output(model_type: str) -> bool:
+    """Return whether to use provider-native tool based structured output.
+
+    Some Anthropic-compatible endpoints expose chat completion but reject
+    LangChain's structured-output tool call with provider-specific errors such
+    as "Thinking mode does not support this tool_choice". Keep the default
+    automatic, while allowing an env override for local provider experiments.
+    """
+    mode = os.getenv("LLM_STRUCTURED_OUTPUT_MODE", "auto").strip().lower()
+    if mode in {"native", "tool", "tools", "structured"}:
+        return True
+    if mode in {"raw", "json", "text"}:
+        return False
+
+    model_env = _MODEL_ENV_MAP.get(model_type, _MODEL_ENV_MAP["default"])
+    marker_text = " ".join((
+        os.getenv("ANTHROPIC_BASE_URL", ""),
+        os.getenv(model_env, ""),
+    )).lower()
+    incompatible_markers = ("deepseek",)
+    return not any(marker in marker_text for marker in incompatible_markers)
+
+
+def _raw_json_contract(schema: type[BaseModel]) -> str:
+    """Build a strict JSON-only instruction for raw structured fallback."""
+    try:
+        schema_json = json.dumps(
+            schema.model_json_schema(),
+            ensure_ascii=False,
+            default=str,
+        )
+    except Exception:
+        schema_json = f'{{"title":"{schema.__name__}","type":"object"}}'
+
+    return f"""
+<structured_json_contract>
+You must return ONLY one valid JSON object that can be parsed as {schema.__name__}.
+Do not include markdown fences, explanations, XML tags, comments, or prose.
+If a list field has no items, return an empty array for that field.
+Use null for unknown nullable scalar values. Do not omit required fields.
+
+JSON schema:
+{schema_json}
+</structured_json_contract>
+""".strip()
+
+
+def _messages_with_raw_json_contract(
+    messages: list[AnyMessage],
+    schema: type[BaseModel],
+) -> list[AnyMessage]:
+    """Append a JSON-only contract without mutating the original messages."""
+    from langchain_core.messages import HumanMessage
+
+    return [
+        *messages,
+        HumanMessage(content=_raw_json_contract(schema)),
+    ]
+
+
 async def safe_structured_invoke(
     prompt: str | list[AnyMessage],
     schema: type[T],
@@ -937,62 +1087,69 @@ async def safe_structured_invoke(
     else:
         messages = sanitize_messages_for_structured_output(prompt)
 
-    try:
-        # include_raw=True → 拿原始 LLM 响应 + parsed result, 用于 diag 落盘
-        wrapper = llm.with_structured_output(schema, include_raw=True)
-        raw_result = await wrapper.ainvoke(messages)
-        # raw_result: {"raw": BaseMessage, "parsed": T | None, "parsing_error": Exception | None}
-        parsed = raw_result.get("parsed") if isinstance(raw_result, dict) else None
-        raw_msg = raw_result.get("raw") if isinstance(raw_result, dict) else None
-        if raw_msg is not None:
-            try:
-                # 优先取 tool_calls args (LLM 实际生成的结构化数据, 比 text block 完整)
-                tool_calls = getattr(raw_msg, "tool_calls", None) or []
-                if tool_calls and isinstance(tool_calls, list) and tool_calls[0]:
-                    args = tool_calls[0].get("args") if isinstance(tool_calls[0], dict) else getattr(tool_calls[0], "args", None)
-                    if args:
-                        import json as _json
-                        _last_raw_content = _json.dumps(args, ensure_ascii=False, default=str)[:_DIAG_RAW_MAX_BYTES]
+    if _use_native_structured_output(model_type):
+        try:
+            # include_raw=True → 拿原始 LLM 响应 + parsed result, 用于 diag 落盘
+            wrapper = llm.with_structured_output(schema, include_raw=True)
+            raw_result = await wrapper.ainvoke(messages)
+            # raw_result: {"raw": BaseMessage, "parsed": T | None, "parsing_error": Exception | None}
+            parsed = raw_result.get("parsed") if isinstance(raw_result, dict) else None
+            raw_msg = raw_result.get("raw") if isinstance(raw_result, dict) else None
+            if raw_msg is not None:
+                try:
+                    # 优先取 tool_calls args (LLM 实际生成的结构化数据, 比 text block 完整)
+                    tool_calls = getattr(raw_msg, "tool_calls", None) or []
+                    if tool_calls and isinstance(tool_calls, list) and tool_calls[0]:
+                        args = tool_calls[0].get("args") if isinstance(tool_calls[0], dict) else getattr(tool_calls[0], "args", None)
+                        if args:
+                            import json as _json
+                            _last_raw_content = _json.dumps(args, ensure_ascii=False, default=str)[:_DIAG_RAW_MAX_BYTES]
+                        else:
+                            _last_raw_content = _unwrap_content(raw_msg.content)[:_DIAG_RAW_MAX_BYTES]
                     else:
                         _last_raw_content = _unwrap_content(raw_msg.content)[:_DIAG_RAW_MAX_BYTES]
-                else:
-                    _last_raw_content = _unwrap_content(raw_msg.content)[:_DIAG_RAW_MAX_BYTES]
-            except Exception:
-                pass
-        if parsed is not None:
-            return _coerce_to_pydantic(parsed, schema)
-        if raw_msg is not None:
-            tool_calls = getattr(raw_msg, "tool_calls", None) or []
-            if tool_calls:
-                first_call = tool_calls[0]
-                native_args = (
-                    first_call.get("args")
-                    if isinstance(first_call, dict)
-                    else getattr(first_call, "args", None)
-                )
-                if native_args is not None:
+                except Exception:
+                    pass
+            if parsed is not None:
+                return _coerce_to_pydantic(parsed, schema)
+            if raw_msg is not None:
+                tool_calls = getattr(raw_msg, "tool_calls", None) or []
+                if tool_calls:
+                    first_call = tool_calls[0]
+                    native_args = (
+                        first_call.get("args")
+                        if isinstance(first_call, dict)
+                        else getattr(first_call, "args", None)
+                    )
+                    if native_args is not None:
+                        try:
+                            return _coerce_to_pydantic(native_args, schema)
+                        except Exception as e:
+                            print(
+                                f"[LLM] native tool args recovery failed for "
+                                f"{schema.__name__}: {e}"
+                            )
+                native_text = _unwrap_content(raw_msg.content)
+                if native_text:
                     try:
-                        return _coerce_to_pydantic(native_args, schema)
+                        return _coerce_to_pydantic(native_text, schema)
                     except Exception as e:
                         print(
-                            f"[LLM] native tool args recovery failed for "
+                            f"[LLM] native text recovery failed for "
                             f"{schema.__name__}: {e}"
                         )
-            native_text = _unwrap_content(raw_msg.content)
-            if native_text:
-                try:
-                    return _coerce_to_pydantic(native_text, schema)
-                except Exception as e:
-                    print(
-                        f"[LLM] native text recovery failed for "
-                        f"{schema.__name__}: {e}"
-                    )
-        print(f"[LLM] structured_output returned None for {schema.__name__}, falling back to raw parse")
-    except Exception as e:
-        print(f"[LLM] structured_output errored for {schema.__name__}: {e}; falling back to raw parse")
+            print(f"[LLM] structured_output returned None for {schema.__name__}, falling back to raw parse")
+        except Exception as e:
+            print(f"[LLM] structured_output errored for {schema.__name__}: {e}; falling back to raw parse")
+    else:
+        print(
+            f"[LLM] native structured_output disabled for {model_type}; "
+            f"using raw JSON contract for {schema.__name__}"
+        )
 
     try:
-        raw = await llm.ainvoke(messages)
+        raw_messages = _messages_with_raw_json_contract(messages, schema)
+        raw = await llm.ainvoke(raw_messages)
         text = _unwrap_content(raw.content)
         _last_raw_content = text[:_DIAG_RAW_MAX_BYTES]  # 缓存供 diag 落盘
         blob = _extract_json_blob(text)

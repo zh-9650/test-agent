@@ -1,0 +1,27 @@
+{
+  "action": "cleanup",
+  "base_url": "http://127.0.0.1:8080",
+  "keyword": "TA-20260704",
+  "skill_id": "",
+  "generated_at": "2026-07-04T19:20:08.272578+00:00",
+  "result": {
+    "before": {
+      "raw_code": 200,
+      "raw_msg": "查询成功",
+      "total": null,
+      "total_rows": 0,
+      "matched_count": 0,
+      "matched": []
+    },
+    "deleted": [],
+    "skipped": [],
+    "after": {
+      "raw_code": 200,
+      "raw_msg": "查询成功",
+      "total": null,
+      "total_rows": 0,
+      "matched_count": 0,
+      "matched": []
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "setup_key": "admin-session",
+      "kind": "exception",
+      "artifact": "manual:login-established-by-CJ-P0-002",
+      "smoke_check": "控制台导航栏显示 智能体广场 / 知识库管理 / 技能管理 且用户名为 admin",
+      "cleanup": "退出登录或清理 cj_access_token/cj_is_logged_in/cj_logged_user",
+      "parameters": "",
+      "created_ids": "",
+      "exception_reason": "管理员登录本身是 CJ-P0-002 的被测行为；后续用例复用同一浏览器登录态，首次登录通过后再执行模块用例",
+      "updated_at": "2026-07-03T23:06:12+00:00"
+    },
+    {
+      "setup_key": "cangjie-agent-api-cleanup",
+      "kind": "helper",
+      "artifact": "setup/cangjie_agent_api_helper.py",
+      "smoke_check": "login to 8080 and GET /system/agent/list?keyword=TA-20260704 returns code=200 with matched_count=0 after cleanup",
+      "cleanup": "run helper with --keyword TA-20260704 --action cleanup before and after agent write tests",
+      "parameters": "",
+      "created_ids": "",
+      "exception_reason": "",
+      "updated_at": "2026-07-04T11:58:37+00:00"
+    },
+    {
+      "setup_key": "cangjie-skill-api-cleanup",
+      "kind": "helper",
+      "artifact": "setup/cangjie_skill_api_helper.py",
+      "smoke_check": "login to 8080 and POST /system/skill/page keyword=TA-20260704 returns code=200 with matched_count=0 after cleanup",
+      "cleanup": "run helper with --keyword TA-20260704 --action cleanup before and after skill write tests",
+      "parameters": "",
+      "created_ids": "",
+      "exception_reason": "",
+      "updated_at": "2026-07-04T18:17:52+00:00"
+    },
+    {
+      "setup_key": "cangjie-dataset-api-cleanup",
+      "kind": "helper",
+      "artifact": "setup/cangjie_dataset_api_helper.py",
+      "smoke_check": "login to 8080; cleanup keyword TA-20260704 returns matched_count=0; create-check records HTTP status, business code, list, and cleanup for FastGPT dataset dependency",
+      "cleanup": "run helper with --keyword TA-20260704 --action cleanup before and after dataset write tests; use --action create-check for dependency recovery probes",
+      "parameters": "",
+      "created_ids": "",
+      "exception_reason": "",
+      "updated_at": "2026-07-06T08:09:59+00:00"
+    }
+  ]
+}

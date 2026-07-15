@@ -35,9 +35,16 @@ def fallback_blueprint(
 async def plan_coverage_blueprint(
     assertions: list[RequirementAssertion],
     system_map: SystemMapEvid | None,
+    memory_context: str = "",
 ) -> CoverageBlueprint:
     if not assertions:
         return CoverageBlueprint()
+    memory_context_section = (
+        f"\n### MemoryContext (hint-only, never a RequirementFact source)\n"
+        f"{memory_context}\n"
+        if memory_context
+        else ""
+    )
     prompt = f"""<role>你是业务覆盖架构师。</role>
 <task>只依据已确认断言和探索证据，识别业务模块、核心流程和模块依赖。</task>
 <rules>
@@ -49,6 +56,7 @@ async def plan_coverage_blueprint(
 <output_contract>只返回符合 CoverageBlueprintResult 的 JSON。</output_contract>
 断言：{[a.model_dump() for a in assertions]}
 探索证据：{system_map.model_dump() if system_map else {}}
+{memory_context_section}
 """
     result = await safe_structured_invoke(
         prompt, CoverageBlueprintResult, model_type="default"

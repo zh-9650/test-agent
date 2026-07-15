@@ -1,0 +1,61 @@
+{
+  "case_id": "CJ-P1-005",
+  "title": "知识库列表与新增知识库",
+  "target_url": "http://localhost:3001/",
+  "backend_under_test": "http://127.0.0.1:8080",
+  "test_agent_backend": "http://127.0.0.1:8003",
+  "final_task_id": 114,
+  "final_run_id": "run-9234e3196fcb48209e9d375b7afd7c1f",
+  "final_run_summary": {
+    "planned": 3,
+    "passed": 2,
+    "failed": 1,
+    "incomplete": 0,
+    "human_review_required": 0
+  },
+  "selected_case_ids": [
+    "TC-a007fa6f56",
+    "TC-06c22aecbd",
+    "TC-0e00faaf66"
+  ],
+  "deferred_case_count": 29,
+  "observations": [
+    {
+      "case_id": "TC-a007fa6f56",
+      "status": "passed",
+      "finding": "admin/admin123 login reached the console with zhanghong and dashboard markers."
+    },
+    {
+      "case_id": "TC-06c22aecbd",
+      "status": "failed",
+      "finding": "UI filled the knowledge-base name and intro, clicked 保存, then the page reported FastGPT服务异常 and the list did not show 测试知识库-TA-20260704-AUTO."
+    },
+    {
+      "case_id": "TC-0e00faaf66",
+      "status": "passed",
+      "finding": "Empty knowledge-base name stayed in the visible modal with the name field invalid after 保存."
+    }
+  ],
+  "backend_oracles": {
+    "after_task114": "evidence/CJ-P1-005_dataset_after_task114.json",
+    "cleanup_after_task114": "evidence/CJ-P1-005_dataset_cleanup_after_task114.json",
+    "cleanup_after_direct_diag": "evidence/CJ-P1-005_dataset_cleanup_after_direct_diag.json",
+    "after_task114_matched_count": 0,
+    "direct_create_diagnostic": {
+      "request": "POST /fastgpt/dataset name=测试知识库-TA-20260704-DIRECT",
+      "login_code": 200,
+      "create_code": 502,
+      "create_msg": "FastGPT服务异常"
+    }
+  },
+  "test_agent_optimizations": [
+    "Added explicit dataset UI create and empty-name case augmentation.",
+    "Prevented dataset payloads mentioning 未绑定智能体 from injecting agent-create cases.",
+    "Allowed known read-only API postcondition endpoints only as optional UI oracles.",
+    "Deferred pure API/request-construction, clientid, and agentId/delete setup cases from browser runtime.",
+    "Added smoke dedupe buckets for dataset.create and dataset.empty_name.",
+    "Added deterministic runtime sequence and terminal assertions for knowledge-base create and empty-name validation."
+  ],
+  "status": "blocked_by_product_dependency",
+  "blocker": "Cangjie/FastGPT dataset creation returns code=502 FastGPT服务异常, reproduced by UI and direct API diagnostic."
+}

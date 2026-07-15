@@ -342,8 +342,21 @@ def run_quality_gates(package: TestAssetPackage) -> QualityGateReport:
                 and assertion.review_status == "auto_generated"
                 and assertion.assertion_type in {"security", "data_rule"}
             )
-            if not is_review_blocked and assertion.review_status != "rejected" and not any(
-                condition.branch_type == "positive" for condition in conditions
+            has_positive_condition = any(
+                condition.branch_type in {"positive", "e2e"}
+                for condition in conditions
+            )
+            has_validation_branch = (
+                assertion.assertion_type in {"validation", "error_handling"}
+                and any(
+                    condition.branch_type in {"negative", "exception"}
+                    for condition in conditions
+                )
+            )
+            if (
+                not is_review_blocked
+                and assertion.review_status != "rejected"
+                and not (has_positive_condition or has_validation_branch)
             ):
                 _add_finding(
                     findings,

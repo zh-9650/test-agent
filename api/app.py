@@ -24,22 +24,33 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import (
+    AgentMemoryItem,
+    CaseResultListResponse,
     CreateTaskRequest,
+    ExecutionRunListResponse,
+    ExecutionRunResponse,
+    HumanReviewRequestCreate,
+    HumanReviewRequestResponse,
+    HumanReviewDecisionRequest,
+    HumanReviewDecisionResponse,
+    HumanReviewRequestListResponse,
     MessageResponse,
+    MemoryListResponse,
     StepListResponse,
     TaskListResponse,
     TaskResponse,
-    ExecutionRunResponse,
-    ExecutionRunListResponse,
-    CaseResultListResponse,
-    AgentMemoryItem,
-    MemoryListResponse
 )
 from api.websocket import (
     create_ws_message,
     manager as websocket_manager,
     set_stop_handler,
     websocket_endpoint,
+)
+from core.execution_store import (
+    create_human_review_request,
+    decide_human_review_request,
+    list_human_review_requests,
+    set_task_resume_policy,
 )
 from core.task_lifecycle import TaskLifecycleService
 from database.connection import async_session, init_database
@@ -114,6 +125,8 @@ def _serialize_task(
         "failure_reason": task.failure_reason,
         "config": task.config,
         "analysis_package": task.analysis_package,
+        "checkpoints": task.checkpoints,
+        "resume_policy": task.resume_policy,
         "latest_run": (
             {
                 "run_id": latest_run.run_id,
@@ -131,6 +144,12 @@ def _serialize_task(
         "completed_at": task.completed_at,
         "created_at": task.created_at,
     }
+
+
+def _store_error(exc: ValueError) -> HTTPException:
+    detail = str(exc)
+    status_code = 404 if "not found" in detail.lower() else 400
+    return HTTPException(status_code=status_code, detail=detail)
 
 
 # POST /api/tasks 閳?Create task
@@ -252,6 +271,66 @@ async def get_run_results(task_id: int, run_id: str) -> CaseResultListResponse:
         )
         results = list((await session.execute(query)).scalars().all())
         return CaseResultListResponse(results=results, total=len(results))
+
+
+@app.get("/api/tasks/{task_id}/human-reviews", response_model=HumanReviewRequestListResponse)
+async def list_task_human_reviews(
+    task_id: int,
+    status: str | None = Query(None, description="Filter by review request status"),
+) -> HumanReviewRequestListResponse:
+    try:
+        requests = await list_human_review_requests(task_id, status=status)
+    except ValueError as exc:
+        raise _store_error(exc) from exc
+    return HumanReviewRequestListResponse(requests=requests, total=len(requests))
+
+
+@app.post(
+    "/api/tasks/{task_id}/human-reviews",
+    response_model=HumanReviewRequestResponse,
+    status_code=201,
+)
+async def create_task_human_review(
+    task_id: int,
+    request: HumanReviewRequestCreate,
+) -> HumanReviewRequestResponse:
+    if request.task_id != task_id:
+        raise HTTPException(status_code=400, detail="task_id mismatch")
+    try:
+        review = await create_human_review_request(
+            task_id=task_id,
+            run_id=request.run_id,
+            candidate_case_id=request.candidate_case_id,
+            phase=request.phase,
+            reason=request.reason,
+            evidence_refs=request.evidence_refs,
+            blocked_tool=request.blocked_tool,
+        )
+    except ValueError as exc:
+        raise _store_error(exc) from exc
+    return review  # type: ignore[return-value]
+
+
+@app.post(
+    "/api/human-reviews/{request_id}/decisions",
+    response_model=HumanReviewDecisionResponse,
+    status_code=201,
+)
+async def decide_human_review(
+    request_id: int,
+    request: HumanReviewDecisionRequest,
+) -> HumanReviewDecisionResponse:
+    try:
+        decision = await decide_human_review_request(
+            request_id,
+            decision=request.decision,
+            edited_inputs=request.edited_inputs,
+            approved_tools=request.approved_tools,
+            comment=request.comment,
+        )
+    except ValueError as exc:
+        raise _store_error(exc) from exc
+    return decision  # type: ignore[return-value]
 
 
 # GET /api/tasks/{task_id}/diag 閳?List diag log files for a task
@@ -418,6 +497,12 @@ async def resume_task(task_id: int) -> MessageResponse:
             raise HTTPException(status_code=404, detail="Task not found")
         if task.status == "running":
             raise HTTPException(status_code=400, detail="Task is already running")
+        pending_reviews = await list_human_review_requests(task_id, status="pending")
+        if pending_reviews:
+            raise HTTPException(
+                status_code=400,
+                detail="Task has pending human review requests",
+            )
         latest = await _latest_run_in_session(session, task_id)
         if latest is None:
             raise HTTPException(status_code=400, detail="Task has no execution run")
@@ -437,6 +522,15 @@ async def resume_task(task_id: int) -> MessageResponse:
         task.completed_at = None
         await session.commit()
 
+    await set_task_resume_policy(
+        task_id,
+        {
+            "mode": "rerun_non_passed_cases",
+            "resumed_from_run_id": latest.run_id,
+            "resume_case_ids": retry_ids,
+            "requires_resolved_human_reviews": True,
+        },
+    )
     _start_task_session(
         task_id,
         task.target_url,

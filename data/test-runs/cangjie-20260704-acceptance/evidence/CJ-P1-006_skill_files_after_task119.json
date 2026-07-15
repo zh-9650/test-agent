@@ -1,0 +1,32 @@
+{
+  "action": "files",
+  "base_url": "http://127.0.0.1:8080",
+  "keyword": "TA-20260704-AUTO",
+  "skill_id": "",
+  "generated_at": "2026-07-04T19:58:53.648950+00:00",
+  "result": {
+    "raw_code": 200,
+    "raw_msg": "操作成功",
+    "skillId": "sk-cst-1783195062768",
+    "flat_paths": [
+      "index.js",
+      "SKILL.md"
+    ],
+    "files": [
+      {
+        "path": "index.js",
+        "name": "index.js",
+        "type": "file",
+        "isCore": 0
+      },
+      {
+        "path": "SKILL.md",
+        "name": "SKILL.md",
+        "type": "file",
+        "isCore": 1
+      }
+    ],
+    "has_skill_md": true,
+    "has_index_js": true
+  }
+}

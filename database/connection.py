@@ -130,6 +130,21 @@ def _run_create_all(sync_url: str) -> None:
     engine = create_engine(sync_url)
     with engine.begin() as connection:
         Base.metadata.create_all(bind=connection)
+        connection.execute(
+            text("ALTER TABLE task_step ADD COLUMN IF NOT EXISTS tool_result JSONB")
+        )
+        connection.execute(
+            text(
+                "ALTER TABLE task_step "
+                "ADD COLUMN IF NOT EXISTS policy_decision JSONB"
+            )
+        )
+        connection.execute(
+            text("ALTER TABLE task ADD COLUMN IF NOT EXISTS checkpoints JSONB")
+        )
+        connection.execute(
+            text("ALTER TABLE task ADD COLUMN IF NOT EXISTS resume_policy JSONB")
+        )
     engine.dispose()
 
 
@@ -153,7 +168,15 @@ async def reset_runtime_database(
     engine = create_async_engine_instance(target_url)
     runtime_tables = [
         Base.metadata.tables[name]
-        for name in ("report", "task_step", "case_result", "execution_run", "task")
+        for name in (
+            "report",
+            "human_review_decision",
+            "human_review_request",
+            "task_step",
+            "case_result",
+            "execution_run",
+            "task",
+        )
     ]
     async with engine.begin() as connection:
         await connection.run_sync(
