@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Iterator
 
 import yaml
 
-from core.design_studio.contracts import ParsedArtifact, SourceArtifact, SourceInput
+from core.design_studio.contracts import (
+    ParseFidelityStatus,
+    ParsedArtifact,
+    SourceArtifact,
+    SourceInput,
+)
 
 from .base import finalize_artifact, finding, make_block
 
@@ -22,6 +28,36 @@ _HTTP_METHODS = {
     "patch",
     "trace",
 }
+_SUPPORTED_OPENAPI_VERSION = re.compile(r"^3\.(?:0|1)\.\d+(?:[-+].*)?$")
+_OPENAPI_PARSER_NAME = "openapi_structured"
+
+
+class _UniqueKeySafeLoader(yaml.SafeLoader):
+    """拒绝 YAML 重复键，避免规则被后一个值静默覆盖。"""
+
+    def construct_mapping(
+        self,
+        node: yaml.MappingNode,
+        deep: bool = False,
+    ) -> dict[Any, Any]:
+        self.flatten_mapping(node)
+        mapping: dict[Any, Any] = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            try:
+                duplicate = key in mapping
+            except TypeError as exc:
+                raise ValueError("YAML 映射键必须可哈希") from exc
+            if duplicate:
+                raise ValueError(f"YAML 存在重复键: {key!r}")
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
+_UniqueKeySafeLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _UniqueKeySafeLoader.construct_mapping,
+)
 
 
 def _escape_pointer(value: str) -> str:
@@ -40,6 +76,30 @@ def _walk(value: Any, pointer: str = "#") -> Iterator[tuple[str, Any]]:
     elif isinstance(value, list):
         for index, child in enumerate(value):
             yield from _walk(child, _pointer(pointer, index))
+
+
+def _validate_acyclic(
+    value: Any,
+    *,
+    ancestors: set[int] | None = None,
+    depth: int = 0,
+) -> None:
+    if depth > 200:
+        raise ValueError("结构嵌套超过 200 层")
+    if not isinstance(value, (dict, list)):
+        return
+    current_ancestors = set(ancestors or set())
+    identity = id(value)
+    if identity in current_ancestors:
+        raise ValueError("YAML alias 形成递归结构")
+    current_ancestors.add(identity)
+    children = value.values() if isinstance(value, dict) else value
+    for child in children:
+        _validate_acyclic(
+            child,
+            ancestors=current_ancestors,
+            depth=depth + 1,
+        )
 
 
 def _resolve_local_ref(root: Any, reference: str) -> bool:
@@ -63,8 +123,16 @@ def _resolve_local_ref(root: Any, reference: str) -> bool:
 def _load(path: SourceInput) -> Any:
     text = path.path.read_text(encoding="utf-8")
     if path.path.suffix.casefold() == ".json":
-        return json.loads(text)
-    return yaml.safe_load(text)
+        def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(f"JSON 存在重复键: {key!r}")
+                result[key] = value
+            return result
+
+        return json.loads(text, object_pairs_hook=unique_object)
+    return yaml.load(text, Loader=_UniqueKeySafeLoader)
 
 
 class StructuredDocumentParser:
@@ -82,7 +150,15 @@ class StructuredDocumentParser:
     ) -> ParsedArtifact:
         try:
             document = _load(source)
-        except (OSError, UnicodeError, json.JSONDecodeError, yaml.YAMLError) as exc:
+            _validate_acyclic(document)
+        except (
+            OSError,
+            UnicodeError,
+            ValueError,
+            RecursionError,
+            json.JSONDecodeError,
+            yaml.YAMLError,
+        ) as exc:
             return finalize_artifact(
                 artifact=artifact,
                 parser_name=self.parser_name,
@@ -101,6 +177,79 @@ class StructuredDocumentParser:
         if isinstance(document, dict) and (
             "openapi" in document or "swagger" in document
         ):
+            version = document.get("openapi", document.get("swagger"))
+            if not (
+                (isinstance(version, str) and _SUPPORTED_OPENAPI_VERSION.match(version))
+                or version == "2.0"
+            ):
+                return finalize_artifact(
+                    artifact=artifact,
+                    parser_name=_OPENAPI_PARSER_NAME,
+                    parser_version=self.parser_version,
+                    blocks=[],
+                    detected_inventory={},
+                    parsed_inventory={},
+                    unsupported_features=[
+                        finding(
+                            "input.unsupported_openapi_version",
+                            f"当前不支持 OpenAPI/Swagger 版本: {version!r}",
+                            "#/openapi" if "openapi" in document else "#/swagger",
+                        )
+                    ],
+                    forced_status=ParseFidelityStatus.UNSUPPORTED,
+                )
+            structure_errors = []
+            if not isinstance(document.get("paths"), dict):
+                structure_errors.append(
+                    finding(
+                        "input.invalid_openapi_structure",
+                        "OpenAPI 根字段 paths 必须是对象。",
+                        "#/paths",
+                    )
+                )
+            if "components" in document and not isinstance(
+                document["components"], dict
+            ):
+                structure_errors.append(
+                    finding(
+                        "input.invalid_openapi_structure",
+                        "OpenAPI components 必须是对象。",
+                        "#/components",
+                    )
+                )
+            if "definitions" in document and not isinstance(
+                document["definitions"], dict
+            ):
+                structure_errors.append(
+                    finding(
+                        "input.invalid_openapi_structure",
+                        "Swagger definitions 必须是对象。",
+                        "#/definitions",
+                    )
+                )
+            components = document.get("components")
+            if (
+                isinstance(components, dict)
+                and "schemas" in components
+                and not isinstance(components["schemas"], dict)
+            ):
+                structure_errors.append(
+                    finding(
+                        "input.invalid_openapi_structure",
+                        "OpenAPI components.schemas 必须是对象。",
+                        "#/components/schemas",
+                    )
+                )
+            if structure_errors:
+                return finalize_artifact(
+                    artifact=artifact,
+                    parser_name=_OPENAPI_PARSER_NAME,
+                    parser_version=self.parser_version,
+                    blocks=[],
+                    detected_inventory={},
+                    parsed_inventory={},
+                    errors=structure_errors,
+                )
             return self._parse_openapi(artifact, document)
         return self._parse_generic(artifact, document)
 
@@ -242,7 +391,7 @@ class StructuredDocumentParser:
             blocks.append(
                 make_block(
                     artifact,
-                    parser_name=self.parser_name,
+                    parser_name=_OPENAPI_PARSER_NAME,
                     parser_version=self.parser_version,
                     block_type=block_type,
                     locator=locator,
@@ -360,7 +509,7 @@ class StructuredDocumentParser:
         }
         return finalize_artifact(
             artifact=artifact,
-            parser_name="openapi_structured",
+            parser_name=_OPENAPI_PARSER_NAME,
             parser_version=self.parser_version,
             blocks=blocks,
             detected_inventory=detected,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from docx import Document
 from PIL import Image
@@ -8,6 +10,7 @@ from PIL import Image
 from core.design_studio.contracts import (
     Authority,
     ParseFidelityStatus,
+    ParsedArtifact,
     SourceInput,
 )
 from core.design_studio.parsing import InputParsingService
@@ -28,6 +31,21 @@ def _write_docx(path: Path, *, body: str = "正文") -> None:
     table.cell(1, 1).text = "提交"
     document.add_picture(str(image_path))
     document.save(path)
+
+
+def _expected_source(parsed: ParsedArtifact) -> SourceInput:
+    source = parsed.source
+    return SourceInput(
+        source_id=source.source_id,
+        path=source.local_path,
+        source_kind=source.source_kind,
+        authority=source.authority,
+        required=source.required,
+        original_name=source.original_name,
+        origin_uri=source.origin_uri,
+        source_version=source.source_version,
+        secret_refs=source.secret_refs,
+    )
 
 
 def test_docx_parse_preserves_inventory_locators_and_source_version(tmp_path: Path) -> None:
@@ -56,6 +74,21 @@ def test_docx_parse_preserves_inventory_locators_and_source_version(tmp_path: Pa
     )
     assert all(block.locator for block in first.blocks)
     assert all(block.source_hash == first.source.sha256 for block in first.blocks)
+    table_block = next(
+        block for block in first.blocks if block.block_type == "table"
+    )
+    row_blocks = [
+        block for block in first.blocks if block.block_type == "table_row"
+    ]
+    cell_blocks = [
+        block for block in first.blocks if block.block_type == "table_cell"
+    ]
+    assert all(block.parent_block_id == table_block.block_id for block in row_blocks)
+    assert all(
+        block.parent_block_id in {row.block_id for row in row_blocks}
+        for block in cell_blocks
+    )
+    assert all("::table[" in block.locator for block in cell_blocks)
     assert [block.block_id for block in first.blocks] == [
         block.block_id for block in repeated.blocks
     ]
@@ -126,6 +159,30 @@ def test_markdown_parse_preserves_structures_without_flattening(tmp_path: Path) 
         and block.structured_content["target"] == "https://example.test/spec"
         for block in result.blocks
     )
+
+
+def test_markdown_table_like_text_inside_code_fence_is_not_inventoried_as_table(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "example.md"
+    path.write_text(
+        "```markdown\n| a | b |\n| --- | --- |\n| 1 | 2 |\n```\n",
+        encoding="utf-8",
+    )
+
+    result = InputParsingService.default().parse(
+        SourceInput(
+            source_id="SRC-MARKDOWN-CODE",
+            path=path,
+            source_kind="api_document",
+            authority=Authority.TECHNICAL,
+        )
+    )
+
+    assert result.fidelity_report.status == ParseFidelityStatus.COMPLETE
+    assert result.fidelity_report.detected_inventory["tables"] == 0
+    assert result.fidelity_report.detected_inventory["table_rows"] == 0
+    assert result.fidelity_report.detected_inventory["code_blocks"] == 1
 
 
 def test_openapi_yaml_parse_preserves_operations_schemas_enums_and_refs(
@@ -202,6 +259,11 @@ components:
         and block.locator == "#/components/schemas/Status"
         for block in result.blocks
     )
+    assert all(
+        block.parser_name == result.fidelity_report.parser_name
+        and block.parser_version == result.fidelity_report.parser_version
+        for block in result.blocks
+    )
 
 
 def test_openapi_unresolved_local_ref_is_failed_not_silently_ignored(
@@ -249,6 +311,73 @@ def test_openapi_unresolved_local_ref_is_failed_not_silently_ignored(
     }
 
 
+def test_openapi_version_and_root_structure_are_validated(tmp_path: Path) -> None:
+    unsupported_path = tmp_path / "future.yaml"
+    unsupported_path.write_text(
+        "openapi: '9.9'\npaths: {}\n",
+        encoding="utf-8",
+    )
+    invalid_path = tmp_path / "invalid.yaml"
+    invalid_path.write_text(
+        "openapi: 3.0.3\npaths: []\ncomponents: []\n",
+        encoding="utf-8",
+    )
+    service = InputParsingService.default()
+
+    unsupported = service.parse(
+        SourceInput(
+            source_id="SRC-OPENAPI-FUTURE",
+            path=unsupported_path,
+            source_kind="api_contract",
+            authority=Authority.TECHNICAL,
+        )
+    )
+    invalid = service.parse(
+        SourceInput(
+            source_id="SRC-OPENAPI-INVALID",
+            path=invalid_path,
+            source_kind="api_contract",
+            authority=Authority.TECHNICAL,
+        )
+    )
+
+    assert unsupported.fidelity_report.status == ParseFidelityStatus.UNSUPPORTED
+    assert "input.unsupported_openapi_version" in {
+        item.code for item in unsupported.fidelity_report.unsupported_features
+    }
+    assert invalid.fidelity_report.status == ParseFidelityStatus.FAILED
+    assert "input.invalid_openapi_structure" in {
+        item.code for item in invalid.fidelity_report.errors
+    }
+
+
+def test_structured_inputs_reject_duplicate_keys_and_recursive_yaml_alias(
+    tmp_path: Path,
+) -> None:
+    fixtures = {
+        "duplicate.json": '{"rule":"first","rule":"second"}',
+        "duplicate.yaml": "rule: first\nrule: second\n",
+        "recursive.yaml": "root: &root\n  - *root\n",
+    }
+    service = InputParsingService.default()
+
+    for index, (name, content) in enumerate(fixtures.items(), start=1):
+        path = tmp_path / name
+        path.write_text(content, encoding="utf-8")
+        result = service.parse(
+            SourceInput(
+                source_id=f"SRC-STRUCTURED-BROKEN-{index}",
+                path=path,
+                source_kind="technical_document",
+                authority=Authority.TECHNICAL,
+            )
+        )
+        assert result.fidelity_report.status == ParseFidelityStatus.FAILED
+        assert "input.structured_parse_failed" in {
+            item.code for item in result.fidelity_report.errors
+        }
+
+
 def test_html_bundle_preserves_resource_closure_but_reports_dynamic_semantics_partial(
     tmp_path: Path,
 ) -> None:
@@ -294,12 +423,13 @@ def test_html_bundle_preserves_resource_closure_but_reports_dynamic_semantics_pa
             path=root,
             source_kind="prototype",
             authority=Authority.NORMATIVE,
-            entry_points=["index.html", "detail.html"],
+            entry_points=["index.html"],
         )
     )
 
     assert result.fidelity_report.status == ParseFidelityStatus.PARTIAL
-    assert result.fidelity_report.detected_inventory["entry_pages"] == 2
+    assert result.fidelity_report.detected_inventory["entry_pages"] == 1
+    assert result.fidelity_report.detected_inventory["discovered_pages"] == 2
     assert result.fidelity_report.detected_inventory["direct_referenced_files"] == 4
     assert result.fidelity_report.detected_inventory["referenced_files"] == 5
     assert result.fidelity_report.detected_inventory["missing_references"] == 0
@@ -325,6 +455,11 @@ def test_html_bundle_preserves_resource_closure_but_reports_dynamic_semantics_pa
     )
     assert manifest.structured_content["direct_file_count"] == 4
     assert manifest.structured_content["transitive_file_count"] == 5
+    assert all(
+        "::line[" in block.locator
+        for block in result.blocks
+        if block.block_type in {"visible_text", "html_control", "custom_control"}
+    )
 
 
 def test_html_missing_local_resource_is_failed(tmp_path: Path) -> None:
@@ -480,8 +615,20 @@ def test_g0_blocks_required_partial_but_allows_optional_degraded_source(
     )
     gate = ParseFidelityGate()
 
-    blocked = gate.evaluate([complete, required_partial])
-    allowed = gate.evaluate([complete, optional_partial])
+    blocked = gate.evaluate(
+        [complete, required_partial],
+        expected_sources=[
+            _expected_source(complete),
+            _expected_source(required_partial),
+        ],
+    )
+    allowed = gate.evaluate(
+        [complete, optional_partial],
+        expected_sources=[
+            _expected_source(complete),
+            _expected_source(optional_partial),
+        ],
+    )
 
     assert blocked.passed is False
     assert blocked.blocked_source_ids == ["SRC-DIAGRAM-REQUIRED"]
@@ -523,6 +670,26 @@ def test_unknown_and_missing_inputs_return_explicit_non_success_status(
     assert missing.fidelity_report.status == ParseFidelityStatus.FAILED
 
 
+def test_zip_bomb_is_rejected_before_docx_xml_read(tmp_path: Path) -> None:
+    path = tmp_path / "bomb.docx"
+    with ZipFile(path, "w", compression=ZIP_DEFLATED) as package:
+        package.writestr("word/document.xml", b"0" * 2_000_000)
+
+    result = InputParsingService.default().parse(
+        SourceInput(
+            source_id="SRC-DOCX-BOMB",
+            path=path,
+            source_kind="requirement",
+            authority=Authority.NORMATIVE,
+        )
+    )
+
+    assert result.fidelity_report.status == ParseFidelityStatus.FAILED
+    assert any(
+        "压缩比" in item.message for item in result.fidelity_report.errors
+    )
+
+
 def test_content_addressed_capture_keeps_the_parsed_original_reproducible(
     tmp_path: Path,
 ) -> None:
@@ -546,6 +713,100 @@ def test_content_addressed_capture_keeps_the_parsed_original_reproducible(
     assert artifact_root in captured_path.parents
     assert captured_path.read_text(encoding="utf-8") == "# 原始规则\n\n必须确认。"
     assert result.source.origin_uri == str(original.resolve())
+
+
+def test_artifact_store_rejects_secret_files_in_source_tree(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    (source_root / "app.ts").write_text("export const app = true;", encoding="utf-8")
+    (source_root / ".env").write_text("API_TOKEN=must-not-copy", encoding="utf-8")
+    artifact_root = tmp_path / "artifacts"
+
+    result = InputParsingService.default(artifact_root=artifact_root).parse(
+        SourceInput(
+            source_id="SRC-WITH-SECRET",
+            path=source_root,
+            source_kind="prototype_source",
+            authority=Authority.TECHNICAL,
+            secret_refs=["secret://project/api-token"],
+        )
+    )
+
+    assert result.fidelity_report.status == ParseFidelityStatus.FAILED
+    assert "input.source_unreadable" in {
+        item.code for item in result.fidelity_report.errors
+    }
+    assert not list(artifact_root.rglob(".env"))
+
+
+def test_artifact_store_rejects_root_inside_source_directory(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    (source_root / "app.ts").write_text("export const app = true;", encoding="utf-8")
+
+    result = InputParsingService.default(
+        artifact_root=source_root / "artifacts"
+    ).parse(
+        SourceInput(
+            source_id="SRC-RECURSIVE-CAPTURE",
+            path=source_root,
+            source_kind="prototype_source",
+            authority=Authority.TECHNICAL,
+        )
+    )
+
+    assert result.fidelity_report.status == ParseFidelityStatus.FAILED
+    assert not list(source_root.glob(".capture-*"))
+
+
+def test_artifact_store_sanitizes_origin_uri_and_persists_distinct_identities(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "requirement.md"
+    source_path.write_text("# 规则", encoding="utf-8")
+    artifact_root = tmp_path / "artifacts"
+    service = InputParsingService.default(artifact_root=artifact_root)
+    origin = "https://user:password@example.test/spec?token=secret#fragment"
+
+    first = service.parse(
+        SourceInput(
+            source_id="SRC-IDENTITY-A",
+            path=source_path,
+            source_kind="requirement",
+            authority=Authority.NORMATIVE,
+            origin_uri=origin,
+        )
+    )
+    second = service.parse(
+        SourceInput(
+            source_id="SRC-IDENTITY-B",
+            path=source_path,
+            source_kind="requirement",
+            authority=Authority.HISTORICAL,
+            required=False,
+            origin_uri=origin,
+        )
+    )
+
+    identity_files = list(artifact_root.rglob("identities/*.json"))
+    identity_payloads = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in identity_files
+    ]
+    assert first.source.origin_uri == "https://example.test/spec"
+    assert second.source.origin_uri == "https://example.test/spec"
+    assert {item["source_id"] for item in identity_payloads} == {
+        "SRC-IDENTITY-A",
+        "SRC-IDENTITY-B",
+    }
+    persisted_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in artifact_root.rglob("*.json")
+    )
+    assert "password" not in persisted_text
+    assert "token=secret" not in persisted_text
 
 
 def test_g0_rechecks_inventory_instead_of_trusting_a_complete_label(
@@ -572,10 +833,123 @@ def test_g0_rechecks_inventory_instead_of_trusting_a_complete_label(
     )
     tampered = parsed.model_copy(update={"fidelity_report": tampered_report})
 
-    decision = ParseFidelityGate().evaluate([tampered])
+    decision = ParseFidelityGate().evaluate(
+        [tampered],
+        expected_sources=[_expected_source(tampered)],
+    )
 
     assert decision.passed is False
     assert decision.blocked_source_ids == ["SRC-TAMPERED"]
     assert "input.inventory_mismatch" in {
+        item.code for item in decision.findings
+    }
+
+
+def test_g0_rejects_complete_label_when_report_contains_unsupported_feature(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "diagram.png"
+    Image.new("RGB", (2, 2), color="white").save(path)
+    parsed = InputParsingService.default().parse(
+        SourceInput(
+            source_id="SRC-FALSE-COMPLETE",
+            path=path,
+            source_kind="business_diagram",
+            authority=Authority.NORMATIVE,
+        )
+    )
+    tampered = parsed.model_copy(
+        update={
+            "fidelity_report": parsed.fidelity_report.model_copy(
+                update={"status": ParseFidelityStatus.COMPLETE}
+            )
+        }
+    )
+
+    decision = ParseFidelityGate().evaluate(
+        [tampered],
+        expected_sources=[_expected_source(tampered)],
+    )
+
+    assert decision.passed is False
+    assert decision.blocked_source_ids == ["SRC-FALSE-COMPLETE"]
+    assert "input.invalid_fidelity_status" in {
+        item.code for item in decision.findings
+    }
+
+
+def test_g0_requires_manifest_and_detects_missing_duplicate_and_stale_sources(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "requirement.md"
+    path.write_text("# 规则\n\n必须提交。", encoding="utf-8")
+    parsed = InputParsingService.default().parse(
+        SourceInput(
+            source_id="SRC-G0",
+            path=path,
+            source_kind="requirement",
+            authority=Authority.NORMATIVE,
+        )
+    )
+    gate = ParseFidelityGate()
+
+    empty = gate.evaluate([], expected_sources=[])
+    missing = gate.evaluate(
+        [],
+        expected_sources=[_expected_source(parsed)],
+    )
+    duplicate = gate.evaluate(
+        [parsed, parsed],
+        expected_sources=[_expected_source(parsed)],
+    )
+    path.write_text("# 规则已变化", encoding="utf-8")
+    stale = gate.evaluate(
+        [parsed],
+        expected_sources=[_expected_source(parsed)],
+    )
+
+    assert empty.passed is False
+    assert "input.empty_source_manifest" in {
+        item.code for item in empty.findings
+    }
+    assert missing.blocked_source_ids == ["SRC-G0"]
+    assert "input.required_source_missing" in {
+        item.code for item in missing.findings
+    }
+    assert duplicate.passed is False
+    assert "input.duplicate_source_version" in {
+        item.code for item in duplicate.findings
+    }
+    assert stale.passed is False
+    assert "input.stale_source" in {
+        item.code for item in stale.findings
+    }
+
+
+def test_g0_recomputes_block_id_after_content_tampering(tmp_path: Path) -> None:
+    path = tmp_path / "requirement.md"
+    path.write_text("# 规则\n\n必须提交。", encoding="utf-8")
+    parsed = InputParsingService.default().parse(
+        SourceInput(
+            source_id="SRC-BLOCK-TAMPER",
+            path=path,
+            source_kind="requirement",
+            authority=Authority.NORMATIVE,
+        )
+    )
+    changed_block = parsed.blocks[0].model_copy(
+        update={"text_content": "被篡改"}
+    )
+    tampered = parsed.model_copy(
+        update={"blocks": [changed_block, *parsed.blocks[1:]]}
+    )
+
+    decision = ParseFidelityGate().evaluate(
+        [tampered],
+        expected_sources=[_expected_source(parsed)],
+    )
+
+    assert decision.passed is False
+    assert "input.block_content_mismatch" in {
         item.code for item in decision.findings
     }

@@ -146,6 +146,7 @@ class FidelityGatePolicy(BaseModel):
             ParseFidelityStatus.UNSUPPORTED,
         }
     )
+    require_at_least_one_source: bool = True
 
 
 class FidelityGateDecision(BaseModel):

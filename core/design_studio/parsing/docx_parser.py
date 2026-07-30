@@ -8,6 +8,7 @@ from zipfile import BadZipFile, ZipFile
 import xml.etree.ElementTree as ET
 
 from core.design_studio.contracts import ParsedArtifact, SourceArtifact, SourceInput
+from core.design_studio.ingestion.zip_safety import validate_zip_safety
 
 from .base import finalize_artifact, finding, make_block
 
@@ -75,6 +76,7 @@ class DocxParser:
     ) -> ParsedArtifact:
         del source
         with ZipFile(artifact.local_path) as package:
+            validate_zip_safety(package, label="DOCX")
             names = set(package.namelist())
             if "word/document.xml" not in names:
                 raise ValueError("DOCX 缺少 word/document.xml")
@@ -126,6 +128,19 @@ class DocxParser:
                 for name in names
                 if name.startswith("word/media/") and not name.endswith("/")
             )
+            note_counts = {"footnotes": 0, "endnotes": 0}
+            for note_type, note_name, element_name in (
+                ("footnotes", "word/footnotes.xml", "footnote"),
+                ("endnotes", "word/endnotes.xml", "endnote"),
+            ):
+                if note_name not in names:
+                    continue
+                note_root = ET.fromstring(package.read(note_name))
+                note_counts[note_type] = sum(
+                    item.attrib.get(f"{{{_WORD_NS}}}type", "")
+                    not in {"separator", "continuationSeparator"}
+                    for item in note_root.findall(f"./w:{element_name}", _NS)
+                )
             detected = {
                 "paragraphs": sum(
                     len(root.findall(".//w:p", _NS)) for root in parts.values()
@@ -148,12 +163,22 @@ class DocxParser:
                 ),
                 "headers": len(headers),
                 "footers": len(footers),
+                **note_counts,
             }
 
             blocks = []
             order = 0
             unsupported = []
             warnings = []
+            for note_type, count in note_counts.items():
+                if count:
+                    unsupported.append(
+                        finding(
+                            "input.unsupported_structure",
+                            f"DOCX {note_type} 尚未保真解析: {count}",
+                            f"word/{note_type}.xml",
+                        )
+                    )
             for part_name, root in parts.items():
                 part_type = (
                     "header"
@@ -202,65 +227,82 @@ class DocxParser:
                         )
                     )
 
-                for index, table in enumerate(root.findall(".//w:tbl", _NS), start=1):
+                for table_index, table in enumerate(
+                    root.findall(".//w:tbl", _NS),
+                    start=1,
+                ):
                     order += 1
-                    blocks.append(
-                        make_block(
-                            artifact,
-                            parser_name=self.parser_name,
-                            parser_version=self.parser_version,
-                            block_type="table",
-                            locator=f"{part_name}::table[{index}]",
-                            order=order,
-                            structured_content={
-                                "row_count": len(table.findall("./w:tr", _NS))
-                            },
-                        )
+                    table_locator = f"{part_name}::table[{table_index}]"
+                    table_block = make_block(
+                        artifact,
+                        parser_name=self.parser_name,
+                        parser_version=self.parser_version,
+                        block_type="table",
+                        locator=table_locator,
+                        order=order,
+                        structured_content={
+                            "row_count": len(table.findall("./w:tr", _NS))
+                        },
                     )
-                for index, row in enumerate(root.findall(".//w:tr", _NS), start=1):
-                    order += 1
-                    blocks.append(
-                        make_block(
+                    blocks.append(table_block)
+                    for row_index, row in enumerate(
+                        table.findall("./w:tr", _NS),
+                        start=1,
+                    ):
+                        order += 1
+                        row_locator = f"{table_locator}::row[{row_index}]"
+                        row_block = make_block(
                             artifact,
                             parser_name=self.parser_name,
                             parser_version=self.parser_version,
                             block_type="table_row",
-                            locator=f"{part_name}::row[{index}]",
+                            locator=row_locator,
                             order=order,
                             structured_content={
                                 "cell_count": len(row.findall("./w:tc", _NS))
                             },
+                            parent_block_id=table_block.block_id,
                         )
-                    )
-                for index, cell in enumerate(root.findall(".//w:tc", _NS), start=1):
-                    grid_span = cell.find("./w:tcPr/w:gridSpan", _NS)
-                    vertical_merge = cell.find("./w:tcPr/w:vMerge", _NS)
-                    order += 1
-                    blocks.append(
-                        make_block(
-                            artifact,
-                            parser_name=self.parser_name,
-                            parser_version=self.parser_version,
-                            block_type="table_cell",
-                            locator=f"{part_name}::cell[{index}]",
-                            order=order,
-                            text_content=_text(cell),
-                            structured_content={
-                                "grid_span": (
-                                    grid_span.attrib.get(f"{{{_WORD_NS}}}val", "1")
-                                    if grid_span is not None
-                                    else "1"
-                                ),
-                                "vertical_merge": (
-                                    vertical_merge.attrib.get(
-                                        f"{{{_WORD_NS}}}val", "continue"
-                                    )
-                                    if vertical_merge is not None
-                                    else None
-                                ),
-                            },
-                        )
-                    )
+                        blocks.append(row_block)
+                        for cell_index, cell in enumerate(
+                            row.findall("./w:tc", _NS),
+                            start=1,
+                        ):
+                            grid_span = cell.find("./w:tcPr/w:gridSpan", _NS)
+                            vertical_merge = cell.find("./w:tcPr/w:vMerge", _NS)
+                            order += 1
+                            blocks.append(
+                                make_block(
+                                    artifact,
+                                    parser_name=self.parser_name,
+                                    parser_version=self.parser_version,
+                                    block_type="table_cell",
+                                    locator=(
+                                        f"{row_locator}::cell[{cell_index}]"
+                                    ),
+                                    order=order,
+                                    text_content=_text(cell),
+                                    structured_content={
+                                        "grid_span": (
+                                            grid_span.attrib.get(
+                                                f"{{{_WORD_NS}}}val",
+                                                "1",
+                                            )
+                                            if grid_span is not None
+                                            else "1"
+                                        ),
+                                        "vertical_merge": (
+                                            vertical_merge.attrib.get(
+                                                f"{{{_WORD_NS}}}val",
+                                                "continue",
+                                            )
+                                            if vertical_merge is not None
+                                            else None
+                                        ),
+                                    },
+                                    parent_block_id=row_block.block_id,
+                                )
+                            )
 
                 for index, drawing in enumerate(
                     root.findall(".//w:drawing", _NS), start=1
@@ -388,6 +430,8 @@ class DocxParser:
                 "hyperlinks": sum(item.block_type == "hyperlink" for item in blocks),
                 "headers": sum(item.block_type == "header_part" for item in blocks),
                 "footers": sum(item.block_type == "footer_part" for item in blocks),
+                "footnotes": 0,
+                "endnotes": 0,
             }
             return finalize_artifact(
                 artifact=artifact,

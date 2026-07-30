@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from html.parser import HTMLParser
 import mimetypes
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 import posixpath
 import re
 from typing import Iterable
@@ -22,6 +22,7 @@ from core.design_studio.contracts import (
     SourceArtifact,
     SourceInput,
 )
+from core.design_studio.ingestion.zip_safety import validate_zip_safety
 
 from .base import finalize_artifact, finding, make_block
 
@@ -56,7 +57,7 @@ class _StaticHTMLInventory(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.references: list[tuple[str, str, str]] = []
-        self.visible_texts: list[str] = []
+        self.visible_texts: list[tuple[str, int, int]] = []
         self.native_controls: list[dict[str, str]] = []
         self.custom_controls: list[dict[str, str]] = []
         self.script_count = 0
@@ -103,6 +104,9 @@ class _StaticHTMLInventory(HTMLParser):
                 "onclick",
             }
         }
+        source_line, source_column = self.getpos()
+        retained["source_line"] = str(source_line)
+        retained["source_column"] = str(source_column)
         if tag in _NATIVE_CONTROL_TAGS:
             self.native_controls.append({"tag": tag, **retained})
         elif (
@@ -129,7 +133,8 @@ class _StaticHTMLInventory(HTMLParser):
             return
         value = " ".join(data.split())
         if value:
-            self.visible_texts.append(value)
+            source_line, source_column = self.getpos()
+            self.visible_texts.append((value, source_line, source_column))
 
 
 class _Bundle:
@@ -147,6 +152,7 @@ class _Bundle:
         elif self.path.suffix.casefold() == ".zip":
             self.root = None
             self._zip = ZipFile(self.path)
+            validate_zip_safety(self._zip, label="HTML ZIP")
             unsafe = [
                 name
                 for name in self._zip.namelist()
@@ -365,8 +371,7 @@ class HtmlPrototypeParser:
                 encodings[current] = encoding
                 parser = _StaticHTMLInventory()
                 parser.feed(value)
-                if current in entry_pages:
-                    page_inventories[current] = parser
+                page_inventories[current] = parser
                 references = parser.references
             elif suffix == ".css":
                 value, _ = _decode(data)
@@ -401,7 +406,11 @@ class HtmlPrototypeParser:
 
         blocks = []
         order = 0
-        for page in entry_pages:
+        page_order = list(entry_pages) + sorted(
+            set(page_inventories) - set(entry_pages),
+            key=str.casefold,
+        )
+        for page in page_order:
             inventory = page_inventories[page]
             order += 1
             blocks.append(
@@ -414,10 +423,14 @@ class HtmlPrototypeParser:
                     order=order,
                     structured_content={
                         "encoding": encodings.get(page, ""),
+                        "entry_point": page in entry_pages,
                     },
                 )
             )
-            for index, value in enumerate(inventory.visible_texts, start=1):
+            for index, (value, line, column) in enumerate(
+                inventory.visible_texts,
+                start=1,
+            ):
                 order += 1
                 blocks.append(
                     make_block(
@@ -425,12 +438,16 @@ class HtmlPrototypeParser:
                         parser_name=self.parser_name,
                         parser_version=self.parser_version,
                         block_type="visible_text",
-                        locator=f"{page}::text[{index}]",
+                        locator=(
+                            f"{page}::line[{line}]:column[{column}]::text[{index}]"
+                        ),
                         order=order,
                         text_content=value,
                     )
                 )
             for index, control in enumerate(inventory.native_controls, start=1):
+                line = control.get("source_line", "0")
+                column = control.get("source_column", "0")
                 order += 1
                 blocks.append(
                     make_block(
@@ -438,12 +455,16 @@ class HtmlPrototypeParser:
                         parser_name=self.parser_name,
                         parser_version=self.parser_version,
                         block_type="html_control",
-                        locator=f"{page}::control[{index}]",
+                        locator=(
+                            f"{page}::line[{line}]:column[{column}]::control[{index}]"
+                        ),
                         order=order,
                         structured_content=control,
                     )
                 )
             for index, control in enumerate(inventory.custom_controls, start=1):
+                line = control.get("source_line", "0")
+                column = control.get("source_column", "0")
                 order += 1
                 blocks.append(
                     make_block(
@@ -451,7 +472,10 @@ class HtmlPrototypeParser:
                         parser_name=self.parser_name,
                         parser_version=self.parser_version,
                         block_type="custom_control",
-                        locator=f"{page}::custom-control[{index}]",
+                        locator=(
+                            f"{page}::line[{line}]:column[{column}]"
+                            f"::custom-control[{index}]"
+                        ),
                         order=order,
                         structured_content=control,
                     )
@@ -578,6 +602,7 @@ class HtmlPrototypeParser:
         )
         detected = {
             "entry_pages": len(entry_pages),
+            "discovered_pages": len(page_inventories),
             "direct_referenced_files": len(direct_closure),
             "referenced_files": len(closure),
             "missing_references": len(missing),
@@ -588,7 +613,6 @@ class HtmlPrototypeParser:
             "inline_svg": svg_count,
         }
         type_by_inventory = {
-            "entry_pages": "html_page",
             "missing_references": "missing_reference",
             "visible_text_blocks": "visible_text",
             "native_controls": "html_control",
@@ -600,6 +624,14 @@ class HtmlPrototypeParser:
             key: sum(block.block_type == block_type for block in blocks)
             for key, block_type in type_by_inventory.items()
         }
+        parsed["entry_pages"] = sum(
+            block.block_type == "html_page"
+            and bool(block.structured_content.get("entry_point"))
+            for block in blocks
+        )
+        parsed["discovered_pages"] = sum(
+            block.block_type == "html_page" for block in blocks
+        )
         parsed["direct_referenced_files"] = sum(
             block.block_type == "resource"
             and bool(block.structured_content.get("direct"))

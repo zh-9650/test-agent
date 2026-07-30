@@ -6,8 +6,21 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import mimetypes
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from core.design_studio.contracts import SourceArtifact, SourceInput
+
+
+def sanitize_origin_uri(value: str | None) -> str | None:
+    """去掉 URL 凭据、query 和 fragment，避免来源定位泄露 Secret。"""
+
+    if not value:
+        return value
+    if "://" not in value and not value.casefold().startswith("file:"):
+        return value
+    parsed = urlsplit(value)
+    netloc = parsed.netloc.rsplit("@", 1)[-1]
+    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
 
 
 def _directory_manifest(path: Path) -> tuple[bytes, int]:
@@ -49,7 +62,7 @@ def inspect_source(source: SourceInput) -> SourceArtifact:
         required=source.required,
         media_type=media_type,
         original_name=source.original_name or path.name,
-        origin_uri=source.origin_uri,
+        origin_uri=sanitize_origin_uri(source.origin_uri),
         local_path=str(path),
         sha256=digest,
         byte_size=byte_size,
@@ -69,7 +82,7 @@ def unavailable_source(source: SourceInput) -> SourceArtifact:
         required=source.required,
         media_type="application/octet-stream",
         original_name=source.original_name or source.path.name,
-        origin_uri=source.origin_uri,
+        origin_uri=sanitize_origin_uri(source.origin_uri),
         local_path=str(source.path),
         sha256="",
         byte_size=0,

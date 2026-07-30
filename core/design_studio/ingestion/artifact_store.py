@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from core.design_studio.contracts import SourceInput
 
-from .inspection import inspect_source
+from .inspection import inspect_source, sanitize_origin_uri
 
 
 class FilesystemArtifactStore:
@@ -27,6 +27,14 @@ class FilesystemArtifactStore:
 
     def capture(self, source: SourceInput) -> SourceInput:
         original_path = source.path.resolve()
+        if original_path.is_dir():
+            try:
+                self.root.relative_to(original_path)
+            except ValueError:
+                pass
+            else:
+                raise ValueError("artifact_root 不能位于待冻结的资料目录内部")
+        self._reject_secret_paths(original_path)
         original_artifact = inspect_source(source)
         digest = original_artifact.sha256
         payload_name = original_path.name
@@ -43,6 +51,11 @@ class FilesystemArtifactStore:
                 digest,
             )
             self._verify_payload(captured_input, digest)
+            self._write_identity_manifest(
+                target,
+                captured_input,
+                captured_path,
+            )
             return captured_input
 
         self.root.mkdir(parents=True, exist_ok=True)
@@ -74,7 +87,6 @@ class FilesystemArtifactStore:
                 "sha256": digest,
                 "byte_size": captured_artifact.byte_size,
                 "original_name": source.original_name or original_path.name,
-                "origin_uri": source.origin_uri or str(original_path),
                 "captured_at": datetime.now(timezone.utc).isoformat(),
                 "payload": f"payload/{payload_name}",
             }
@@ -97,6 +109,11 @@ class FilesystemArtifactStore:
                 digest,
             )
             self._verify_payload(captured_input, digest)
+            self._write_identity_manifest(
+                target,
+                captured_input,
+                captured_path,
+            )
             return captured_input
         except Exception:
             if staging.exists():
@@ -111,6 +128,51 @@ class FilesystemArtifactStore:
             raise ValueError(f"资料目录包含符号链接: {relative}")
 
     @staticmethod
+    def _reject_secret_paths(path: Path) -> None:
+        safe_env_templates = {
+            ".env.example",
+            ".env.sample",
+            ".env.template",
+        }
+
+        def is_secret(candidate: Path) -> bool:
+            name = candidate.name.casefold()
+            if name in safe_env_templates:
+                return False
+            if name == ".env" or name.startswith(".env."):
+                return True
+            if name in {
+                ".npmrc",
+                ".pypirc",
+                "credentials.json",
+                "id_dsa",
+                "id_ed25519",
+                "id_rsa",
+                "secrets.json",
+                "secrets.yaml",
+                "secrets.yml",
+            }:
+                return True
+            return candidate.suffix.casefold() in {".key", ".p12", ".pfx"}
+
+        candidates = (
+            [item for item in path.rglob("*") if item.is_file()]
+            if path.is_dir()
+            else [path]
+        )
+        secret_paths = [candidate for candidate in candidates if is_secret(candidate)]
+        if secret_paths:
+            candidate = secret_paths[0]
+            display = (
+                candidate.relative_to(path).as_posix()
+                if path.is_dir()
+                else candidate.name
+            )
+            raise ValueError(
+                f"原始资料包含疑似 Secret 文件，必须改用 secret_refs: {display}"
+            )
+
+    @staticmethod
     def _captured_input(
         source: SourceInput,
         captured_path: Path,
@@ -120,7 +182,9 @@ class FilesystemArtifactStore:
         return source.model_copy(
             update={
                 "path": captured_path,
-                "origin_uri": source.origin_uri or str(original_path),
+                "origin_uri": sanitize_origin_uri(
+                    source.origin_uri or str(original_path)
+                ),
                 "original_name": source.original_name or original_path.name,
                 "source_version": source.source_version or digest,
             }
@@ -146,3 +210,51 @@ class FilesystemArtifactStore:
             raise ValueError(
                 f"原始资料仓库 payload 校验失败: expected={expected_hash}, actual={actual}"
             )
+
+    @staticmethod
+    def _write_identity_manifest(
+        target: Path,
+        source: SourceInput,
+        captured_path: Path,
+    ) -> None:
+        identity = {
+            "source_id": source.source_id,
+            "source_kind": source.source_kind,
+            "authority": source.authority.value,
+            "required": source.required,
+            "source_version": source.source_version,
+            "original_name": source.original_name,
+            "origin_uri": sanitize_origin_uri(source.origin_uri),
+            "payload": captured_path.relative_to(target).as_posix(),
+        }
+        serialized_identity = json.dumps(
+            identity,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        identity_key = (
+            sha256(serialized_identity.encode("utf-8"))
+            .hexdigest()[:32]
+            .upper()
+        )
+        identity_dir = target / "identities"
+        identity_dir.mkdir(parents=True, exist_ok=True)
+        identity_path = identity_dir / f"{identity_key}.json"
+        if identity_path.exists():
+            return
+        payload = {
+            "schema_version": "source_identity_manifest.v1",
+            **identity,
+            "registered_at": datetime.now(timezone.utc).isoformat(),
+        }
+        temporary = identity_dir / f".{identity_key}.{uuid4().hex[:8]}.tmp"
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        try:
+            os.replace(temporary, identity_path)
+        finally:
+            if temporary.exists():
+                temporary.unlink()

@@ -22,7 +22,21 @@ def _table_regions(lines: list[str]) -> list[tuple[int, int, list[int]]]:
 
     regions: list[tuple[int, int, list[int]]] = []
     occupied: set[int] = set()
+    in_fence = False
+    fence_marker = ""
     for divider_index, line in enumerate(lines):
+        fence = _FENCE.match(line)
+        if fence:
+            marker = fence.group(1)[0]
+            if not in_fence:
+                in_fence = True
+                fence_marker = marker
+            elif marker == fence_marker:
+                in_fence = False
+                fence_marker = ""
+            continue
+        if in_fence:
+            continue
         if divider_index == 0 or divider_index in occupied:
             continue
         if not _TABLE_DIVIDER.match(line) or "|" not in lines[divider_index - 1]:

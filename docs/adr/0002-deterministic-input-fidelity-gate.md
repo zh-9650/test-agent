@@ -17,7 +17,8 @@ v2 从 `core/design_studio` 的独立入口接收原始资料，不修改
 `core/skills/l2_pipeline.py`。正式公共入口是：
 
 - `InputParsingService.parse(SourceInput) -> ParsedArtifact`
-- `ParseFidelityGate.evaluate(Iterable[ParsedArtifact]) -> FidelityGateDecision`
+- `ParseFidelityGate.evaluate(artifacts, expected_sources=..., current_source_hashes=...)`
+  `-> FidelityGateDecision`
 
 每个格式解析器必须先盘点结构，再产生带来源 hash 和 locator 的 `ParsedBlock`，最后由
 公共核对程序生成 `ParseFidelityReport`。解析器不能靠提示词或自身声明绕过以下检查：
@@ -31,6 +32,8 @@ v2 从 `core/design_studio` 的独立入口接收原始资料，不修改
 
 G0 默认规则为：必要来源只有 `complete` 可以通过；可选来源允许降级并产生 finding。
 人工确认不能把 `partial`、`failed` 或 `unsupported` 改写成 `complete`。
+G0 必须绑定会话预期来源清单，并重新核对本地原件 hash、块内容寻址 ID、解析器身份、
+重复 source ID 和当前版本；空清单、漏传必要来源或旧 hash 均不得通过。
 
 ## 原件冻结
 
@@ -40,15 +43,22 @@ G0 默认规则为：必要来源只有 `complete` 可以通过；可选来源�
 本地评估和只读探测，不能宣称已持久化原件。
 
 Secret 只保存引用；manifest 不保存密码、token 或 cookie。
+仓库为共享 payload 另存每个来源身份 manifest，不因相同 hash 合并 source identity；
+`origin_uri` 写盘前会移除 Basic Auth、query 和 fragment。artifact root 位于输入目录
+内部、目录含 Secret 文件或符号链接时直接拒绝。
+
+DOCX、HTML ZIP 和源码 ZIP 在读取前统一检查路径、加密/符号链接条目、文件数、单文件/
+总解压大小和压缩比。JSON/YAML 重复键、递归 alias 和过深结构返回 `failed`，不能
+静默覆盖。
 
 ## 首版格式结论
 
 | 输入 | 当前结论 | 原因 |
 |---|---|---|
-| DOCX | 可 `complete` | OOXML 段落、表格、行列、drawing、媒体、链接和页眉页脚均盘点并定位；未支持对象会降级 |
+| DOCX | 可 `complete` | OOXML 段落、表格、行列父子关系、drawing、媒体、链接和页眉页脚均盘点并定位；脚注/尾注或其他未支持对象会降级 |
 | Markdown/TXT | 可 `complete` | 保留标题路径、段落、表格、代码块和链接 |
 | JSON/YAML/OpenAPI | 可 `complete` | 普通结构保留 JSON Pointer；OpenAPI 单独保留 operation、参数、请求、响应、schema、enum 和 ref |
-| HTML 原型目录/ZIP | 通常 `partial` | 静态文件、文字、控件和资源闭包可验证；JS 状态、自定义交互和渲染可见性未证明 |
+| HTML 原型目录/ZIP | 通常 `partial` | 入口及链接页面、静态文字、控件和资源闭包可验证；JS 状态、自定义交互和渲染可见性未证明 |
 | 原型源码目录/ZIP | `partial` | 文件/忽略清单及静态路由、组件、表单、接口调用可定位；不执行不可信源码 |
 | PNG/JPG | `partial` | 二进制、hash、尺寸和格式可验证；OCR 和视觉区域语义适配器尚未实现 |
 

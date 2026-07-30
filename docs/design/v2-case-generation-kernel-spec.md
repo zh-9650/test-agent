@@ -9,6 +9,8 @@
 - 已新增 `core/design_studio/contracts`、`ingestion` 和 `parsing`。
 - `InputParsingService`、格式解析器注册表、内容寻址原件仓库、`ParseFidelityReport`
   和 G0 `ParseFidelityGate` 已落地。
+- G0 必须消费预期来源清单，可选消费当前 hash 映射，并重新核对来源、块 ID、解析器身份
+  和本地原件；它不能对空输入或漏传必要来源判定通过。
 - DOCX、Markdown/TXT、JSON/YAML/OpenAPI、HTML 原型目录/ZIP、原型源码目录/ZIP
   和 PNG/JPG 已有显式解析结论。
 - HTML 动态语义、源码运行时语义和图片 OCR/视觉语义仍返回 `partial`；这不是 T1

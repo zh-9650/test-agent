@@ -8,6 +8,7 @@ import re
 from zipfile import BadZipFile, ZipFile
 
 from core.design_studio.contracts import ParsedArtifact, SourceArtifact, SourceInput
+from core.design_studio.ingestion.zip_safety import validate_zip_safety
 
 from .base import finalize_artifact, finding, make_block
 
@@ -81,6 +82,7 @@ class _SourceBundle:
         elif self.path.suffix.casefold() == ".zip":
             self.root = None
             self._zip = ZipFile(self.path)
+            validate_zip_safety(self._zip, label="源码 ZIP")
             unsafe = [
                 name
                 for name in self._zip.namelist()
