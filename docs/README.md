@@ -17,6 +17,7 @@
 ## 架构决策
 
 - [`adr/0001-project-first-v2-test-design.md`](adr/0001-project-first-v2-test-design.md)：先在项目中验证 v2 用例生成内核，再提炼共享 Skill。
+- [`adr/0002-deterministic-input-fidelity-gate.md`](adr/0002-deterministic-input-fidelity-gate.md)：用格式专用解析、原件冻结和确定性 G0 阻止输入缺失进入后续设计。
 
 ## 设计规格
 

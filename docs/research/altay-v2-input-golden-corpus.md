@@ -88,6 +88,17 @@ manifest、结构黄金断言和脱敏规则。
 `<relative-path>\t<byte-size>\t<file-sha256>` 行。后续正式 manifest 必须保存完整74行，
 不能只保存总 hash。
 
+正式解析器在保留上述“直接引用闭包”黄金断言的同时，继续递归解析 CSS `url(...)`。
+这会额外纳入：
+
+- `resources/css/images/newwindow.gif`
+- `resources/css/images/note.gif`
+- `resources/images/transparent.gif`
+
+因此传递资源闭包是77文件、38,889,650字节，规范化 manifest SHA-256 为
+`D3A7CF16EFC0966B6D9ED50CFE1A697A72E914848FC7F019DB0CCA3661CC9302`。
+直接闭包和传递闭包必须分别保存，不能用77文件结果覆盖原74文件黄金断言。
+
 原型解析不能只依赖语义 HTML 标签。八个页面都包含34个 script，且使用大量内联 SVG
 和自定义控件；例如 `考核模版.html` 有2,625个内联 SVG，
 `考核方案.html` 有1,341个。原生 `form/button/table` 数量不能代表真实交互结构。

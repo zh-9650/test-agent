@@ -1,8 +1,22 @@
 # test_agent v2 用例生成内核实施规格
 
-状态：工作草案
+状态：T1 输入保真解析已实现；T2～T7 仍为工作草案
 范围：从原始输入接入到测试用例资产包产出
 不包含：Runtime 改造、测试执行、执行 Memory、共享 Skill 切换
+
+当前实现边界：
+
+- 已新增 `core/design_studio/contracts`、`ingestion` 和 `parsing`。
+- `InputParsingService`、格式解析器注册表、内容寻址原件仓库、`ParseFidelityReport`
+  和 G0 `ParseFidelityGate` 已落地。
+- DOCX、Markdown/TXT、JSON/YAML/OpenAPI、HTML 原型目录/ZIP、原型源码目录/ZIP
+  和 PNG/JPG 已有显式解析结论。
+- HTML 动态语义、源码运行时语义和图片 OCR/视觉语义仍返回 `partial`；这不是 T1
+  的完成项。
+- 尚未新增 DesignSession API/前端，也未进入证据声明、业务基线、正式模型、覆盖编译
+  或用例投影。
+- 具体决策和真实黄金结果见
+  [`0002-deterministic-input-fidelity-gate.md`](../adr/0002-deterministic-input-fidelity-gate.md)。
 
 ## 1. 目标
 
